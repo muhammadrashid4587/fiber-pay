@@ -35,7 +35,7 @@ src/
 │   └── index.ts
 ├── security/           # Security components
 │   ├── policy-engine.ts # Spending limits, rate limiting
-│   ├── key-manager.ts   # Key generation & encryption
+│   ├── key-manager.ts   # Key generation (fiber node handles encryption)
 │   └── index.ts
 ├── types/              # Type definitions
 │   ├── rpc.ts          # All RPC request/response types
@@ -184,7 +184,7 @@ if (!check.allowed) {
 | `FIBER_BINARY_PATH` | Override fnn binary location |
 | `FIBER_DATA_DIR` | Data directory |
 | `FIBER_NETWORK` | `testnet` or `mainnet` |
-| `FIBER_KEY_PASSWORD` | Key encryption password |
+| `FIBER_KEY_PASSWORD` | Key encryption password (passed to fiber node as `FIBER_SECRET_KEY_PASSWORD`) |
 
 ## Gotchas & Warnings
 
@@ -192,7 +192,13 @@ if (!check.allowed) {
 
 2. **ESM imports**: Always use `.js` extension in imports even for `.ts` files
 
-3. **Async state**: After async operations, re-check state before accessing:
+3. **Key file formats**: The fiber node expects different formats for different keys:
+   - `fiber/sk`: raw 32 bytes (binary)
+   - `ckb/key`: hex-encoded 32 bytes (64 character string, no 0x prefix)
+   
+   The KeyManager generates these formats automatically. The fiber node requires `FIBER_SECRET_KEY_PASSWORD` env var and encrypts the keys on first startup.
+
+4. **Async state**: After async operations, re-check state before accessing:
 ```typescript
 // Bad: this.state might have changed
 await someAsyncOp();
@@ -202,9 +208,9 @@ if (this.state === 'running') { ... }
 if ((this.state as ProcessState) === 'running') { ... }
 ```
 
-4. **Binary names vary**: GitHub release assets use patterns like `fnn_v0.6.1-x86_64-darwin-portable.tar.gz`, not consistent naming
+5. **Binary names vary**: GitHub release assets use patterns like `fnn_v0.6.1-x86_64-darwin-portable.tar.gz`, not consistent naming
 
-5. **ARM64 macOS**: No native binary yet, uses x86_64 via Rosetta 2
+6. **ARM64 macOS**: No native binary yet, uses x86_64 via Rosetta 2
 
 ## Roadmap Items (Not Yet Implemented)
 

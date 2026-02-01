@@ -17,6 +17,7 @@ interface CliConfig {
   dataDir: string;
   network: 'testnet' | 'mainnet';
   rpcUrl?: string;
+  keyPassword?: string;
 }
 
 function getConfig(): CliConfig {
@@ -25,6 +26,7 @@ function getConfig(): CliConfig {
     dataDir: process.env.FIBER_DATA_DIR || `${process.env.HOME}/.fiber-pay`,
     network: (process.env.FIBER_NETWORK as 'testnet' | 'mainnet') || 'testnet',
     rpcUrl: process.env.FIBER_RPC_URL,
+    keyPassword: process.env.FIBER_KEY_PASSWORD,
   };
 }
 
@@ -371,6 +373,7 @@ async function main(): Promise<void> {
     binaryPath: config.binaryPath,
     dataDir: config.dataDir,
     network: config.network,
+    keyPassword: config.keyPassword,
   });
 
   // Commands that need initialization

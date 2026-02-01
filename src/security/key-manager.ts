@@ -4,7 +4,7 @@
  * Keys are isolated from LLM context for security
  */
 
-import { randomBytes, createCipheriv, createDecipheriv, scryptSync } from 'crypto';
+import { randomBytes, createCipheriv, createDecipheriv, scryptSync, createHash } from 'crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'fs';
 import { join, dirname } from 'path';
 import type { KeyConfig, KeyInfo, HexString } from '../types/index.js';
@@ -82,13 +82,14 @@ export class KeyManager {
     // Generate 32 random bytes
     const privateKey = randomBytes(32);
 
-    // Encrypt if password is provided
-    let keyData: Buffer;
-    if (this.config.encryptionPassword) {
-      keyData = this.encryptKey(privateKey, this.config.encryptionPassword);
+    // The fiber node expects different formats:
+    // - fiber/sk: raw 32 bytes
+    // - ckb/key: hex string (64 characters)
+    let keyData: string | Buffer;
+    if (type === 'fiber') {
+      keyData = privateKey;
     } else {
-      // Store as hex without 0x prefix
-      keyData = Buffer.from(privateKey.toString('hex'));
+      keyData = privateKey.toString('hex');
     }
 
     // Write key file with restricted permissions
@@ -138,8 +139,15 @@ export class KeyManager {
       return this.decryptKey(keyData, this.config.encryptionPassword);
     }
 
-    // Key is stored as hex string
-    return Buffer.from(keyData.toString('utf-8').trim(), 'hex');
+    // The fiber node stores keys in different formats:
+    // - fiber/sk: raw 32 bytes
+    // - ckb/key: hex string (64 characters)
+    if (type === 'fiber') {
+      return keyData;
+    } else {
+      const hexString = keyData.toString('utf-8').trim();
+      return Buffer.from(hexString, 'hex');
+    }
   }
 
   /**
@@ -219,7 +227,7 @@ export class KeyManager {
     // For now, return a placeholder - actual implementation would use
     // @noble/secp256k1 or similar library
     // The actual public key derivation requires elliptic curve math
-    const hash = require('crypto').createHash('sha256').update(privateKey).digest();
+    const hash = createHash('sha256').update(privateKey).digest();
     return `0x${hash.toString('hex')}` as HexString;
   }
 }

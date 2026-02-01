@@ -113,9 +113,9 @@ export class ProcessManager extends EventEmitter {
       RUST_LOG: this.config.logLevel || 'info',
     };
 
-    if (this.config.keyPassword) {
-      env.FIBER_SECRET_KEY_PASSWORD = this.config.keyPassword;
-    }
+    // FIBER_SECRET_KEY_PASSWORD is always required by the fiber node
+    // Use the provided password or generate a default one
+    env.FIBER_SECRET_KEY_PASSWORD = this.config.keyPassword || 'fiber-pay-default-key';
 
     // Spawn the process
     const args = ['-c', this.configPath, '-d', this.config.dataDir];

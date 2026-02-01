@@ -241,10 +241,13 @@ const fiber = createFiberPay({
 
 ### Key Management
 
-- Keys are encrypted at rest using **scrypt + AES-256-GCM**
-- Set password via `FIBER_KEY_PASSWORD` environment variable
+- Keys are encrypted at rest by the Fiber node using `FIBER_SECRET_KEY_PASSWORD`
+- The SDK generates raw keys in the expected format on first run:
+  - `fiber/sk`: raw 32 bytes for P2P identity
+  - `ckb/key`: hex-encoded 32 bytes for CKB wallet
+- The fiber node automatically encrypts these on first startup
 - Keys are **never exposed** to LLM context
-- Auto-generation on first run (configurable)
+- Set custom password via `FIBER_KEY_PASSWORD` environment variable (defaults to internal password)
 
 ### Audit Logging
 
@@ -264,7 +267,7 @@ const log = fiber.getAuditLog({ limit: 100 });
 | `FIBER_BINARY_PATH` | Path to fnn binary | Auto-downloads to `~/.fiber-pay/bin/fnn` |
 | `FIBER_DATA_DIR` | Data directory | `~/.fiber-pay` |
 | `FIBER_NETWORK` | Network (testnet/mainnet) | `testnet` |
-| `FIBER_KEY_PASSWORD` | Key encryption password | - |
+| `FIBER_KEY_PASSWORD` | Key encryption password (passed to node as `FIBER_SECRET_KEY_PASSWORD`) | `fiber-pay-default-key` |
 | `FIBER_RPC_URL` | CKB RPC URL | `https://testnet.ckbapp.dev/` |
 
 ### Programmatic Configuration

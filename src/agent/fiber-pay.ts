@@ -818,6 +818,8 @@ export function createFiberPay(options?: {
   network?: 'testnet' | 'mainnet';
   /** Auto-download binary if not found (default: true) */
   autoDownload?: boolean;
+  /** Key encryption password */
+  keyPassword?: string;
 }): FiberPay {
   const dataDir = options?.dataDir || `${process.env.HOME}/.fiber-pay`;
   
@@ -826,5 +828,6 @@ export function createFiberPay(options?: {
     dataDir,
     chain: options?.network || 'testnet',
     autoDownload: options?.autoDownload ?? true,
+    keyPassword: options?.keyPassword,
   });
 }
