@@ -1,0 +1,58 @@
+{
+  "name": "fiber-pay",
+  "version": "0.1.0",
+  "description": "AI Agent Payment SDK for CKB Lightning Network (Fiber Network)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "fiber-pay": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./mcp": {
+      "import": "./dist/agent/mcp-tools.js",
+      "types": "./dist/agent/mcp-tools.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "keywords": [
+    "ckb",
+    "lightning",
+    "fiber",
+    "payment",
+    "ai-agent",
+    "mcp",
+    "cryptocurrency",
+    "nervos"
+  ],
+  "author": "",
+  "license": "MIT",
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^25.1.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  }
+}

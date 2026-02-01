@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.fiber-pay/
+*.log
+.DS_Store
+.env
+.env.local
+coverage/
