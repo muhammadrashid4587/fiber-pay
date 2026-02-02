@@ -4,7 +4,9 @@
  */
 
 import { parseArgs } from 'util';
-import { FiberPay, createFiberPay, MCP_TOOLS, downloadFiberBinary, getFiberBinaryInfo } from './index.js';
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { join } from 'path';
+import { FiberPay, createFiberPay, MCP_TOOLS, downloadFiberBinary, getFiberBinaryInfo, FiberRpcClient } from './index.js';
 import type { McpToolName } from './agent/mcp-tools.js';
 import type { DownloadProgress } from './binary/index.js';
 
@@ -25,9 +27,49 @@ function getConfig(): CliConfig {
     binaryPath: process.env.FIBER_BINARY_PATH,
     dataDir: process.env.FIBER_DATA_DIR || `${process.env.HOME}/.fiber-pay`,
     network: (process.env.FIBER_NETWORK as 'testnet' | 'mainnet') || 'testnet',
-    rpcUrl: process.env.FIBER_RPC_URL,
+    rpcUrl: process.env.FIBER_RPC_URL || 'http://127.0.0.1:8227',
     keyPassword: process.env.FIBER_KEY_PASSWORD,
   };
+}
+
+// =============================================================================
+// PID File Management
+// =============================================================================
+
+function getPidFilePath(dataDir: string): string {
+  return join(dataDir, 'fiber.pid');
+}
+
+function writePidFile(dataDir: string, pid: number): void {
+  writeFileSync(getPidFilePath(dataDir), String(pid));
+}
+
+function readPidFile(dataDir: string): number | null {
+  const pidPath = getPidFilePath(dataDir);
+  if (!existsSync(pidPath)) {
+    return null;
+  }
+  try {
+    return parseInt(readFileSync(pidPath, 'utf-8').trim());
+  } catch {
+    return null;
+  }
+}
+
+function removePidFile(dataDir: string): void {
+  const pidPath = getPidFilePath(dataDir);
+  if (existsSync(pidPath)) {
+    unlinkSync(pidPath);
+  }
+}
+
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // =============================================================================
@@ -221,21 +263,46 @@ fiber-pay - AI Agent Payment SDK for CKB Lightning Network
 USAGE:
   fiber-pay <command> [options]
 
-COMMANDS:
-  download                Download the Fiber binary for your platform
-  binary-info             Check if binary is installed
-  init                    Initialize the node and connect (auto-downloads binary)
+NODE MANAGEMENT:
+  start                   Start the Fiber node (runs in foreground)
+  stop                    Stop the running Fiber node
+  status                  Check if node is running
+
+COMMANDS (require running node):
+  info                    Get node information
   balance                 Get current balance information
+  channels                List all payment channels
+  peers                   List connected peers
+
+COMMANDS (auto-start node, then stop):
+  init                    Initialize the node and connect (auto-downloads binary)
   pay                     Pay an invoice or send directly
   invoice                 Create an invoice to receive payment
-  channels                List all payment channels
   open-channel            Open a new channel
   close-channel           Close a channel
-  info                    Get node information
   allowance               Get remaining spending allowance
   audit                   View audit log
+
+BINARY MANAGEMENT:
+  download                Download the Fiber binary for your platform
+  binary-info             Check if binary is installed
+
+OTHER:
   tools                   Output MCP tool definitions
   help                    Show this help
+
+NODE LIFECYCLE:
+  # Start node in foreground (recommended)
+  fiber-pay start
+
+  # In another terminal, run commands:
+  fiber-pay status
+  fiber-pay info
+  fiber-pay balance
+  fiber-pay channels
+
+  # Stop the node
+  fiber-pay stop
 
 BINARY MANAGEMENT:
   fiber-pay download                    Download latest binary
@@ -261,27 +328,21 @@ ENVIRONMENT:
   FIBER_BINARY_PATH       Path to fnn binary (optional - auto-downloads if not set)
   FIBER_DATA_DIR          Data directory (default: ~/.fiber-pay)
   FIBER_NETWORK           Network: testnet or mainnet (default: testnet)
+  FIBER_RPC_URL           RPC URL (default: http://127.0.0.1:8227)
   FIBER_KEY_PASSWORD      Password for key encryption
 
 EXAMPLES:
   # Download the Fiber binary
   fiber-pay download
 
-  # Initialize and start node (auto-downloads binary if needed)
-  fiber-pay init
+  # Start node and keep it running
+  fiber-pay start
 
-
-  # Check balance
+  # (In another terminal) Check balance
   fiber-pay balance
 
-  # Pay an invoice
-  fiber-pay pay fibt1qp...
-
-  # Create invoice for 10 CKB
-  fiber-pay invoice 10
-
-  # Open channel with 100 CKB
-  fiber-pay open-channel --peer /ip4/x.x.x.x/tcp/8228/p2p/QmXXX --funding 100
+  # Stop the node
+  fiber-pay stop
 `);
 }
 
@@ -337,6 +398,93 @@ async function handleStandaloneCommand(command: string, args: string[], config: 
 }
 
 // =============================================================================
+// RPC-only Commands (connect to running node)
+// =============================================================================
+
+async function handleRpcCommand(command: string, args: string[], config: CliConfig): Promise<boolean> {
+  const rpc = new FiberRpcClient({ url: config.rpcUrl! });
+  
+  // Check if node is running
+  try {
+    await rpc.waitForReady({ timeout: 3000 });
+  } catch {
+    console.error('❌ Node is not running. Start it first with: fiber-pay start');
+    process.exit(1);
+  }
+
+  switch (command) {
+    case 'info':
+    case 'node-info': {
+      const nodeInfo = await rpc.nodeInfo();
+      console.log(JSON.stringify({
+        success: true,
+        data: {
+          nodeId: nodeInfo.peer_id,
+          publicKey: nodeInfo.public_key,
+          addresses: nodeInfo.addresses,
+          chainHash: nodeInfo.chain_hash,
+        }
+      }, null, 2));
+      return true;
+    }
+
+    case 'channels':
+    case 'list-channels': {
+      const channels = await rpc.listChannels({});
+      console.log(JSON.stringify({
+        success: true,
+        data: {
+          channels: channels.channels,
+          count: channels.channels.length,
+        }
+      }, null, 2));
+      return true;
+    }
+
+    case 'balance':
+    case 'get-balance': {
+      const channels = await rpc.listChannels({});
+      let totalLocal = BigInt(0);
+      let totalRemote = BigInt(0);
+      
+      for (const ch of channels.channels) {
+        if (ch.state?.state_name === 'ChannelReady') {
+          totalLocal += BigInt(ch.local_balance);
+          totalRemote += BigInt(ch.remote_balance);
+        }
+      }
+      
+      const localCkb = Number(totalLocal) / 1e8;
+      const remoteCkb = Number(totalRemote) / 1e8;
+      
+      console.log(JSON.stringify({
+        success: true,
+        data: {
+          totalCkb: localCkb,
+          availableToSend: localCkb,
+          availableToReceive: remoteCkb,
+          channelCount: channels.channels.length,
+        }
+      }, null, 2));
+      return true;
+    }
+
+    case 'peers':
+    case 'list-peers': {
+      const peers = await rpc.listPeers();
+      console.log(JSON.stringify({
+        success: true,
+        data: peers
+      }, null, 2));
+      return true;
+    }
+
+    default:
+      return false;
+  }
+}
+
+// =============================================================================
 // Main
 // =============================================================================
 
@@ -369,6 +517,142 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Handle start command - run node in foreground
+  if (command === 'start') {
+    const fiber = createFiberPay({
+      binaryPath: config.binaryPath,
+      dataDir: config.dataDir,
+      network: config.network,
+      keyPassword: config.keyPassword,
+    });
+
+    // Check if already running
+    const existingPid = readPidFile(config.dataDir);
+    if (existingPid && isProcessRunning(existingPid)) {
+      console.log(`❌ Node is already running (PID: ${existingPid})`);
+      console.log('   Use "fiber-pay stop" to stop it first.');
+      process.exit(1);
+    }
+
+    console.log('🚀 Starting Fiber node...');
+    
+    const initResult = await fiber.initialize({
+      onDownloadProgress: showProgress,
+    });
+    
+    if (!initResult.success) {
+      console.error('Failed to initialize:', initResult.error?.message);
+      process.exit(1);
+    }
+
+    // Write PID file
+    writePidFile(config.dataDir, process.pid);
+
+    console.log('✅ Fiber node started successfully!');
+    console.log(JSON.stringify(initResult, null, 2));
+    console.log('\n📡 Node is running. Press Ctrl+C to stop.');
+    console.log(`   RPC endpoint: ${config.rpcUrl}`);
+    console.log(`   Data dir: ${config.dataDir}`);
+
+    // Handle graceful shutdown
+    const shutdown = async () => {
+      console.log('\n🛑 Shutting down...');
+      removePidFile(config.dataDir);
+      await fiber.shutdown();
+      console.log('✅ Node stopped.');
+      process.exit(0);
+    };
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+
+    // Keep process alive
+    await new Promise(() => {});
+    return;
+  }
+
+  // Handle stop command
+  if (command === 'stop') {
+    const pid = readPidFile(config.dataDir);
+    
+    if (!pid) {
+      console.log('❌ No PID file found. Node may not be running.');
+      process.exit(1);
+    }
+
+    if (!isProcessRunning(pid)) {
+      console.log(`❌ Process ${pid} is not running. Cleaning up PID file.`);
+      removePidFile(config.dataDir);
+      process.exit(1);
+    }
+
+    console.log(`🛑 Stopping node (PID: ${pid})...`);
+    process.kill(pid, 'SIGTERM');
+    
+    // Wait for process to stop
+    let attempts = 0;
+    while (isProcessRunning(pid) && attempts < 30) {
+      await new Promise(r => setTimeout(r, 100));
+      attempts++;
+    }
+
+    if (isProcessRunning(pid)) {
+      console.log('⚠️  Process did not stop gracefully, force killing...');
+      process.kill(pid, 'SIGKILL');
+    }
+
+    removePidFile(config.dataDir);
+    console.log('✅ Node stopped.');
+    return;
+  }
+
+  // Handle status command
+  if (command === 'status') {
+    const pid = readPidFile(config.dataDir);
+    
+    if (pid && isProcessRunning(pid)) {
+      console.log(`✅ Node is running (PID: ${pid})`);
+      
+      // Try to get node info
+      try {
+        const rpc = new FiberRpcClient({ url: config.rpcUrl! });
+        await rpc.waitForReady({ timeout: 3000 });
+        const nodeInfo = await rpc.nodeInfo();
+        console.log(`   Node ID: ${nodeInfo.peer_id}`);
+        console.log(`   RPC: ${config.rpcUrl}`);
+      } catch {
+        console.log('   ⚠️  RPC not responding');
+      }
+    } else {
+      if (pid) {
+        console.log(`❌ Node is not running (stale PID file: ${pid})`);
+        removePidFile(config.dataDir);
+      } else {
+        console.log('❌ Node is not running');
+      }
+      console.log('   Start with: fiber-pay start');
+    }
+    return;
+  }
+
+  // RPC-only commands (connect to running node)
+  const rpcOnlyCommands = ['info', 'node-info', 'channels', 'list-channels', 'balance', 'get-balance', 'peers', 'list-peers'];
+  if (rpcOnlyCommands.includes(command)) {
+    try {
+      const handled = await handleRpcCommand(command, commandArgs, config);
+      if (!handled) {
+        console.error(`Unknown command: ${command}`);
+        printHelp();
+        process.exit(1);
+      }
+    } catch (error) {
+      console.error('Error:', error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Commands that need full FiberPay initialization (for operations that modify state)
   const fiber = createFiberPay({
     binaryPath: config.binaryPath,
     dataDir: config.dataDir,
@@ -376,9 +660,9 @@ async function main(): Promise<void> {
     keyPassword: config.keyPassword,
   });
 
-  // Commands that need initialization
-  const needsInit = ['balance', 'pay', 'invoice', 'create-invoice', 'channels', 'list-channels',
-    'open-channel', 'close-channel', 'info', 'node-info', 'allowance', 'spending-allowance', 'audit', 'audit-log'];
+  // These commands need initialization (for backwards compatibility with init command)
+  const needsInit = ['init', 'initialize', 'pay', 'invoice', 'create-invoice',
+    'open-channel', 'close-channel', 'allowance', 'spending-allowance', 'audit', 'audit-log'];
 
   if (needsInit.includes(command)) {
     const initResult = await fiber.initialize({

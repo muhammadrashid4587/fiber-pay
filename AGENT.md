@@ -106,8 +106,23 @@ async newMethod(params): Promise<AgentResult<T>> {
 ### Adding a CLI Command
 
 Edit `src/cli.ts`:
-1. Add case to the switch statement in `main()`
-2. Add to `printHelp()`
+
+1. **For read-only commands** (info, balance, etc.):
+   - Add to `handleRpcCommand()` function
+   - Add command name to `rpcOnlyCommands` array in `main()`
+   - These commands connect to a running node via RPC
+
+2. **For write operations** (pay, invoice, etc.):
+   - Add to `handleCommand()` function  
+   - Add command name to `needsInit` array in `main()`
+   - These commands auto-start the node, execute, then stop
+
+3. **For standalone commands** (download, binary-info, etc.):
+   - Add to `handleStandaloneCommand()` function
+   - Add command name to `standaloneCommands` array in `main()`
+   - These don't need a running node
+
+4. Update `printHelp()` with the new command
 
 ### Modifying Security Policy
 
@@ -184,6 +199,7 @@ if (!check.allowed) {
 | `FIBER_BINARY_PATH` | Override fnn binary location |
 | `FIBER_DATA_DIR` | Data directory |
 | `FIBER_NETWORK` | `testnet` or `mainnet` |
+| `FIBER_RPC_URL` | Fiber node RPC URL (default: `http://127.0.0.1:8227`) |
 | `FIBER_KEY_PASSWORD` | Key encryption password (passed to fiber node as `FIBER_SECRET_KEY_PASSWORD`) |
 
 ## Gotchas & Warnings
@@ -223,10 +239,20 @@ if ((this.state as ProcessState) === 'running') { ... }
 ## Useful Commands
 
 ```bash
-# Download binary manually
-./dist/cli.js download
+# Start node (runs in foreground)
+./dist/cli.js start
 
-# Check binary status
+# In another terminal:
+./dist/cli.js status      # Check if running
+./dist/cli.js info        # Node info
+./dist/cli.js balance     # Balance
+./dist/cli.js channels    # List channels
+
+# Stop node
+./dist/cli.js stop
+
+# Binary management
+./dist/cli.js download
 ./dist/cli.js binary-info
 
 # Test fnn directly

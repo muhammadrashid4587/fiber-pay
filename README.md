@@ -150,34 +150,80 @@ await fiber.shutdown();
 
 ## CLI Usage
 
+### Node Lifecycle
+
+The recommended way to use the CLI is to start the node once and run commands against it:
+
+```bash
+# Terminal 1: Start node (runs in foreground)
+fiber-pay start
+
+# Terminal 2: Run commands against the running node
+fiber-pay status    # Check if node is running
+fiber-pay info      # Get node information
+fiber-pay balance   # Get current balance
+fiber-pay channels  # List channels
+fiber-pay peers     # List connected peers
+
+# Stop the node
+fiber-pay stop
+```
+
+### Binary Management
+
 ```bash
 # Download binary (auto-detects platform)
 fiber-pay download
+fiber-pay download --version v0.6.0  # Specific version
+fiber-pay download --force           # Re-download
 
-# Initialize and start node
-fiber-pay init
+# Check binary status
+fiber-pay binary-info
+```
 
-# Check balance
-fiber-pay balance
+### Payments & Invoices
 
+```bash
 # Pay an invoice
 fiber-pay pay fibt1qp...
+fiber-pay pay --invoice <invoice>
+fiber-pay pay --to <nodeId> --amount 10
 
 # Create invoice for 10 CKB
 fiber-pay invoice 10 --description "For services"
+```
 
-# List channels
-fiber-pay channels
+### Channel Management
 
-# Open a channel
+```bash
+# Open a channel with 100 CKB
 fiber-pay open-channel --peer /ip4/x.x.x.x/tcp/8228/p2p/QmXXX --funding 100
 
+# Close a channel
+fiber-pay close-channel <channelId>
+fiber-pay close-channel <channelId> --force
+```
+
+### Other Commands
+
+```bash
 # View audit log
 fiber-pay audit --limit 20
+
+# Get spending allowance
+fiber-pay allowance
 
 # Get help
 fiber-pay help
 ```
+
+### Command Categories
+
+| Category | Commands | Behavior |
+|----------|----------|----------|
+| **Node Management** | `start`, `stop`, `status` | Control node lifecycle |
+| **Read-only Queries** | `info`, `balance`, `channels`, `peers` | Connect to running node via RPC |
+| **Write Operations** | `pay`, `invoice`, `open-channel`, `close-channel` | Auto-start node, execute, then stop |
 
 ## MCP Integration
 
@@ -268,7 +314,7 @@ const log = fiber.getAuditLog({ limit: 100 });
 | `FIBER_DATA_DIR` | Data directory | `~/.fiber-pay` |
 | `FIBER_NETWORK` | Network (testnet/mainnet) | `testnet` |
 | `FIBER_KEY_PASSWORD` | Key encryption password (passed to node as `FIBER_SECRET_KEY_PASSWORD`) | `fiber-pay-default-key` |
-| `FIBER_RPC_URL` | CKB RPC URL | `https://testnet.ckbapp.dev/` |
+| `FIBER_RPC_URL` | Fiber node RPC URL | `http://127.0.0.1:8227` |
 
 ### Programmatic Configuration
 
