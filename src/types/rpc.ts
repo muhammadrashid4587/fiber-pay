@@ -127,6 +127,7 @@ export interface NodeInfo {
   chain_hash: HexString;
   open_channel_auto_accept_min_ckb_funding_amount: HexString;
   auto_accept_channel_ckb_funding_amount: HexString;
+  default_funding_lock_script: Script;
   tlc_expiry_delta: HexString;
   tlc_min_value: HexString;
   tlc_fee_proportional_millionths: HexString;
