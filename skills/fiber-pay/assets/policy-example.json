@@ -1,0 +1,57 @@
+{
+  "enabled": true,
+  "spending": {
+    "maxPerTransaction": "0x174876e800",
+    "maxPerWindow": "0xe8d4a51000",
+    "windowSeconds": 3600,
+    "currentSpent": "0x0",
+    "windowStart": 0
+  },
+  "rateLimit": {
+    "maxTransactions": 10,
+    "windowSeconds": 60,
+    "cooldownSeconds": 1,
+    "currentCount": 0,
+    "windowStart": 0,
+    "lastTransaction": 0
+  },
+  "channels": {
+    "allowOpen": true,
+    "allowClose": true,
+    "allowForceClose": false,
+    "maxChannels": 10,
+    "minFundingAmount": "0x2386f26fc10000",
+    "maxFundingAmount": "0x152d02c7e14af6800000"
+  },
+  "recipients": {
+    "allowlist": [],
+    "blocklist": [],
+    "allowUnknown": true
+  },
+  "confirmationThreshold": "0x6124fee993bc0000",
+  "auditLogging": true,
+  "_comments": {
+    "spending.maxPerTransaction": "100 CKB per transaction (in hex)",
+    "spending.maxPerWindow": "1,000 CKB per hour (in hex)",
+    "spending.windowSeconds": "Time window in seconds (3600 = 1 hour)",
+    "rateLimit.maxTransactions": "10 transactions per window",
+    "rateLimit.windowSeconds": "60 seconds (1 minute)",
+    "rateLimit.cooldownSeconds": "Minimum 1 second between transactions",
+    "channels.maxChannels": "Maximum 10 channels",
+    "channels.minFundingAmount": "10 CKB minimum (in hex)",
+    "channels.maxFundingAmount": "100,000 CKB maximum (in hex)",
+    "confirmationThreshold": "1,000 CKB - amounts above this require confirmation",
+    "recipients.allowUnknown": "true = allow any recipient, false = only allowlist",
+    "auditLogging": "Enable audit logging for all operations",
+    "conversion": {
+      "1 CKB": "100,000,000 Shannon",
+      "hex_examples": {
+        "10 CKB": "0x2386f26fc10000",
+        "100 CKB": "0x174876e800",
+        "1,000 CKB": "0xe8d4a51000",
+        "10,000 CKB": "0x9184e72a000",
+        "100,000 CKB": "0x152d02c7e14af6800000"
+      }
+    }
+  }
+}

@@ -1,0 +1,158 @@
+# Fiber Network Node Configuration (Testnet)
+#
+# This is a sample configuration for running a Fiber Network node on CKB testnet.
+# Copy this file and modify as needed for your setup.
+
+fiber:
+  # P2P listening address
+  listening_addr: /ip4/0.0.0.0/tcp/8228
+  
+  # Bootnode addresses to connect to on startup
+  # These are the official CKB testnet bootnodes
+  bootnode_addrs:
+    - "/ip4/54.179.226.154/tcp/8228/p2p/Qmes1EBD4yNo9Ywkfe6eRw9tG1nVNGLDmMud1xJMsoYFKy"
+    - "/ip4/54.179.226.154/tcp/18228/p2p/QmdyQWjPtbK4NWWsvy8s69NGJaQULwgeQDT5ZpNDrTNaeV"
+  
+  # Announce your listening address to peers
+  announce_listening_addr: true
+  
+  # Network to connect to (testnet or mainnet)
+  chain: testnet
+  
+  # Script configurations for Fiber Network
+  # These are the official testnet contract addresses
+  scripts:
+    # Funding Lock script (used for channel funding)
+    - name: FundingLock
+      script:
+        code_hash: 0x6c67887fe201ee0c7853f1682c0b77c0e6214044c156c7558269390a8afa6d7c
+        hash_type: type
+        args: 0x
+      cell_deps:
+        - type_id:
+            code_hash: 0x00000000000000000000000000000000000000000000000000545950455f4944
+            hash_type: type
+            args: 0x3cb7c0304fe53f75bb5727e2484d0beae4bd99d979813c6fc97c3cca569f10f6
+        - cell_dep:
+            out_point:
+              tx_hash: 0x5a5288769cecde6451cb5d301416c297a6da43dc3ac2f3253542b4082478b19b
+              index: 0x0
+            dep_type: code
+    
+    # Commitment Lock script (used for channel state)
+    - name: CommitmentLock
+      script:
+        code_hash: 0x740dee83f87c6f309824d8fd3fbdd3c8380ee6fc9acc90b1a748438afcdf81d8
+        hash_type: type
+        args: 0x
+      cell_deps:
+        - type_id:
+            code_hash: 0x00000000000000000000000000000000000000000000000000545950455f4944
+            hash_type: type
+            args: 0xf7e458887495cf70dd30d1543cad47dc1dfe9d874177bf19291e4db478d5751b
+        - cell_dep:
+            out_point:
+              tx_hash: 0x5a5288769cecde6451cb5d301416c297a6da43dc3ac2f3253542b4082478b19b
+              index: 0x0
+            dep_type: code
+
+# RPC server configuration
+rpc:
+  # JSON-RPC listening address
+  # Use 127.0.0.1 for local-only access, or 0.0.0.0 to allow external connections
+  listening_addr: "127.0.0.1:8227"
+
+# CKB node connection
+ckb:
+  # Public CKB testnet RPC endpoint
+  rpc_url: "https://testnet.ckbapp.dev/"
+  
+  # Or use your own CKB node:
+  # rpc_url: "http://127.0.0.1:8114"
+
+# Services to enable
+services:
+  - fiber   # Fiber Network service (P2P, channels, payments)
+  - rpc     # JSON-RPC server
+  - ckb     # CKB blockchain connection
+
+# ==============================================================================
+# Optional: Advanced Configuration
+# ==============================================================================
+
+# Uncomment and modify these sections as needed:
+
+# # Database configuration
+# store:
+#   path: ~/.fiber-pay/fiber/store
+# 
+# # Logging configuration
+# log:
+#   filter: info
+#   file: ~/.fiber-pay/fiber/fiber.log
+#   file_size_mb: 100
+#   file_count: 10
+# 
+# # Channel configuration
+# channel:
+#   # Default channel capacity
+#   default_capacity_ckb: 100
+#   
+#   # Minimum channel capacity
+#   min_capacity_ckb: 10
+#   
+#   # Maximum number of channels
+#   max_channels: 100
+#   
+#   # Force close timeout blocks
+#   force_close_timeout: 40
+# 
+# # Payment configuration  
+# payment:
+#   # Default payment timeout (seconds)
+#   timeout: 60
+#   
+#   # Maximum payment amount
+#   max_amount_ckb: 10000
+#   
+#   # Default fee rate (shannons per byte)
+#   fee_rate: 1000
+
+# ==============================================================================
+# Mainnet Configuration
+# ==============================================================================
+
+# To use mainnet instead of testnet, modify:
+#
+# fiber:
+#   chain: mainnet
+#   bootnode_addrs:
+#     - "/ip4/MAINNET_BOOTNODE_IP/tcp/8228/p2p/MAINNET_BOOTNODE_ID"
+#
+# ckb:
+#   rpc_url: "https://mainnet.ckbapp.dev/"
+#
+# And update script addresses to mainnet contracts.
+# See: https://github.com/nervosnetwork/fiber for mainnet configuration
+
+# ==============================================================================
+# Security Notes
+# ==============================================================================
+#
+# 1. RPC Access:
+#    - Keep rpc.listening_addr as 127.0.0.1 unless you need external access
+#    - If allowing external access, use firewall rules to restrict IPs
+#    - Consider adding authentication (future Fiber feature)
+#
+# 2. P2P Port:
+#    - Ensure port 8228 is open in your firewall for incoming connections
+#    - Use different port if 8228 is already in use
+#
+# 3. Data Directory:
+#    - Protect your data directory with proper file permissions (700)
+#    - Regular backups of ~/.fiber-pay/keys/
+#    - Never share your private keys
+#
+# 4. CKB RPC:
+#    - Use HTTPS endpoints for remote CKB nodes
+#    - Run your own CKB node for better privacy and reliability

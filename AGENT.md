@@ -43,6 +43,17 @@ src/
 │   └── index.ts
 ├── cli.ts              # Command-line interface
 └── index.ts            # Public exports
+
+skills/
+└── fiber-pay/          # Agent Skills integration (agentskills.io)
+    ├── SKILL.md        # Main skill definition for AI agents
+    ├── references/     # Detailed documentation
+    │   ├── API.md      # Complete API reference (11 MCP tools)
+    │   ├── SECURITY.md # Policy engine documentation
+    │   └── TROUBLESHOOTING.md
+    └── assets/         # Configuration templates
+        ├── policy-example.json
+        └── config-example.yml
 ```
 
 ## Key Files to Understand
@@ -247,6 +258,45 @@ Testnet bootnode: `/ip4/54.179.226.154/tcp/8228/p2p/Qmes1EBD4yNo9Ywkfe6eRw9tG1nV
 - UDT (User Defined Token) support
 - Cross-chain via CCH
 - Multi-sig
+
+## Agent Skills Integration
+
+The project includes an [Agent Skills](https://agentskills.io) integration in `skills/fiber-pay/`.
+
+### What is Agent Skills?
+
+Agent Skills is an open standard for packaging knowledge and workflows that AI agents can discover and use on demand. It uses **progressive disclosure** for context efficiency.
+
+### Skill Structure
+
+```
+skills/fiber-pay/
+├── SKILL.md              # Main skill (agents read this first)
+├── references/
+│   ├── API.md            # Detailed API docs (loaded on demand)
+│   ├── SECURITY.md       # Security policy details
+│   └── TROUBLESHOOTING.md
+└── assets/
+    ├── policy-example.json
+    └── config-example.yml
+```
+
+### Updating the Skill
+
+When making changes to fiber-pay:
+
+1. **New CLI commands**: Update `skills/fiber-pay/SKILL.md` with usage examples
+2. **New MCP tools**: Update `skills/fiber-pay/references/API.md` with tool schema
+3. **New error codes**: Update `skills/fiber-pay/references/TROUBLESHOOTING.md`
+4. **Policy changes**: Update `skills/fiber-pay/references/SECURITY.md`
+
+### Skill Validation Checklist
+
+- [ ] `SKILL.md` has valid YAML frontmatter with `name` and `description`
+- [ ] `name` field matches directory name (`fiber-pay`)
+- [ ] `description` contains keywords for agent task matching
+- [ ] SKILL.md is under ~500 lines (efficient context loading)
+- [ ] All CLI examples are accurate and tested
 
 ## Local CLI Testing
 

@@ -474,6 +474,67 @@ pnpm typecheck
 pnpm test policy-engine
 ```
 
+## Agent Skills Integration
+
+fiber-pay includes an [Agent Skills](https://agentskills.io) integration that enables AI agents to easily discover and use Lightning Network payment capabilities.
+
+### What are Agent Skills?
+
+Agent Skills is an open standard for packaging specialized knowledge and workflows that AI agents can discover and use on demand. The skill uses **progressive disclosure** to load context efficiently:
+1. Agents first see a brief description to determine relevance
+2. When activated, they load the full skill guide with examples and commands
+3. Detailed references are loaded only when needed
+
+### Using the fiber-pay Skill
+
+The skill is located in [`skills/fiber-pay/`](skills/fiber-pay/):
+
+```bash
+# Agents can read the skill definition
+cat skills/fiber-pay/SKILL.md
+
+# Or use the CLI directly
+fiber-pay --help
+```
+
+#### Skill Contents
+
+- **[SKILL.md](skills/fiber-pay/SKILL.md)** - Main skill guide with setup instructions, core operations, and common workflows
+- **[references/API.md](skills/fiber-pay/references/API.md)** - Complete API reference with all 11 MCP tools
+- **[references/SECURITY.md](skills/fiber-pay/references/SECURITY.md)** - Security policy engine documentation
+- **[references/TROUBLESHOOTING.md](skills/fiber-pay/references/TROUBLESHOOTING.md)** - Common errors and solutions
+- **[assets/policy-example.json](skills/fiber-pay/assets/policy-example.json)** - Sample security policy configuration
+- **[assets/config-example.yml](skills/fiber-pay/assets/config-example.yml)** - Node configuration template
+
+#### Quick Start for Agents
+
+1. **Installation**: Clone repo, run `pnpm install && pnpm build && pnpm link --global`
+2. **Binary Setup**: `fiber-pay download`
+3. **Start Node**: `fiber-pay start`
+4. **Check Balance**: `fiber-pay balance`
+5. **Send Payment**: `fiber-pay pay <invoice>`
+6. **Create Invoice**: `fiber-pay invoice create --amount 10 --description "Payment"`
+
+All commands return JSON in `AgentResult<T>` format for easy parsing.
+
+#### Supported Agent Platforms
+
+The fiber-pay skill is compatible with:
+- Claude Desktop (filesystem-based agents)
+- Goose, Roo Code, OpenCode (via bash commands)
+- Any agent supporting the Agent Skills standard
+
+See [skills/fiber-pay/SKILL.md](skills/fiber-pay/SKILL.md) for complete documentation.
+
+#### Validating the Skill
+
+The skill follows the [Agent Skills specification](https://agentskills.io). You can manually verify:
+
+1. **Frontmatter**: SKILL.md has required `name` and `description` fields
+2. **Name format**: lowercase, alphanumeric with hyphens, matches directory name
+3. **Description**: Contains keywords for agent task matching
+4. **File size**: SKILL.md is under 5000 tokens for efficient context loading
+
 ## Project Roadmap
 
 ### Phase 1: Base Tool ✅ (Current)
@@ -486,12 +547,12 @@ pnpm test policy-engine
 - ✅ CLI tool
 - ✅ MCP tool definitions
 - ✅ Testnet verification (channel open/close flow)
+- ✅ Agent Skills integration
 
 ### Phase 2: Agent Skills
 - [ ] MCP server implementation
-- [ ] Claude Desktop integration
-- [ ] OpenClaw skill package
-- [ ] Multi-agent coordination
+- [ ] Claude Desktop integration example
+- [ ] Multi-agent coordination patterns
 - [ ] Payment request/approval workflows
 
 ### Phase 3: Advanced Features
