@@ -6,9 +6,10 @@
 import { parseArgs } from 'util';
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { FiberPay, createFiberPay, MCP_TOOLS, downloadFiberBinary, getFiberBinaryInfo, FiberRpcClient } from './index.js';
+import { FiberPay, createFiberPay, MCP_TOOLS, downloadFiberBinary, getFiberBinaryInfo, FiberRpcClient, ckbToShannons, shannonsToCkb, randomBytes32, toHex } from './index.js';
 import type { McpToolName } from './agent/mcp-tools.js';
 import type { DownloadProgress } from './binary/index.js';
+import type { HexString } from './types/index.js';
 
 // =============================================================================
 // CLI Configuration
@@ -389,52 +390,48 @@ NODE MANAGEMENT:
   stop                    Stop the running Fiber node
   status                  Check if node is running
 
-COMMANDS (require running node):
+COMMANDS (require running node - connect via RPC):
   info                    Get node information
   balance                 Get current balance information
   channels                List all payment channels
   peers                   List connected peers
-
-COMMANDS (auto-start node, then stop):
-  init                    Initialize the node and connect (auto-downloads binary)
-  pay                     Pay an invoice or send directly
   invoice                 Create an invoice to receive payment
+  pay                     Pay an invoice or send directly
   open-channel            Open a new channel
   close-channel           Close a channel
-  allowance               Get remaining spending allowance
-  audit                   View audit log
 
 BINARY MANAGEMENT:
   download                Download the Fiber binary for your platform
   binary-info             Check if binary is installed
 
 OTHER:
+  init                    One-off init test (starts node, gets info, stops)
   tools                   Output MCP tool definitions
   help                    Show this help
 
-NODE LIFECYCLE:
-  # Start node in foreground (recommended)
+WORKFLOW:
+  # 1. Download the Fiber binary (if not already installed)
+  fiber-pay download
+
+  # 2. Start the node (runs in foreground, keep this terminal open)
   fiber-pay start
 
-  # In another terminal, run commands:
+  # 3. In another terminal, run commands:
   fiber-pay status
   fiber-pay info
   fiber-pay balance
   fiber-pay channels
+  fiber-pay invoice --amount 10 --description "Test"
+  fiber-pay pay <invoice>
+  fiber-pay open-channel --peer <multiaddr> --funding <CKB>
 
-  # Stop the node
+  # 4. Stop the node (Ctrl+C in the start terminal, or:)
   fiber-pay stop
-
-BINARY MANAGEMENT:
-  fiber-pay download                    Download latest binary
-  fiber-pay download --version v0.2.0   Download specific version
-  fiber-pay download --force            Re-download even if exists
-  fiber-pay binary-info                 Check binary installation status
 
 PAYMENT:
   fiber-pay pay <invoice>
   fiber-pay pay --invoice <invoice>
-  fiber-pay pay --to <nodeId> --amount <CKB>
+  fiber-pay pay --to <pubkey> --amount <CKB>   # keysend
 
 INVOICE:
   fiber-pay invoice <amount>
@@ -442,6 +439,7 @@ INVOICE:
 
 CHANNELS:
   fiber-pay open-channel --peer <multiaddr> --funding <CKB>
+  fiber-pay open-channel --peer <peer_id> --funding <CKB>
   fiber-pay close-channel <channelId>
   fiber-pay close-channel <channelId> --force
 
@@ -451,19 +449,6 @@ ENVIRONMENT:
   FIBER_NETWORK           Network: testnet or mainnet (default: testnet)
   FIBER_RPC_URL           RPC URL (default: http://127.0.0.1:8227)
   FIBER_KEY_PASSWORD      Password for key encryption
-
-EXAMPLES:
-  # Download the Fiber binary
-  fiber-pay download
-
-  # Start node and keep it running
-  fiber-pay start
-
-  # (In another terminal) Check balance
-  fiber-pay balance
-
-  # Stop the node
-  fiber-pay stop
 `);
 }
 
@@ -606,6 +591,191 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
       console.log(JSON.stringify({
         success: true,
         data: peers
+      }, null, 2));
+      return true;
+    }
+
+    case 'invoice':
+    case 'create-invoice': {
+      let amountCkb = 0;
+      let description: string | undefined;
+      let expiryMinutes: number | undefined;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--amount' && args[i + 1]) {
+          amountCkb = parseFloat(args[++i]);
+        } else if (args[i] === '--description' && args[i + 1]) {
+          description = args[++i];
+        } else if (args[i] === '--expiry' && args[i + 1]) {
+          expiryMinutes = parseInt(args[++i]);
+        } else if (!args[i].startsWith('--') && !amountCkb) {
+          amountCkb = parseFloat(args[i]);
+        }
+      }
+
+      if (!amountCkb) {
+        console.error('Error: Amount required. Usage: invoice --amount <CKB>');
+        process.exit(1);
+      }
+
+      const amountHex = ckbToShannons(amountCkb);
+      const expirySeconds = (expiryMinutes || 60) * 60;
+      const preimage = randomBytes32();
+      const currency = config.network === 'mainnet' ? 'Fibb' : 'Fibt';
+
+      const result = await rpc.newInvoice({
+        amount: amountHex,
+        currency,
+        description,
+        expiry: toHex(expirySeconds),
+        payment_preimage: preimage,
+      });
+
+      const expiresAt = new Date(Date.now() + expirySeconds * 1000).toISOString();
+
+      console.log(JSON.stringify({
+        success: true,
+        data: {
+          invoice: result.invoice_address,
+          paymentHash: result.invoice.payment_hash,
+          amountCkb,
+          expiresAt,
+          status: 'open',
+        }
+      }, null, 2));
+      return true;
+    }
+
+    case 'pay': {
+      let invoice: string | undefined;
+      let recipientNodeId: string | undefined;
+      let amountCkb: number | undefined;
+      let maxFeeCkb: number | undefined;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--invoice' && args[i + 1]) {
+          invoice = args[++i];
+        } else if (args[i] === '--to' && args[i + 1]) {
+          recipientNodeId = args[++i];
+        } else if (args[i] === '--amount' && args[i + 1]) {
+          amountCkb = parseFloat(args[++i]);
+        } else if (args[i] === '--max-fee' && args[i + 1]) {
+          maxFeeCkb = parseFloat(args[++i]);
+        } else if (!args[i].startsWith('--')) {
+          // Positional argument is assumed to be invoice
+          invoice = args[i];
+        }
+      }
+
+      if (!invoice && !recipientNodeId) {
+        console.error('Error: Either invoice or --to <nodeId> required');
+        process.exit(1);
+      }
+
+      if (recipientNodeId && !amountCkb) {
+        console.error('Error: --amount required when using --to');
+        process.exit(1);
+      }
+
+      const result = await rpc.sendPayment({
+        invoice,
+        target_pubkey: recipientNodeId as HexString | undefined,
+        amount: amountCkb ? ckbToShannons(amountCkb) : undefined,
+        keysend: recipientNodeId ? true : undefined,
+        max_fee_amount: maxFeeCkb ? ckbToShannons(maxFeeCkb) : undefined,
+      });
+
+      console.log(JSON.stringify({
+        success: result.status === 'Success',
+        data: {
+          paymentHash: result.payment_hash,
+          status: result.status === 'Success' ? 'success' : result.status === 'Failed' ? 'failed' : 'pending',
+          feeCkb: shannonsToCkb(result.fee),
+          failureReason: result.failed_error,
+        }
+      }, null, 2));
+      return true;
+    }
+
+    case 'open-channel': {
+      let peer = '';
+      let fundingCkb = 0;
+      let isPublic = true;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--peer' && args[i + 1]) {
+          peer = args[++i];
+        } else if (args[i] === '--funding' && args[i + 1]) {
+          fundingCkb = parseFloat(args[++i]);
+        } else if (args[i] === '--private') {
+          isPublic = false;
+        }
+      }
+
+      if (!peer || !fundingCkb) {
+        console.error('Error: Usage: open-channel --peer <peer_id_or_multiaddr> --funding <CKB>');
+        process.exit(1);
+      }
+
+      // If peer contains '/', it's a multiaddr - connect first
+      let peerId = peer;
+      if (peer.includes('/')) {
+        await rpc.connectPeer({ address: peer });
+        // Extract peer ID from multiaddr
+        const peerIdMatch = peer.match(/\/p2p\/([^/]+)/);
+        if (peerIdMatch) {
+          peerId = peerIdMatch[1];
+        }
+      }
+
+      const result = await rpc.openChannel({
+        peer_id: peerId,
+        funding_amount: ckbToShannons(fundingCkb),
+        public: isPublic,
+      });
+
+      console.log(JSON.stringify({
+        success: true,
+        data: {
+          temporaryChannelId: result.temporary_channel_id,
+          peer: peerId,
+          fundingCkb,
+        }
+      }, null, 2));
+      return true;
+    }
+
+    case 'close-channel': {
+      let channelId = '';
+      let force = false;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--channel' && args[i + 1]) {
+          channelId = args[++i];
+        } else if (args[i] === '--force') {
+          force = true;
+        } else if (!args[i].startsWith('--')) {
+          channelId = args[i];
+        }
+      }
+
+      if (!channelId) {
+        console.error('Error: Channel ID required');
+        process.exit(1);
+      }
+
+      await rpc.shutdownChannel({
+        channel_id: channelId as HexString,
+        force,
+      });
+
+      console.log(JSON.stringify({
+        success: true,
+        data: {
+          channelId,
+          force,
+          message: force ? 'Channel force close initiated' : 'Channel close initiated',
+        }
       }, null, 2));
       return true;
     }
@@ -768,7 +938,16 @@ async function main(): Promise<void> {
   }
 
   // RPC-only commands (connect to running node)
-  const rpcOnlyCommands = ['info', 'node-info', 'channels', 'list-channels', 'balance', 'get-balance', 'peers', 'list-peers'];
+  const rpcOnlyCommands = [
+    'info', 'node-info', 
+    'channels', 'list-channels', 
+    'balance', 'get-balance', 
+    'peers', 'list-peers',
+    'invoice', 'create-invoice',
+    'pay',
+    'open-channel',
+    'close-channel',
+  ];
   if (rpcOnlyCommands.includes(command)) {
     try {
       const handled = await handleRpcCommand(command, commandArgs, config);
@@ -784,7 +963,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Commands that need full FiberPay initialization (for operations that modify state)
+  // Commands that need full FiberPay initialization (legacy - for init command only)
   const fiber = createFiberPay({
     binaryPath: config.binaryPath,
     dataDir: config.dataDir,
@@ -793,9 +972,8 @@ async function main(): Promise<void> {
     keyPassword: config.keyPassword,
   });
 
-  // These commands need initialization (for backwards compatibility with init command)
-  const needsInit = ['init', 'initialize', 'pay', 'invoice', 'create-invoice',
-    'open-channel', 'close-channel', 'allowance', 'spending-allowance', 'audit', 'audit-log'];
+  // These commands need initialization (init only - for one-off testing)
+  const needsInit = ['init', 'initialize'];
 
   if (needsInit.includes(command)) {
     const initResult = await fiber.initialize({

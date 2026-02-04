@@ -107,22 +107,23 @@ async newMethod(params): Promise<AgentResult<T>> {
 
 Edit `src/cli.ts`:
 
-1. **For read-only commands** (info, balance, etc.):
+1. **For RPC commands** (info, balance, pay, invoice, channels, etc.):
    - Add to `handleRpcCommand()` function
    - Add command name to `rpcOnlyCommands` array in `main()`
    - These commands connect to a running node via RPC
 
-2. **For write operations** (pay, invoice, etc.):
-   - Add to `handleCommand()` function  
-   - Add command name to `needsInit` array in `main()`
-   - These commands auto-start the node, execute, then stop
-
-3. **For standalone commands** (download, binary-info, etc.):
+2. **For standalone commands** (download, binary-info, etc.):
    - Add to `handleStandaloneCommand()` function
    - Add command name to `standaloneCommands` array in `main()`
    - These don't need a running node
 
+3. **For node management commands** (start, stop, status):
+   - Handle directly in `main()` function
+
 4. Update `printHelp()` with the new command
+
+**Note:** Most commands should go into `handleRpcCommand()` since the node
+should be running separately via `fiber-pay start`.
 
 ### Modifying Security Policy
 
