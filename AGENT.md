@@ -248,6 +248,48 @@ Testnet bootnode: `/ip4/54.179.226.154/tcp/8228/p2p/Qmes1EBD4yNo9Ywkfe6eRw9tG1nV
 - Cross-chain via CCH
 - Multi-sig
 
+## Local CLI Testing
+
+To test the CLI locally without publishing to npm:
+
+### Method 1: Pack and Install (recommended for testing releases)
+
+```bash
+# Build and pack the project
+pnpm build && pnpm pack
+
+# Install globally from tarball (use absolute path)
+pnpm install -g /absolute/path/to/fiber-pay/fiber-pay-0.1.0.tgz
+
+# Now use CLI globally
+fiber-pay --help
+fiber-pay download
+fiber-pay start
+```
+
+### Method 2: pnpm link (recommended for active development)
+
+```bash
+# Create global symlink to local project
+pnpm link --global
+
+# CLI now uses local dist/ directly
+# Changes reflected immediately after `pnpm build`
+fiber-pay --help
+
+# Unlink when done
+pnpm unlink --global
+```
+
+### Method 3: Run directly from dist/
+
+```bash
+# Run CLI directly without global install
+node dist/cli.js --help
+node dist/cli.js download
+node dist/cli.js start
+```
+
 ## Useful Commands
 
 ```bash

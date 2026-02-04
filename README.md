@@ -403,6 +403,77 @@ This SDK has been tested on CKB testnet with real funds:
 /ip4/54.179.226.154/tcp/8228/p2p/Qmes1EBD4yNo9Ywkfe6eRw9tG1nVNGLDmMud1xJMsoYFKy
 ```
 
+## Development
+
+### Prerequisites
+
+- Node.js >= 18
+- pnpm (recommended) or npm
+
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/nervosnetwork/fiber-pay.git
+cd fiber-pay
+
+# Install dependencies
+pnpm install
+
+# Build the project
+pnpm build
+
+# Run tests
+pnpm test
+```
+
+### Local CLI Testing
+
+To test the CLI locally without publishing to npm, you can pack and install the package globally:
+
+```bash
+# Build and pack the project
+pnpm build && pnpm pack
+
+# Install globally from the tarball (use absolute path)
+pnpm install -g /path/to/fiber-pay/fiber-pay-0.1.0.tgz
+
+# Now you can use the CLI globally
+fiber-pay --help
+fiber-pay download
+fiber-pay start
+```
+
+**Alternative: Using `pnpm link`** (recommended for active development)
+
+```bash
+# Create a global symlink to your local project
+pnpm link --global
+
+# Now fiber-pay CLI uses your local dist/ directly
+# Changes are reflected immediately after running `pnpm build`
+fiber-pay --help
+```
+
+To unlink when done:
+
+```bash
+pnpm unlink --global
+```
+
+### Development Workflow
+
+```bash
+# Watch mode - rebuilds on file changes
+pnpm dev
+
+# Type checking
+pnpm typecheck
+
+# Run specific test file
+pnpm test policy-engine
+```
+
 ## Project Roadmap
 
 ### Phase 1: Base Tool ✅ (Current)
