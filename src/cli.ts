@@ -562,11 +562,15 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
       const channels = await rpc.listChannels({});
       let totalLocal = BigInt(0);
       let totalRemote = BigInt(0);
+      let activeChannelCount = 0;
       
       for (const ch of channels.channels) {
-        if (ch.state?.state_name === 'ChannelReady') {
+        // Check for CHANNEL_READY state (case-insensitive)
+        const stateName = ch.state?.state_name?.toUpperCase() || '';
+        if (stateName === 'CHANNEL_READY' || stateName === 'CHANNELREADY') {
           totalLocal += BigInt(ch.local_balance);
           totalRemote += BigInt(ch.remote_balance);
+          activeChannelCount++;
         }
       }
       
@@ -580,6 +584,7 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
           availableToSend: localCkb,
           availableToReceive: remoteCkb,
           channelCount: channels.channels.length,
+          activeChannelCount,
         }
       }, null, 2));
       return true;
