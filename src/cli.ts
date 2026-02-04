@@ -653,7 +653,8 @@ async function main(): Promise<void> {
     const fiber = createFiberPay({
       binaryPath: config.binaryPath,
       dataDir: config.dataDir,
-      network: config.network,
+      configFilePath: config.network === 'testnet' ? join(process.cwd(), 'testnet-config.yml') : undefined,
+      chain: config.network,
       keyPassword: config.keyPassword,
     });
 
@@ -787,7 +788,8 @@ async function main(): Promise<void> {
   const fiber = createFiberPay({
     binaryPath: config.binaryPath,
     dataDir: config.dataDir,
-    network: config.network,
+    configFilePath: config.network === 'testnet' ? join(process.cwd(), 'testnet-config.yml') : undefined,
+    chain: config.network,
     keyPassword: config.keyPassword,
   });
 

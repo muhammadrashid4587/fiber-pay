@@ -120,6 +120,8 @@ export interface FiberPayConfig {
   binaryPath?: string;
   /** Base directory for all data */
   dataDir: string;
+  /** Path to the config file (optional - will use built-in testnet config if not provided) */
+  configFilePath?: string;
   /** Security policy */
   policy?: SecurityPolicy;
   /** Key encryption password (recommended: set via FIBER_KEY_PASSWORD env var) */
@@ -261,6 +263,7 @@ export class FiberPay {
       this.process = new ProcessManager({
         binaryPath,
         dataDir: this.config.dataDir,
+        configFilePath: this.config.configFilePath,
         chain: this.config.chain,
         ckbRpcUrl: this.config.ckbRpcUrl,
         keyPassword: this.config.keyPassword,
@@ -814,8 +817,12 @@ export function createFiberPay(options?: {
   binaryPath?: string;
   /** Base directory for data */
   dataDir?: string;
+  /** Path to the config file (optional - will use built-in testnet config if not provided) */
+  configFilePath?: string;
   /** Network: testnet or mainnet */
   network?: 'testnet' | 'mainnet';
+  /** Chain: testnet or mainnet (alias for network) */
+  chain?: 'testnet' | 'mainnet';
   /** Auto-download binary if not found (default: true) */
   autoDownload?: boolean;
   /** Key encryption password */
@@ -826,7 +833,8 @@ export function createFiberPay(options?: {
   return new FiberPay({
     binaryPath: options?.binaryPath,
     dataDir,
-    chain: options?.network || 'testnet',
+    configFilePath: options?.configFilePath,
+    chain: options?.chain || options?.network || 'testnet',
     autoDownload: options?.autoDownload ?? true,
     keyPassword: options?.keyPassword,
   });

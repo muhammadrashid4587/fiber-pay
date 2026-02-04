@@ -18,6 +18,8 @@ export interface FiberNodeConfig {
   binaryPath: string;
   /** Base directory for data storage */
   dataDir: string;
+  /** Path to the config file (optional - will use built-in testnet config if not provided) */
+  configFilePath?: string;
   /** Fiber P2P listening address */
   fiberListeningAddr?: string;
   /** Fiber node name */
@@ -104,8 +106,8 @@ export class ProcessManager extends EventEmitter {
       mkdirSync(this.config.dataDir, { recursive: true });
     }
 
-    // Generate config file
-    this.generateConfigFile();
+    // Copy or generate config file
+    await this.ensureConfigFile();
 
     // Build environment variables
     const env: Record<string, string> = {
@@ -281,7 +283,28 @@ export class ProcessManager extends EventEmitter {
   }
 
   /**
-   * Generate the config file
+   * Ensure the config file exists (copy from source or generate)
+   */
+  private async ensureConfigFile(): Promise<void> {
+    const configDir = dirname(this.configPath);
+    if (!existsSync(configDir)) {
+      mkdirSync(configDir, { recursive: true });
+    }
+
+    // If a config file path is provided, copy it
+    if (this.config.configFilePath && existsSync(this.config.configFilePath)) {
+      // Copy the config file to the data directory
+      const sourceContent = readFileSync(this.config.configFilePath, 'utf-8');
+      writeFileSync(this.configPath, sourceContent);
+      return;
+    }
+
+    // Otherwise, generate a basic config file
+    this.generateConfigFile();
+  }
+
+  /**
+   * Generate the config file (fallback when no source config provided)
    */
   private generateConfigFile(): void {
     const config: Record<string, unknown> = {
