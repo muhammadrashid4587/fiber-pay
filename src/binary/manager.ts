@@ -250,7 +250,11 @@ export class BinaryManager {
     const attempted: string[] = [];
 
     for (const candidate of candidates) {
-      onProgress({ phase: 'downloading', message: `Downloading ${candidate.name}...`, percent: 0 });
+      onProgress({
+        phase: 'downloading',
+        message: `Downloading ${candidate.name} from ${candidate.url}...`,
+        percent: 0,
+      });
       attempted.push(candidate.name);
       const candidateResponse = await fetch(candidate.url, {
         headers: { 'User-Agent': 'fiber-pay' },
@@ -264,8 +268,14 @@ export class BinaryManager {
     }
 
     if (!response || !selected) {
-      throw new Error(`Download failed. Tried: ${attempted.join(', ')}`);
+      const attemptedUrls = candidates.map(candidate => candidate.url).join(', ');
+      throw new Error(`Download failed. Tried: ${attempted.join(', ')}. URLs: ${attemptedUrls}`);
     }
+
+    onProgress({
+      phase: 'downloading',
+      message: `Using ${selected.name} (${selected.url})`,
+    });
 
     if (selected.usesRosetta) {
       onProgress({
