@@ -229,6 +229,17 @@ if ((this.state as ProcessState) === 'running') { ... }
 
 6. **ARM64 macOS**: No native binary yet, uses x86_64 via Rosetta 2
 
+## Testnet Verification
+
+The SDK has been verified on CKB testnet:
+- ✅ Binary download (fnn v0.6.1) 
+- ✅ Node startup with proper key encryption
+- ✅ Channel open with testnet bootnode (200 CKB)
+- ✅ Channel ready state with available balance
+- ✅ Channel close with funds returned on-chain
+
+Testnet bootnode: `/ip4/54.179.226.154/tcp/8228/p2p/Qmes1EBD4yNo9Ywkfe6eRw9tG1nVNGLDmMud1xJMsoYFKy`
+
 ## Roadmap Items (Not Yet Implemented)
 
 - MCP server (actual server, not just tool definitions)

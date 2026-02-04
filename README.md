@@ -222,8 +222,8 @@ fiber-pay help
 | Category | Commands | Behavior |
 |----------|----------|----------|
 | **Node Management** | `start`, `stop`, `status` | Control node lifecycle |
-| **Read-only Queries** | `info`, `balance`, `channels`, `peers` | Connect to running node via RPC |
-| **Write Operations** | `pay`, `invoice`, `open-channel`, `close-channel` | Auto-start node, execute, then stop |
+| **RPC Operations** | `info`, `balance`, `channels`, `peers`, `pay`, `invoice`, `open-channel`, `close-channel` | Connect to running node via RPC |
+| **Standalone** | `download`, `binary-info`, `allowance`, `audit` | No running node required |
 
 ## MCP Integration
 
@@ -388,6 +388,21 @@ fiber-pay/
 └── package.json
 ```
 
+## Testnet Verification
+
+This SDK has been tested on CKB testnet with real funds:
+
+- ✅ Binary download and node startup
+- ✅ Key generation and wallet funding (10,000 CKB)
+- ✅ Channel opening with testnet bootnode (200 CKB)
+- ✅ Channel reaching `CHANNEL_READY` state with ~101 CKB available balance
+- ✅ Channel closing and funds returned on-chain (~9,800 CKB after fees)
+
+**Testnet Bootnode:**
+```
+/ip4/54.179.226.154/tcp/8228/p2p/Qmes1EBD4yNo9Ywkfe6eRw9tG1nVNGLDmMud1xJMsoYFKy
+```
+
 ## Project Roadmap
 
 ### Phase 1: Base Tool ✅ (Current)
@@ -399,6 +414,7 @@ fiber-pay/
 - ✅ Key management with encryption
 - ✅ CLI tool
 - ✅ MCP tool definitions
+- ✅ Testnet verification (channel open/close flow)
 
 ### Phase 2: Agent Skills
 - [ ] MCP server implementation
