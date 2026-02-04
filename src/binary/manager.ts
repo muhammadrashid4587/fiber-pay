@@ -3,10 +3,8 @@
  * Handles downloading, installing, and managing the Fiber Network Node (fnn) binary
  */
 
-import { createWriteStream, existsSync, mkdirSync, chmodSync, unlinkSync, renameSync } from 'fs';
-import { join, dirname } from 'path';
-import { pipeline } from 'stream/promises';
-import { createGunzip } from 'zlib';
+import { existsSync, mkdirSync, chmodSync, unlinkSync, renameSync } from 'fs';
+import { join } from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -45,16 +43,10 @@ export interface DownloadProgress {
   message: string;
 }
 
-export interface ReleaseAsset {
+interface AssetCandidate {
   name: string;
-  browser_download_url: string;
-  size: number;
-}
-
-export interface GithubRelease {
-  tag_name: string;
-  name: string;
-  assets: ReleaseAsset[];
+  url: string;
+  usesRosetta: boolean;
 }
 
 // =============================================================================
@@ -62,7 +54,7 @@ export interface GithubRelease {
 // =============================================================================
 
 const GITHUB_REPO = 'nervosnetwork/fiber';
-const GITHUB_API_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases`;
+const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPO}/releases`;
 const DEFAULT_INSTALL_DIR = join(process.env.HOME || '~', '.fiber-pay', 'bin');
 
 // Binary naming patterns for different platforms
@@ -158,81 +150,64 @@ export class BinaryManager {
   }
 
   /**
-   * Fetch the latest release info from GitHub
+   * Fetch the latest release tag from GitHub (no API, follows redirect)
    */
-  async getLatestRelease(): Promise<GithubRelease> {
-    const response = await fetch(`${GITHUB_API_URL}/latest`, {
+  async getLatestTag(): Promise<string> {
+    const response = await fetch(`${GITHUB_RELEASES_URL}/latest`, {
+      redirect: 'manual',
       headers: {
-        'Accept': 'application/vnd.github.v3+json',
         'User-Agent': 'fiber-pay',
       },
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch release info: ${response.status} ${response.statusText}`);
+    const location = response.headers.get('location') || response.url;
+    if (!location) {
+      throw new Error(`Failed to resolve latest release tag (status: ${response.status})`);
     }
 
-    return response.json() as Promise<GithubRelease>;
+    const match = location.match(/\/tag\/([^/?#]+)/);
+    if (!match) {
+      throw new Error(`Failed to parse release tag from redirect: ${location}`);
+    }
+
+    return match[1];
   }
 
   /**
-   * Fetch a specific release by version tag
+   * Normalize a version into a release tag
    */
-  async getRelease(version: string): Promise<GithubRelease> {
-    const tag = version.startsWith('v') ? version : `v${version}`;
-    const response = await fetch(`${GITHUB_API_URL}/tags/${tag}`, {
-      headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'fiber-pay',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch release ${version}: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json() as Promise<GithubRelease>;
+  normalizeTag(version: string): string {
+    return version.startsWith('v') ? version : `v${version}`;
   }
 
   /**
-   * Find the matching asset for the current platform
+   * Build download candidates for the current platform
    */
-  findAsset(release: GithubRelease): { asset: ReleaseAsset; usesRosetta: boolean } {
+  buildAssetCandidates(tag: string): AssetCandidate[] {
     const { platform, arch } = this.getPlatformInfo();
-    
-    // Get the pattern for current platform/arch
-    const pattern = BINARY_PATTERNS[platform][arch];
-    
-    // Find asset matching the pattern
-    let asset = release.assets.find(a => a.name.includes(pattern));
+    const extensions = platform === 'win32' ? ['zip', 'tar.gz'] : ['tar.gz'];
+    const patterns: Array<{ pattern: string; usesRosetta: boolean }> = [
+      { pattern: BINARY_PATTERNS[platform][arch], usesRosetta: false },
+    ];
 
-    // On ARM64 macOS, fallback to x86_64 with Rosetta 2
-    if (!asset && platform === 'darwin' && arch === 'arm64') {
-      const x64Pattern = BINARY_PATTERNS.darwin.x64;
-      asset = release.assets.find(a => a.name.includes(x64Pattern));
-      if (asset) {
-        return { asset, usesRosetta: true };
+    if (platform === 'darwin' && arch === 'arm64') {
+      patterns.push({ pattern: BINARY_PATTERNS.darwin.x64, usesRosetta: true });
+    }
+
+    if (platform === 'linux' && arch === 'arm64') {
+      patterns.push({ pattern: BINARY_PATTERNS.linux.x64, usesRosetta: true });
+    }
+
+    const candidates: AssetCandidate[] = [];
+    for (const { pattern, usesRosetta } of patterns) {
+      for (const ext of extensions) {
+        const name = `fnn_${tag}-${pattern}.${ext}`;
+        const url = `${GITHUB_RELEASES_URL}/download/${tag}/${name}`;
+        candidates.push({ name, url, usesRosetta });
       }
     }
 
-    // On ARM64 Linux, try x86_64 (some systems support this)
-    if (!asset && platform === 'linux' && arch === 'arm64') {
-      const x64Pattern = BINARY_PATTERNS.linux.x64;
-      asset = release.assets.find(a => a.name.includes(x64Pattern));
-      if (asset) {
-        return { asset, usesRosetta: true };  // Not rosetta but similar fallback
-      }
-    }
-
-    if (!asset) {
-      const availableAssets = release.assets.map(a => a.name).join(', ');
-      throw new Error(
-        `No matching binary found for ${platform}/${arch} (pattern: ${pattern}). ` +
-        `Available assets: ${availableAssets}`
-      );
-    }
-
-    return { asset, usesRosetta: false };
+    return candidates;
   }
 
   /**
@@ -261,37 +236,45 @@ export class BinaryManager {
       mkdirSync(this.installDir, { recursive: true });
     }
 
-    // Fetch release info
-    onProgress({ phase: 'fetching', message: 'Fetching release information...' });
-    const release = version 
-      ? await this.getRelease(version)
-      : await this.getLatestRelease();
+    // Resolve release tag
+    onProgress({ phase: 'fetching', message: 'Resolving release tag...' });
+    const tag = version ? this.normalizeTag(version) : await this.getLatestTag();
 
-    onProgress({ phase: 'fetching', message: `Found release: ${release.tag_name}` });
+    onProgress({ phase: 'fetching', message: `Found release: ${tag}` });
 
-    // Find matching asset
-    const { asset, usesRosetta } = this.findAsset(release);
+    // Build asset candidates
+    const candidates = this.buildAssetCandidates(tag);
     
-    if (usesRosetta) {
-      onProgress({ 
-        phase: 'downloading', 
-        message: `No ARM64 binary available, using x86_64 version with Rosetta 2...` 
+    let response: Response | undefined;
+    let selected: AssetCandidate | undefined;
+    const attempted: string[] = [];
+
+    for (const candidate of candidates) {
+      onProgress({ phase: 'downloading', message: `Downloading ${candidate.name}...`, percent: 0 });
+      attempted.push(candidate.name);
+      const candidateResponse = await fetch(candidate.url, {
+        headers: { 'User-Agent': 'fiber-pay' },
       });
+
+      if (candidateResponse.ok) {
+        response = candidateResponse;
+        selected = candidate;
+        break;
+      }
     }
-    
-    onProgress({ phase: 'downloading', message: `Downloading ${asset.name}...`, percent: 0 });
 
-    // Download the asset
-    const response = await fetch(asset.browser_download_url, {
-      headers: { 'User-Agent': 'fiber-pay' },
-    });
+    if (!response || !selected) {
+      throw new Error(`Download failed. Tried: ${attempted.join(', ')}`);
+    }
 
-    if (!response.ok) {
-      throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+    if (selected.usesRosetta) {
+      onProgress({
+        phase: 'downloading',
+        message: `No ARM64 binary available, using x86_64 version with Rosetta 2...`,
+      });
     }
 
     const contentLength = parseInt(response.headers.get('content-length') || '0');
-    const tempPath = `${binaryPath}.download`;
 
     // Stream download with progress
     const body = response.body;
@@ -325,9 +308,9 @@ export class BinaryManager {
     // Handle different archive formats
     onProgress({ phase: 'extracting', message: 'Extracting binary...' });
 
-    if (asset.name.endsWith('.tar.gz') || asset.name.endsWith('.tgz')) {
+    if (selected.name.endsWith('.tar.gz') || selected.name.endsWith('.tgz')) {
       await this.extractTarGz(buffer, binaryPath);
-    } else if (asset.name.endsWith('.zip')) {
+    } else if (selected.name.endsWith('.zip')) {
       await this.extractZip(buffer, binaryPath);
     } else {
       // Direct binary
