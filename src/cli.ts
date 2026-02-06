@@ -7,6 +7,7 @@ import { parseArgs } from 'util';
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { FiberPay, createFiberPay, MCP_TOOLS, downloadFiberBinary, getFiberBinaryInfo, FiberRpcClient, ckbToShannons, shannonsToCkb, randomBytes32, toHex } from './index.js';
+import { CorsProxy } from './proxy/index.js';
 import type { McpToolName } from './agent/mcp-tools.js';
 import type { DownloadProgress } from './binary/index.js';
 import type { HexString } from './types/index.js';
@@ -386,9 +387,10 @@ USAGE:
   fiber-pay <command> [options]
 
 NODE MANAGEMENT:
-  start                   Start the Fiber node (runs in foreground)
-  stop                    Stop the running Fiber node
-  status                  Check if node is running
+  start [--cors-proxy [port]]  Start the Fiber node (runs in foreground)
+                               --cors-proxy: Enable CORS proxy (default port: 28227)
+  stop                         Stop the running Fiber node
+  status                       Check if node is running
 
 COMMANDS (require running node - connect via RPC):
   info                    Get node information
@@ -415,6 +417,8 @@ WORKFLOW:
 
   # 2. Start the node (runs in foreground, keep this terminal open)
   fiber-pay start
+  # Or with CORS proxy for browser access:
+  fiber-pay start --cors-proxy
 
   # 3. In another terminal, run commands:
   fiber-pay status
@@ -427,6 +431,15 @@ WORKFLOW:
 
   # 4. Stop the node (Ctrl+C in the start terminal, or:)
   fiber-pay stop
+
+CORS PROXY:
+  # Enable CORS proxy on default port 28227:
+  fiber-pay start --cors-proxy
+
+  # Enable CORS proxy on custom port:
+  fiber-pay start --cors-proxy 3000
+
+  # Then use http://127.0.0.1:28227 (or custom port) from your browser/frontend
 
 PAYMENT:
   fiber-pay pay <invoice>
@@ -912,6 +925,21 @@ async function main(): Promise<void> {
 
   // Handle start command - run node in foreground
   if (command === 'start') {
+    // Parse start command options
+    let corsProxyPort: number | undefined;
+    for (let i = 0; i < commandArgs.length; i++) {
+      if (commandArgs[i] === '--cors-proxy') {
+        // Default port is 28227, or use the next arg if it's a number
+        const nextArg = commandArgs[i + 1];
+        if (nextArg && /^\d+$/.test(nextArg)) {
+          corsProxyPort = parseInt(nextArg);
+          i++;
+        } else {
+          corsProxyPort = 28227;
+        }
+      }
+    }
+
     const fiber = createFiberPay({
       binaryPath: config.binaryPath,
       dataDir: config.dataDir,
@@ -929,14 +957,29 @@ async function main(): Promise<void> {
     }
 
     console.log('🚀 Starting Fiber node...');
-    
+
     const initResult = await fiber.initialize({
       onDownloadProgress: showProgress,
     });
-    
+
     if (!initResult.success) {
       console.error('Failed to initialize:', initResult.error?.message);
       process.exit(1);
+    }
+
+    // Start CORS proxy if requested
+    let corsProxy: CorsProxy | undefined;
+    if (corsProxyPort) {
+      corsProxy = new CorsProxy({
+        port: corsProxyPort,
+        targetUrl: config.rpcUrl!,
+      });
+      try {
+        await corsProxy.start();
+        console.log(`🌐 CORS proxy started on http://127.0.0.1:${corsProxyPort}`);
+      } catch (err) {
+        console.error(`⚠️  Failed to start CORS proxy: ${err instanceof Error ? err.message : err}`);
+      }
     }
 
     // Write PID file
@@ -946,11 +989,17 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(initResult, null, 2));
     console.log('\n📡 Node is running. Press Ctrl+C to stop.');
     console.log(`   RPC endpoint: ${config.rpcUrl}`);
+    if (corsProxy) {
+      console.log(`   CORS proxy:   http://127.0.0.1:${corsProxyPort} (use this from browser)`);
+    }
     console.log(`   Data dir: ${config.dataDir}`);
 
     // Handle graceful shutdown
     const shutdown = async () => {
       console.log('\n🛑 Shutting down...');
+      if (corsProxy) {
+        await corsProxy.stop();
+      }
       removePidFile(config.dataDir);
       await fiber.shutdown();
       console.log('✅ Node stopped.');
