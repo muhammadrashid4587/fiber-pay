@@ -1,34 +1,16 @@
 {
-  "name": "fiber-pay",
+  "name": "fiber-pay-monorepo",
   "version": "0.1.0",
-  "description": "AI Agent Payment SDK for CKB Lightning Network (Fiber Network)",
+  "private": true,
+  "description": "AI Agent Payment SDK for CKB Lightning Network (Fiber Network) - Monorepo",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "bin": {
-    "fiber-pay": "./dist/cli.js"
-  },
-  "exports": {
-    ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./mcp": {
-      "import": "./dist/agent/mcp-tools.js",
-      "types": "./dist/agent/mcp-tools.d.ts"
-    }
-  },
-  "files": [
-    "dist",
-    "README.md"
-  ],
   "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "test": "vitest",
-    "test:run": "vitest run",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "pnpm build"
+    "build": "pnpm -r --filter='!@fiber-pay/cli' build && pnpm --filter='@fiber-pay/cli' build",
+    "dev": "pnpm -r --parallel dev",
+    "test": "pnpm -r test",
+    "test:run": "pnpm -r test:run",
+    "typecheck": "pnpm -r typecheck",
+    "clean": "pnpm -r exec rm -rf dist"
   },
   "keywords": [
     "ckb",
@@ -38,7 +20,8 @@
     "ai-agent",
     "mcp",
     "cryptocurrency",
-    "nervos"
+    "nervos",
+    "monorepo"
   ],
   "author": "",
   "license": "MIT",
@@ -51,8 +34,5 @@
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
-  },
-  "dependencies": {
-    "zod": "^4.3.6"
   }
 }

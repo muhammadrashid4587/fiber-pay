@@ -19,7 +19,7 @@ import { readFile, writeFile } from 'fs/promises';
 import { dirname } from 'path';
 import { createHash } from 'crypto';
 import type { PaymentStatus, HexString } from '../types/index.js';
-import { shannonsToCkb, fromHex } from '../rpc/index.js';
+import { shannonsToCkb, fromHex } from '../utils.js';
 
 // =============================================================================
 // Types

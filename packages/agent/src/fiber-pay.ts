@@ -6,14 +6,14 @@
  * payments on the CKB Lightning Network (Fiber Network).
  */
 
-import { FiberRpcClient, ckbToShannons, shannonsToCkb, randomBytes32, toHex, fromHex } from '../rpc/index.js';
-import { PolicyEngine } from '../security/policy-engine.js';
-import { KeyManager, createKeyManager } from '../security/key-manager.js';
-import { ProcessManager, FiberNodeConfig } from '../process/index.js';
-import { ensureFiberBinary, getDefaultBinaryPath, type DownloadProgress } from '../binary/index.js';
-import { InvoiceVerifier, type InvoiceVerificationResult } from '../verification/invoice-verifier.js';
-import { PaymentProofManager, type PaymentProof, type PaymentProofSummary } from '../verification/payment-proof.js';
-import { LiquidityAnalyzer, type LiquidityReport } from '../funds/liquidity-analyzer.js';
+import { FiberRpcClient, ckbToShannons, shannonsToCkb, randomBytes32, toHex, fromHex } from '@fiber-pay/sdk';
+import { PolicyEngine } from '@fiber-pay/sdk';
+import { KeyManager, createKeyManager } from '@fiber-pay/sdk';
+import { ProcessManager } from '@fiber-pay/node';
+import { ensureFiberBinary, getDefaultBinaryPath } from '@fiber-pay/node';
+import { InvoiceVerifier } from '@fiber-pay/sdk';
+import { PaymentProofManager } from '@fiber-pay/sdk';
+import { LiquidityAnalyzer } from '@fiber-pay/sdk';
 import type {
   SecurityPolicy,
   DEFAULT_SECURITY_POLICY,
@@ -23,7 +23,12 @@ import type {
   PaymentInfo,
   InvoiceInfo,
   NodeInfo,
-} from '../types/index.js';
+  InvoiceVerificationResult,
+  PaymentProof,
+  PaymentProofSummary,
+  LiquidityReport,
+} from '@fiber-pay/sdk';
+import type { DownloadProgress, FiberNodeConfig } from '@fiber-pay/node';
 
 // =============================================================================
 // Agent-Friendly Result Types
@@ -1116,3 +1121,6 @@ export function createFiberPay(options?: {
     keyPassword: options?.keyPassword,
   });
 }
+
+// Re-export types for MCP tools
+export type { PaymentProof, PaymentProofSummary } from '@fiber-pay/sdk';

@@ -59,14 +59,14 @@ cd fiber-pay
 # Install dependencies
 pnpm install
 
-# Build the project
+# Build all packages
 pnpm build
 
 # Link the CLI globally
-pnpm link --global
+cd packages/cli && pnpm link --global
 ```
 
-**TODO**: Once published to npm, installation will be: `npm install -g fiber-pay`
+**TODO**: Once published to npm, installation will be: `npm install -g @fiber-pay/cli`
 
 After installation, verify the CLI is available:
 ```bash
@@ -474,7 +474,7 @@ See [references/TROUBLESHOOTING.md](references/TROUBLESHOOTING.md) for detailed 
 Use fiber-pay as a TypeScript library instead of CLI:
 
 ```typescript
-import { createFiberPay } from 'fiber-pay';
+import { createFiberPay } from '@fiber-pay/agent';
 
 const fiber = await createFiberPay({
   dataDir: '~/.fiber-pay',

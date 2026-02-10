@@ -4,9 +4,9 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { InvoiceVerifier } from '../src/verification/invoice-verifier.js';
-import type { FiberRpcClient } from '../src/rpc/client.js';
-import type { ParseInvoiceResult, ListPeersResult } from '../src/types/rpc.js';
+import { InvoiceVerifier } from '@fiber-pay/sdk';
+import type { FiberRpcClient } from '@fiber-pay/sdk';
+import type { ParseInvoiceResult, ListPeersResult } from '@fiber-pay/sdk';
 
 describe('InvoiceVerifier', () => {
   let mockRpc: Partial<FiberRpcClient>;

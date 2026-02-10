@@ -415,7 +415,7 @@ export type McpToolResult<T extends McpToolName> = T extends 'fiber_pay'
   : T extends 'fiber_validate_invoice'
   ? AgentResult<import('./fiber-pay.js').InvoiceValidationResult>
   : T extends 'fiber_get_payment_proof'
-  ? AgentResult<{ proof: import('../verification/payment-proof.js').PaymentProof | null; verified: boolean; status: string }>
+  ? AgentResult<{ proof: import('./fiber-pay.js').PaymentProof | null; verified: boolean; status: string }>
   : T extends 'fiber_analyze_liquidity'
   ? AgentResult<import('./fiber-pay.js').LiquidityAnalysisResult>
   : T extends 'fiber_can_send'

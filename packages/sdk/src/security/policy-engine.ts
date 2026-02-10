@@ -13,7 +13,7 @@ import type {
   AuditLogEntry,
   AuditAction,
 } from '../types/index.js';
-import { fromHex, toHex } from '../rpc/index.js';
+import { fromHex, toHex } from '../utils.js';
 
 // =============================================================================
 // Policy Engine

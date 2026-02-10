@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toHex, fromHex, ckbToShannons, shannonsToCkb, randomBytes32 } from '../src/rpc/client.js';
+import { toHex, fromHex, ckbToShannons, shannonsToCkb, randomBytes32 } from '@fiber-pay/sdk';
 
 describe('RPC Utilities', () => {
   describe('toHex', () => {

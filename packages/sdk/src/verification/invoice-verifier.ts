@@ -6,7 +6,7 @@
 
 import { createHash } from 'crypto';
 import type { FiberRpcClient } from '../rpc/client.js';
-import { fromHex, shannonsToCkb } from '../rpc/index.js';
+import { fromHex, shannonsToCkb } from '../utils.js';
 import type { InvoiceInfo, HexString, InvoiceAttribute } from '../types/index.js';
 
 // =============================================================================

@@ -1,0 +1,43 @@
+{
+  "name": "@fiber-pay/agent",
+  "version": "0.1.0",
+  "description": "AI agent orchestration layer for Fiber Network with MCP tools",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./mcp": {
+      "import": "./dist/mcp-tools.js",
+      "types": "./dist/mcp-tools.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ckb",
+    "lightning",
+    "fiber",
+    "ai-agent",
+    "mcp",
+    "nervos"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@fiber-pay/sdk": "workspace:*",
+    "@fiber-pay/node": "workspace:*"
+  }
+}

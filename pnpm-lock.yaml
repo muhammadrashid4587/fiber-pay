@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      zod:
-        specifier: ^4.3.6
-        version: 4.3.6
     devDependencies:
       '@types/node':
         specifier: ^25.1.0
@@ -24,6 +20,32 @@ importers:
       vitest:
         specifier: ^4.0.18
         version: 4.0.18(@types/node@25.1.0)
+
+  packages/agent:
+    dependencies:
+      '@fiber-pay/node':
+        specifier: workspace:*
+        version: link:../node
+      '@fiber-pay/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+
+  packages/cli:
+    dependencies:
+      '@fiber-pay/node':
+        specifier: workspace:*
+        version: link:../node
+      '@fiber-pay/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+
+  packages/node: {}
+
+  packages/sdk:
+    dependencies:
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
 
 packages:
 

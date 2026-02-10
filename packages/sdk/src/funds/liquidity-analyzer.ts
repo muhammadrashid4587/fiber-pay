@@ -5,7 +5,7 @@
 
 import type { FiberRpcClient } from '../rpc/client.js';
 import type { ChannelInfo } from '../types/index.js';
-import { shannonsToCkb, fromHex } from '../rpc/index.js';
+import { shannonsToCkb, fromHex } from '../utils.js';
 
 // =============================================================================
 // Types

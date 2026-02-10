@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PolicyEngine } from '../src/security/policy-engine.js';
-import type { SecurityPolicy } from '../src/types/policy.js';
+import { PolicyEngine } from '@fiber-pay/sdk';
+import type { SecurityPolicy } from '@fiber-pay/sdk';
 
 describe('PolicyEngine', () => {
   let policy: PolicyEngine;

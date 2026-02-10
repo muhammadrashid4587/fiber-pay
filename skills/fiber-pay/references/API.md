@@ -727,7 +727,7 @@ Use fiber-pay programmatically in your TypeScript/JavaScript code.
 ### Creating a FiberPay Instance
 
 ```typescript
-import { createFiberPay } from 'fiber-pay';
+import { createFiberPay } from '@fiber-pay/agent';
 
 const fiber = await createFiberPay({
   dataDir: '~/.fiber-pay',
@@ -1078,7 +1078,7 @@ type ChannelState =
 Lower-level RPC client for advanced usage:
 
 ```typescript
-import { FiberRpcClient } from 'fiber-pay';
+import { FiberRpcClient } from '@fiber-pay/sdk';
 
 const client = new FiberRpcClient('http://127.0.0.1:8227');
 
@@ -1116,7 +1116,7 @@ For complete RPC method documentation, see the [Fiber Network API docs](https://
 ### Amount Conversion
 
 ```typescript
-import { ckbToShannons, shannonsToCkb } from 'fiber-pay';
+import { ckbToShannons, shannonsToCkb } from '@fiber-pay/sdk';
 
 // Convert CKB to Shannon (smallest unit)
 const shannons = ckbToShannons(100);  // 100 CKB → 10000000000n
@@ -1125,7 +1125,7 @@ const shannons = ckbToShannons(100);  // 100 CKB → 10000000000n
 const ckb = shannonsToCkb(10000000000n);  // 10000000000 → 100
 
 // Hex conversion
-import { toHex, fromHex } from 'fiber-pay';
+import { toHex, fromHex } from '@fiber-pay/sdk';
 
 const hex = toHex(100n);        // 100n → '0x64'
 const num = fromHex('0x64');    // '0x64' → 100n
@@ -1134,7 +1134,7 @@ const num = fromHex('0x64');    // '0x64' → 100n
 ### Random Hash Generation
 
 ```typescript
-import { randomBytes32 } from 'fiber-pay';
+import { randomBytes32 } from '@fiber-pay/sdk';
 
 const hash = randomBytes32();  // '0xabc123...' (64 hex chars)
 ```

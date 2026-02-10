@@ -6,10 +6,25 @@
 import { parseArgs } from 'util';
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { FiberPay, createFiberPay, MCP_TOOLS, downloadFiberBinary, getFiberBinaryInfo, FiberRpcClient, ckbToShannons, shannonsToCkb, randomBytes32, toHex } from './index.js';
-import type { McpToolName } from './agent/mcp-tools.js';
-import type { DownloadProgress } from './binary/index.js';
-import type { HexString } from './types/index.js';
+import {
+  downloadFiberBinary,
+  getFiberBinaryInfo,
+  ProcessManager,
+  ensureFiberBinary,
+  getDefaultBinaryPath,
+  type DownloadProgress,
+  type FiberNodeConfig,
+} from '@fiber-pay/node';
+import {
+  FiberRpcClient,
+  ckbToShannons,
+  shannonsToCkb,
+  randomBytes32,
+  toHex,
+  scriptToAddress,
+  type HexString,
+  type Script,
+} from '@fiber-pay/sdk';
 
 // =============================================================================
 // CLI Configuration
@@ -73,126 +88,6 @@ function isProcessRunning(pid: number): boolean {
   }
 }
 
-// =============================================================================
-// CKB Address Encoding (Bech32m)
-// =============================================================================
-
-// Bech32m charset
-const BECH32_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
-
-function bech32mPolymod(values: number[]): number {
-  const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
-  let chk = 1;
-  for (const v of values) {
-    const top = chk >> 25;
-    chk = ((chk & 0x1ffffff) << 5) ^ v;
-    for (let i = 0; i < 5; i++) {
-      if ((top >> i) & 1) {
-        chk ^= GEN[i];
-      }
-    }
-  }
-  return chk;
-}
-
-function bech32mHrpExpand(hrp: string): number[] {
-  const ret: number[] = [];
-  for (let i = 0; i < hrp.length; i++) {
-    ret.push(hrp.charCodeAt(i) >> 5);
-  }
-  ret.push(0);
-  for (let i = 0; i < hrp.length; i++) {
-    ret.push(hrp.charCodeAt(i) & 31);
-  }
-  return ret;
-}
-
-function bech32mCreateChecksum(hrp: string, data: number[]): number[] {
-  const values = bech32mHrpExpand(hrp).concat(data).concat([0, 0, 0, 0, 0, 0]);
-  const polymod = bech32mPolymod(values) ^ 0x2bc830a3; // Bech32m constant
-  const ret: number[] = [];
-  for (let i = 0; i < 6; i++) {
-    ret.push((polymod >> (5 * (5 - i))) & 31);
-  }
-  return ret;
-}
-
-function convertBits(data: Uint8Array, fromBits: number, toBits: number, pad: boolean): number[] {
-  let acc = 0;
-  let bits = 0;
-  const ret: number[] = [];
-  const maxv = (1 << toBits) - 1;
-  
-  for (const value of data) {
-    acc = (acc << fromBits) | value;
-    bits += fromBits;
-    while (bits >= toBits) {
-      bits -= toBits;
-      ret.push((acc >> bits) & maxv);
-    }
-  }
-  
-  if (pad && bits > 0) {
-    ret.push((acc << (toBits - bits)) & maxv);
-  }
-  
-  return ret;
-}
-
-function bech32mEncode(hrp: string, data: number[]): string {
-  const checksum = bech32mCreateChecksum(hrp, data);
-  const combined = data.concat(checksum);
-  let result = hrp + '1';
-  for (const d of combined) {
-    result += BECH32_CHARSET[d];
-  }
-  return result;
-}
-
-interface Script {
-  code_hash: string;
-  hash_type: 'type' | 'data' | 'data1' | 'data2';
-  args: string;
-}
-
-function scriptToAddress(script: Script, network: 'testnet' | 'mainnet'): string {
-  const hrp = network === 'mainnet' ? 'ckb' : 'ckt';
-  
-  // CKB full address format (2021)
-  // Format: 0x00 | code_hash | hash_type | args
-  const hashTypeByte = script.hash_type === 'type' ? 0x01 
-    : script.hash_type === 'data' ? 0x00 
-    : script.hash_type === 'data1' ? 0x02
-    : 0x04; // data2
-  
-  const codeHash = script.code_hash.startsWith('0x') 
-    ? script.code_hash.slice(2) 
-    : script.code_hash;
-  const args = script.args.startsWith('0x') 
-    ? script.args.slice(2) 
-    : script.args;
-  
-  // Construct the payload: format_type(0x00) + code_hash(32) + hash_type(1) + args
-  const payload = new Uint8Array(1 + 32 + 1 + args.length / 2);
-  payload[0] = 0x00; // Full format type
-  
-  // code_hash
-  for (let i = 0; i < 32; i++) {
-    payload[1 + i] = parseInt(codeHash.slice(i * 2, i * 2 + 2), 16);
-  }
-  
-  // hash_type
-  payload[33] = hashTypeByte;
-  
-  // args
-  for (let i = 0; i < args.length / 2; i++) {
-    payload[34 + i] = parseInt(args.slice(i * 2, i * 2 + 2), 16);
-  }
-  
-  // Convert to 5-bit groups and encode with bech32m
-  const data = convertBits(payload, 8, 5, true);
-  return bech32mEncode(hrp, data);
-}
 
 // =============================================================================
 // Download Progress Display
@@ -209,170 +104,6 @@ function showProgress(progress: DownloadProgress): void {
 // =============================================================================
 // Command Handlers
 // =============================================================================
-
-async function handleCommand(fiber: FiberPay, command: string, args: string[]): Promise<void> {
-  switch (command) {
-    case 'init':
-    case 'initialize': {
-      const result = await fiber.initialize({
-        onDownloadProgress: showProgress,
-      });
-      console.log(JSON.stringify(result, null, 2));
-      break;
-    }
-
-    case 'balance':
-    case 'get-balance': {
-      const result = await fiber.getBalance();
-      console.log(JSON.stringify(result, null, 2));
-      break;
-    }
-
-    case 'pay': {
-      const params: { invoice?: string; recipientNodeId?: string; amountCkb?: number } = {};
-      
-      for (let i = 0; i < args.length; i++) {
-        if (args[i] === '--invoice' && args[i + 1]) {
-          params.invoice = args[++i];
-        } else if (args[i] === '--to' && args[i + 1]) {
-          params.recipientNodeId = args[++i];
-        } else if (args[i] === '--amount' && args[i + 1]) {
-          params.amountCkb = parseFloat(args[++i]);
-        } else if (!args[i].startsWith('--')) {
-          // Positional argument is assumed to be invoice
-          params.invoice = args[i];
-        }
-      }
-
-      const result = await fiber.pay(params);
-      console.log(JSON.stringify(result, null, 2));
-      break;
-    }
-
-    case 'invoice':
-    case 'create-invoice': {
-      let amountCkb = 0;
-      let description: string | undefined;
-      let expiryMinutes: number | undefined;
-
-      for (let i = 0; i < args.length; i++) {
-        if (args[i] === '--amount' && args[i + 1]) {
-          amountCkb = parseFloat(args[++i]);
-        } else if (args[i] === '--description' && args[i + 1]) {
-          description = args[++i];
-        } else if (args[i] === '--expiry' && args[i + 1]) {
-          expiryMinutes = parseInt(args[++i]);
-        } else if (!args[i].startsWith('--') && !amountCkb) {
-          amountCkb = parseFloat(args[i]);
-        }
-      }
-
-      if (!amountCkb) {
-        console.error('Error: Amount required. Usage: invoice --amount <CKB>');
-        process.exit(1);
-      }
-
-      const result = await fiber.createInvoice({ amountCkb, description, expiryMinutes });
-      console.log(JSON.stringify(result, null, 2));
-      break;
-    }
-
-    case 'channels':
-    case 'list-channels': {
-      const result = await fiber.listChannels();
-      console.log(JSON.stringify(result, null, 2));
-      break;
-    }
-
-    case 'open-channel': {
-      let peer = '';
-      let fundingCkb = 0;
-      let isPublic = true;
-
-      for (let i = 0; i < args.length; i++) {
-        if (args[i] === '--peer' && args[i + 1]) {
-          peer = args[++i];
-        } else if (args[i] === '--funding' && args[i + 1]) {
-          fundingCkb = parseFloat(args[++i]);
-        } else if (args[i] === '--private') {
-          isPublic = false;
-        }
-      }
-
-      if (!peer || !fundingCkb) {
-        console.error('Error: Usage: open-channel --peer <addr> --funding <CKB>');
-        process.exit(1);
-      }
-
-      const result = await fiber.openChannel({ peer, fundingCkb, isPublic });
-      console.log(JSON.stringify(result, null, 2));
-      break;
-    }
-
-    case 'close-channel': {
-      let channelId = '';
-      let force = false;
-
-      for (let i = 0; i < args.length; i++) {
-        if (args[i] === '--channel' && args[i + 1]) {
-          channelId = args[++i];
-        } else if (args[i] === '--force') {
-          force = true;
-        } else if (!args[i].startsWith('--')) {
-          channelId = args[i];
-        }
-      }
-
-      if (!channelId) {
-        console.error('Error: Channel ID required');
-        process.exit(1);
-      }
-
-      const result = await fiber.closeChannel({ channelId, force });
-      console.log(JSON.stringify(result, null, 2));
-      break;
-    }
-
-    case 'info':
-    case 'node-info': {
-      const result = await fiber.getNodeInfo();
-      console.log(JSON.stringify(result, null, 2));
-      break;
-    }
-
-    case 'allowance':
-    case 'spending-allowance': {
-      const allowance = fiber.getSpendingAllowance();
-      console.log(JSON.stringify(allowance, null, 2));
-      break;
-    }
-
-    case 'audit':
-    case 'audit-log': {
-      let limit = 20;
-      for (let i = 0; i < args.length; i++) {
-        if (args[i] === '--limit' && args[i + 1]) {
-          limit = parseInt(args[++i]);
-        }
-      }
-      const log = fiber.getAuditLog({ limit });
-      console.log(JSON.stringify(log, null, 2));
-      break;
-    }
-
-    case 'tools':
-    case 'mcp-tools': {
-      // Output MCP tool definitions for agent integration
-      console.log(JSON.stringify(Object.values(MCP_TOOLS), null, 2));
-      break;
-    }
-
-    case 'help':
-    default:
-      printHelp();
-      break;
-  }
-}
 
 // =============================================================================
 // Help
@@ -506,24 +237,6 @@ async function handleStandaloneCommand(command: string, args: string[], config: 
 // =============================================================================
 // RPC-only Commands (connect to running node)
 // =============================================================================
-
-/**
- * Create a FiberPay instance for agent commands
- * Uses autoStart: false to connect to an already-running node via RPC
- */
-async function createFiberPayInstance(config: CliConfig): Promise<FiberPay> {
-  const fiber = createFiberPay({
-    dataDir: config.dataDir,
-    network: config.network,
-    autoDownload: false,
-    autoStart: false,  // Connect to existing node, don't start a new one
-    rpcUrl: config.rpcUrl,
-    keyPassword: config.keyPassword,
-  });
-
-  await fiber.initialize();
-  return fiber;
-}
 
 async function handleRpcCommand(command: string, args: string[], config: CliConfig): Promise<boolean> {
   const rpc = new FiberRpcClient({ url: config.rpcUrl! });
@@ -812,22 +525,48 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
         process.exit(1);
       }
 
-      // Create FiberPay instance
-      const fiber = await createFiberPayInstance(config);
-      const result = await fiber.validateInvoice(invoice);
-      
-      console.log(JSON.stringify(result, null, 2));
+      const result = await rpc.parseInvoice({ invoice });
+      console.log(JSON.stringify({
+        success: true,
+        data: {
+          paymentHash: result.invoice.payment_hash,
+          amountCkb: result.invoice.amount ? shannonsToCkb(result.invoice.amount) : undefined,
+          description: result.invoice.description,
+          expirySeconds: result.invoice.expiry,
+          invoiceAddress: result.invoice.invoice_address,
+        }
+      }, null, 2));
       return true;
     }
 
     case 'liquidity':
     case 'liquidity-report':
     case 'analyze-liquidity': {
-      // Create FiberPay instance
-      const fiber = await createFiberPayInstance(config);
-      const result = await fiber.analyzeLiquidity();
+      const channels = await rpc.listChannels({});
       
-      console.log(JSON.stringify(result, null, 2));
+      let totalLocal = 0n;
+      let totalRemote = 0n;
+      let totalCapacity = 0n;
+      let activeChannels = 0;
+
+      for (const channel of channels.channels) {
+        if (channel.state.state_name === 'ChannelReady') {
+          activeChannels++;
+          totalLocal += BigInt(channel.local_balance);
+          totalRemote += BigInt(channel.remote_balance || '0x0');
+          totalCapacity += BigInt(channel.local_balance) + BigInt(channel.remote_balance || '0x0');
+        }
+      }
+
+      console.log(JSON.stringify({
+        success: true,
+        data: {
+          activeChannels,
+          totalLocalCkb: shannonsToCkb(toHex(totalLocal)),
+          totalRemoteCkb: shannonsToCkb(toHex(totalRemote)),
+          totalCapacityCkb: shannonsToCkb(toHex(totalCapacity)),
+        }
+      }, null, 2));
       return true;
     }
 
@@ -840,11 +579,11 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
         process.exit(1);
       }
 
-      // Create FiberPay instance
-      const fiber = await createFiberPayInstance(config);
-      const result = await fiber.getPaymentProof(paymentHash);
-      
-      console.log(JSON.stringify(result, null, 2));
+      const payment = await rpc.getPayment({ payment_hash: paymentHash as HexString });
+      console.log(JSON.stringify({
+        success: true,
+        data: payment
+      }, null, 2));
       return true;
     }
 
@@ -864,11 +603,25 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
         process.exit(1);
       }
 
-      // Create FiberPay instance
-      const fiber = await createFiberPayInstance(config);
-      const result = await fiber.canSend(amountCkb);
+      const amountShannons = BigInt(ckbToShannons(amountCkb));
+      const channels = await rpc.listChannels({});
       
-      console.log(JSON.stringify(result, null, 2));
+      let canSend = false;
+      for (const channel of channels.channels) {
+        if (channel.state.state_name === 'ChannelReady' && 
+            BigInt(channel.local_balance) >= amountShannons) {
+          canSend = true;
+          break;
+        }
+      }
+
+      console.log(JSON.stringify({
+        success: true,
+        data: {
+          canSend,
+          requestedAmountCkb: amountCkb,
+        }
+      }, null, 2));
       return true;
     }
 
@@ -891,11 +644,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === 'tools' || command === 'mcp-tools') {
-    console.log(JSON.stringify(Object.values(MCP_TOOLS), null, 2));
-    return;
-  }
-
   const config = getConfig();
 
   // Handle standalone commands that don't need FiberPay instance
@@ -912,14 +660,6 @@ async function main(): Promise<void> {
 
   // Handle start command - run node in foreground
   if (command === 'start') {
-    const fiber = createFiberPay({
-      binaryPath: config.binaryPath,
-      dataDir: config.dataDir,
-      configFilePath: config.network === 'testnet' ? join(process.cwd(), 'testnet-config.yml') : undefined,
-      chain: config.network,
-      keyPassword: config.keyPassword,
-    });
-
     // Check if already running
     const existingPid = readPidFile(config.dataDir);
     if (existingPid && isProcessRunning(existingPid)) {
@@ -930,20 +670,27 @@ async function main(): Promise<void> {
 
     console.log('🚀 Starting Fiber node...');
     
-    const initResult = await fiber.initialize({
-      onDownloadProgress: showProgress,
-    });
+    // Ensure binary is downloaded
+    const binaryPath = config.binaryPath || getDefaultBinaryPath();
+    await ensureFiberBinary();
+
+    // Start the process
+    const nodeConfig: FiberNodeConfig = {
+      binaryPath,
+      dataDir: config.dataDir,
+      configFilePath: config.network === 'testnet' ? join(process.cwd(), 'testnet-config.yml') : undefined,
+      chain: config.network,
+    };
+    const processManager = new ProcessManager(nodeConfig);
+
+    await processManager.start();
     
-    if (!initResult.success) {
-      console.error('Failed to initialize:', initResult.error?.message);
-      process.exit(1);
+    // Write PID file
+    if (processManager['process']) {
+      writePidFile(config.dataDir, processManager['process'].pid!);
     }
 
-    // Write PID file
-    writePidFile(config.dataDir, process.pid);
-
     console.log('✅ Fiber node started successfully!');
-    console.log(JSON.stringify(initResult, null, 2));
     console.log('\n📡 Node is running. Press Ctrl+C to stop.');
     console.log(`   RPC endpoint: ${config.rpcUrl}`);
     console.log(`   Data dir: ${config.dataDir}`);
@@ -952,7 +699,7 @@ async function main(): Promise<void> {
     const shutdown = async () => {
       console.log('\n🛑 Shutting down...');
       removePidFile(config.dataDir);
-      await fiber.shutdown();
+      await processManager.stop();
       console.log('✅ Node stopped.');
       process.exit(0);
     };
@@ -1059,38 +806,10 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Commands that need full FiberPay initialization (legacy - for init command only)
-  const fiber = createFiberPay({
-    binaryPath: config.binaryPath,
-    dataDir: config.dataDir,
-    configFilePath: config.network === 'testnet' ? join(process.cwd(), 'testnet-config.yml') : undefined,
-    chain: config.network,
-    keyPassword: config.keyPassword,
-  });
-
-  // These commands need initialization (init only - for one-off testing)
-  const needsInit = ['init', 'initialize'];
-
-  if (needsInit.includes(command)) {
-    const initResult = await fiber.initialize({
-      onDownloadProgress: showProgress,
-    });
-    if (!initResult.success) {
-      console.error('Failed to initialize:', initResult.error?.message);
-      process.exit(1);
-    }
-  }
-
-  try {
-    await handleCommand(fiber, command, commandArgs);
-  } catch (error) {
-    console.error('Error:', error instanceof Error ? error.message : error);
-    process.exit(1);
-  } finally {
-    if (needsInit.includes(command)) {
-      await fiber.shutdown();
-    }
-  }
+  // Unknown command
+  console.error(`Unknown command: ${command}`);
+  printHelp();
+  process.exit(1);
 }
 
 main().catch((error) => {
