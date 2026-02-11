@@ -16,6 +16,7 @@ import {
 } from '@fiber-pay/node';
 import {
   FiberRpcClient,
+  CorsProxy,
   ckbToShannons,
   shannonsToCkb,
   randomBytes32,
@@ -116,9 +117,10 @@ USAGE:
   fiber-pay <command> [options]
 
 NODE MANAGEMENT:
-  start                   Start the Fiber node (runs in foreground)
-  stop                    Stop the running Fiber node
-  status                  Check if node is running
+  start [--cors-proxy [port]]  Start the Fiber node (runs in foreground)
+                               --cors-proxy: Enable CORS proxy (default port: 28227)
+  stop                         Stop the running Fiber node
+  status                       Check if node is running
 
 COMMANDS (require running node - connect via RPC):
   info                    Get node information
@@ -145,6 +147,8 @@ WORKFLOW:
 
   # 2. Start the node (runs in foreground, keep this terminal open)
   fiber-pay start
+  # Or with CORS proxy for browser access:
+  fiber-pay start --cors-proxy
 
   # 3. In another terminal, run commands:
   fiber-pay status
@@ -157,6 +161,15 @@ WORKFLOW:
 
   # 4. Stop the node (Ctrl+C in the start terminal, or:)
   fiber-pay stop
+
+CORS PROXY:
+  # Enable CORS proxy on default port 28227:
+  fiber-pay start --cors-proxy
+
+  # Enable CORS proxy on custom port:
+  fiber-pay start --cors-proxy 3000
+
+  # Then use http://127.0.0.1:28227 (or custom port) from your browser/frontend
 
 PAYMENT:
   fiber-pay pay <invoice>
@@ -669,6 +682,20 @@ async function main(): Promise<void> {
 
     console.log('🚀 Starting Fiber node...');
     
+    // Parse --cors-proxy option
+    let corsProxyPort: number | undefined;
+    for (let i = 0; i < commandArgs.length; i++) {
+      if (commandArgs[i] === '--cors-proxy') {
+        const nextArg = commandArgs[i + 1];
+        if (nextArg && /^\d+$/.test(nextArg)) {
+          corsProxyPort = parseInt(nextArg);
+          i++;
+        } else {
+          corsProxyPort = 28227;
+        }
+      }
+    }
+
     // Ensure binary is downloaded
     const binaryPath = config.binaryPath || getDefaultBinaryPath();
     await ensureFiberBinary();
@@ -684,6 +711,21 @@ async function main(): Promise<void> {
 
     await processManager.start();
     
+    // Start CORS proxy if requested
+    let corsProxy: CorsProxy | undefined;
+    if (corsProxyPort) {
+      corsProxy = new CorsProxy({
+        port: corsProxyPort,
+        targetUrl: config.rpcUrl!,
+      });
+      try {
+        await corsProxy.start();
+        console.log(`🌐 CORS proxy started on http://127.0.0.1:${corsProxyPort}`);
+      } catch (err) {
+        console.error(`⚠️  Failed to start CORS proxy: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
     // Write PID file
     if (processManager['process']) {
       writePidFile(config.dataDir, processManager['process'].pid!);
@@ -692,11 +734,17 @@ async function main(): Promise<void> {
     console.log('✅ Fiber node started successfully!');
     console.log('\n📡 Node is running. Press Ctrl+C to stop.');
     console.log(`   RPC endpoint: ${config.rpcUrl}`);
+    if (corsProxy) {
+      console.log(`   CORS proxy:   http://127.0.0.1:${corsProxyPort} (use this from browser)`);
+    }
     console.log(`   Data dir: ${config.dataDir}`);
 
     // Handle graceful shutdown
     const shutdown = async () => {
       console.log('\n🛑 Shutting down...');
+      if (corsProxy) {
+        await corsProxy.stop();
+      }
       removePidFile(config.dataDir);
       await processManager.stop();
       console.log('✅ Node stopped.');
