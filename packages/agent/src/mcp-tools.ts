@@ -3,7 +3,7 @@
  * These schemas are compatible with Claude, OpenClaw, and other MCP agents
  */
 
-import type { AgentResult, BalanceInfo, PaymentResult, InvoiceResult, ChannelSummary } from './fiber-pay.js';
+import type { AgentResult, BalanceInfo, PaymentResult, InvoiceResult, HoldInvoiceResult, ChannelSummary } from './fiber-pay.js';
 
 // =============================================================================
 // MCP Tool Schema Definitions
@@ -350,6 +350,130 @@ Returns:
       required: ['amountCkb'],
     },
   },
+
+  fiber_create_hold_invoice: {
+    name: 'fiber_create_hold_invoice',
+    description: `Create a hold invoice for escrow or conditional payments.
+    
+A hold invoice locks the payer's funds until you explicitly settle with the preimage,
+or the invoice expires. This enables escrow patterns without a trusted third party.
+
+Example: fiber_create_hold_invoice({ 
+  amountCkb: 10, 
+  paymentHash: "0x...", 
+  description: "Escrow for service delivery" 
+})
+
+Flow:
+1. Generate a secret preimage and compute its SHA-256 hash
+2. Create hold invoice with the hash
+3. Share invoice with payer — their funds are held when they pay
+4. When conditions are met, call fiber_settle_invoice with the preimage
+5. If conditions are NOT met, let the invoice expire (funds return to payer)
+
+Returns invoice string and payment hash.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        amountCkb: {
+          type: 'number',
+          description: 'Amount to receive in CKB',
+        },
+        paymentHash: {
+          type: 'string',
+          description: 'SHA-256 hash of your secret preimage (0x-prefixed hex)',
+        },
+        description: {
+          type: 'string',
+          description: 'Description for the payer',
+        },
+        expiryMinutes: {
+          type: 'number',
+          description: 'Invoice expiry time in minutes (default: 60)',
+        },
+      },
+      required: ['amountCkb', 'paymentHash'],
+    },
+  },
+
+  fiber_settle_invoice: {
+    name: 'fiber_settle_invoice',
+    description: `Settle a hold invoice by revealing the preimage.
+    
+This releases the held funds to you. Only call this after conditions are met.
+The preimage must hash (SHA-256) to the payment_hash used when creating the hold invoice.
+
+Example: fiber_settle_invoice({ 
+  paymentHash: "0x...", 
+  preimage: "0x..." 
+})`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        paymentHash: {
+          type: 'string',
+          description: 'Payment hash of the hold invoice',
+        },
+        preimage: {
+          type: 'string',
+          description: 'Secret preimage (0x-prefixed hex, 32 bytes)',
+        },
+      },
+      required: ['paymentHash', 'preimage'],
+    },
+  },
+
+  fiber_wait_for_payment: {
+    name: 'fiber_wait_for_payment',
+    description: `Wait for a payment to complete (reach Success or Failed status).
+    
+Polls the payment status until it reaches a terminal state. Useful after sending
+a payment to wait for confirmation.
+
+Example: fiber_wait_for_payment({ paymentHash: "0x...", timeoutMs: 60000 })
+
+Returns the final payment status.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        paymentHash: {
+          type: 'string',
+          description: 'Payment hash to wait for',
+        },
+        timeoutMs: {
+          type: 'number',
+          description: 'Timeout in milliseconds (default: 120000 = 2 min)',
+        },
+      },
+      required: ['paymentHash'],
+    },
+  },
+
+  fiber_wait_for_channel_ready: {
+    name: 'fiber_wait_for_channel_ready',
+    description: `Wait for a channel to become ready after opening.
+    
+After opening a channel, it takes time for the funding transaction to be confirmed
+on-chain. This tool polls until the channel reaches ChannelReady state.
+
+Example: fiber_wait_for_channel_ready({ channelId: "0x...", timeoutMs: 300000 })
+
+Returns channel info once ready.`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        channelId: {
+          type: 'string',
+          description: 'Channel ID to wait for',
+        },
+        timeoutMs: {
+          type: 'number',
+          description: 'Timeout in milliseconds (default: 300000 = 5 min)',
+        },
+      },
+      required: ['channelId'],
+    },
+  },
 } as const;
 
 // =============================================================================
@@ -359,7 +483,7 @@ Returns:
 export type McpToolName = keyof typeof MCP_TOOLS;
 
 export type McpToolInput<T extends McpToolName> = T extends 'fiber_pay'
-  ? { invoice?: string; recipientNodeId?: string; amountCkb?: number; maxFeeCkb?: number }
+  ? { invoice?: string; recipientNodeId?: string; amountCkb?: number; maxFeeCkb?: number; customRecords?: Record<string, string>; trampolineHops?: Array<{ pubkey: string; fee_rate: string }>; maxParts?: number }
   : T extends 'fiber_create_invoice'
   ? { amountCkb: number; description?: string; expiryMinutes?: number }
   : T extends 'fiber_get_balance'
@@ -388,6 +512,14 @@ export type McpToolInput<T extends McpToolName> = T extends 'fiber_pay'
   ? {}
   : T extends 'fiber_can_send'
   ? { amountCkb: number }
+  : T extends 'fiber_create_hold_invoice'
+  ? { amountCkb: number; paymentHash: string; description?: string; expiryMinutes?: number }
+  : T extends 'fiber_settle_invoice'
+  ? { paymentHash: string; preimage: string }
+  : T extends 'fiber_wait_for_payment'
+  ? { paymentHash: string; timeoutMs?: number }
+  : T extends 'fiber_wait_for_channel_ready'
+  ? { channelId: string; timeoutMs?: number }
   : never;
 
 export type McpToolResult<T extends McpToolName> = T extends 'fiber_pay'
@@ -420,4 +552,12 @@ export type McpToolResult<T extends McpToolName> = T extends 'fiber_pay'
   ? AgentResult<import('./fiber-pay.js').LiquidityAnalysisResult>
   : T extends 'fiber_can_send'
   ? AgentResult<{ canSend: boolean; shortfallCkb: number; availableCkb: number; recommendation: string }>
+  : T extends 'fiber_create_hold_invoice'
+  ? AgentResult<HoldInvoiceResult>
+  : T extends 'fiber_settle_invoice'
+  ? AgentResult<void>
+  : T extends 'fiber_wait_for_payment'
+  ? AgentResult<PaymentResult>
+  : T extends 'fiber_wait_for_channel_ready'
+  ? AgentResult<ChannelSummary>
   : never;

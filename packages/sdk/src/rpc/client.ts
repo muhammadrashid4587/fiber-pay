@@ -27,6 +27,10 @@ import type {
   SendPaymentResult,
   GetPaymentParams,
   GetPaymentResult,
+  // Router methods
+  BuildRouterParams,
+  BuildRouterResult,
+  SendPaymentWithRouterParams,
   // Invoice methods
   NewInvoiceParams,
   NewInvoiceResult,
@@ -35,6 +39,7 @@ import type {
   GetInvoiceParams,
   GetInvoiceResult,
   CancelInvoiceParams,
+  SettleInvoiceParams,
   // Graph methods
   GraphNodesParams,
   GraphNodesResult,
@@ -42,7 +47,13 @@ import type {
   GraphChannelsResult,
   // Info methods
   NodeInfoResult,
+  // Common types
   HexString,
+  PaymentHash,
+  ChannelId,
+  ChannelInfo,
+  InvoiceStatus,
+  PaymentStatus,
 } from '../types/index.js';
 
 // =============================================================================
@@ -276,6 +287,35 @@ export class FiberRpcClient {
     return this.call<null>('cancel_invoice', [params]);
   }
 
+  /**
+   * Settle a hold invoice with the preimage
+   * Used for conditional/escrow payments where the invoice was created
+   * with a payment_hash (no preimage provided upfront)
+   */
+  async settleInvoice(params: SettleInvoiceParams): Promise<null> {
+    return this.call<null>('settle_invoice', [params]);
+  }
+
+  // ===========================================================================
+  // Router Module
+  // ===========================================================================
+
+  /**
+   * Build a custom route for payment
+   * Useful for channel rebalancing (circular payments) and advanced routing
+   */
+  async buildRouter(params: BuildRouterParams): Promise<BuildRouterResult> {
+    return this.call<BuildRouterResult>('build_router', [params]);
+  }
+
+  /**
+   * Send a payment using a pre-built route from buildRouter()
+   * Use with allow_self_payment for channel rebalancing
+   */
+  async sendPaymentWithRouter(params: SendPaymentWithRouterParams): Promise<SendPaymentResult> {
+    return this.call<SendPaymentResult>('send_payment_with_router', [params]);
+  }
+
   // ===========================================================================
   // Graph Module
   // ===========================================================================
@@ -338,6 +378,183 @@ export class FiberRpcClient {
     }
 
     throw new FiberRpcError(-32000, 'Node not ready within timeout');
+  }
+
+  // ===========================================================================
+  // Polling / Watching Helpers
+  // ===========================================================================
+
+  /**
+   * Wait for a payment to reach a terminal state (Success or Failed)
+   * Polls get_payment at the specified interval.
+   *
+   * @returns The final payment result
+   * @throws FiberRpcError on timeout
+   */
+  async waitForPayment(
+    paymentHash: PaymentHash,
+    options: { timeout?: number; interval?: number } = {}
+  ): Promise<GetPaymentResult> {
+    const { timeout = 120000, interval = 2000 } = options;
+    const start = Date.now();
+
+    while (Date.now() - start < timeout) {
+      const result = await this.getPayment({ payment_hash: paymentHash });
+      if (result.status === 'Success' || result.status === 'Failed') {
+        return result;
+      }
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+
+    throw new FiberRpcError(-32000, `Payment ${paymentHash} did not complete within ${timeout}ms`);
+  }
+
+  /**
+   * Wait for a channel to reach ChannelReady state.
+   * Polls list_channels at the specified interval.
+   *
+   * @returns The channel info once ready
+   * @throws FiberRpcError on timeout or if channel disappears
+   */
+  async waitForChannelReady(
+    channelId: ChannelId,
+    options: { timeout?: number; interval?: number } = {}
+  ): Promise<ChannelInfo> {
+    const { timeout = 300000, interval = 5000 } = options;
+    const start = Date.now();
+
+    while (Date.now() - start < timeout) {
+      const result = await this.listChannels({});
+      const channel = result.channels.find((ch) => ch.channel_id === channelId);
+
+      if (!channel) {
+        // Channel may use temporary_channel_id initially, check all
+        const allChannels = result.channels;
+        const found = allChannels.find(
+          (ch) => ch.channel_id === channelId
+        );
+        if (!found) {
+          // Channel not yet visible or was abandoned - keep waiting
+          await new Promise((resolve) => setTimeout(resolve, interval));
+          continue;
+        }
+      }
+
+      if (channel && channel.state.state_name === 'ChannelReady') {
+        return channel;
+      }
+
+      if (channel && channel.state.state_name === 'Closed') {
+        throw new FiberRpcError(-32000, `Channel ${channelId} was closed before becoming ready`);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+
+    throw new FiberRpcError(-32000, `Channel ${channelId} did not become ready within ${timeout}ms`);
+  }
+
+  /**
+   * Wait for an invoice to reach a specific status.
+   * Useful for hold invoice workflows: wait for 'Accepted' before settling.
+   *
+   * @returns The invoice info once the target status is reached
+   * @throws FiberRpcError on timeout
+   */
+  async waitForInvoiceStatus(
+    paymentHash: PaymentHash,
+    targetStatus: InvoiceStatus | InvoiceStatus[],
+    options: { timeout?: number; interval?: number } = {}
+  ): Promise<GetInvoiceResult> {
+    const { timeout = 120000, interval = 2000 } = options;
+    const statuses = Array.isArray(targetStatus) ? targetStatus : [targetStatus];
+    const start = Date.now();
+
+    while (Date.now() - start < timeout) {
+      const result = await this.getInvoice({ payment_hash: paymentHash });
+      if (statuses.includes(result.status)) {
+        return result;
+      }
+      // If cancelled, stop waiting
+      if (result.status === 'Cancelled') {
+        throw new FiberRpcError(-32000, `Invoice ${paymentHash} was cancelled`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+
+    throw new FiberRpcError(
+      -32000,
+      `Invoice ${paymentHash} did not reach status [${statuses.join(', ')}] within ${timeout}ms`
+    );
+  }
+
+  /**
+   * Watch for incoming payments on specified invoices.
+   * Polls invoice statuses and calls the callback when a status changes.
+   * Use an AbortSignal to stop watching.
+   *
+   * @example
+   * ```typescript
+   * const controller = new AbortController();
+   * client.watchIncomingPayments({
+   *   paymentHashes: [hash1, hash2],
+   *   onPayment: (invoice) => console.log('Payment received!', invoice),
+   *   signal: controller.signal,
+   * });
+   * // Later: controller.abort(); to stop watching
+   * ```
+   */
+  async watchIncomingPayments(options: {
+    /** Payment hashes of invoices to watch */
+    paymentHashes: PaymentHash[];
+    /** Callback when an invoice status changes to Accepted or Settled */
+    onPayment: (invoice: GetInvoiceResult) => void;
+    /** Polling interval in ms (default: 3000) */
+    interval?: number;
+    /** AbortSignal to stop watching */
+    signal?: AbortSignal;
+  }): Promise<void> {
+    const { paymentHashes, onPayment, interval = 3000, signal } = options;
+    const knownStatuses = new Map<string, InvoiceStatus>();
+
+    // Initialize known statuses
+    for (const hash of paymentHashes) {
+      try {
+        const invoice = await this.getInvoice({ payment_hash: hash });
+        knownStatuses.set(hash, invoice.status);
+      } catch {
+        knownStatuses.set(hash, 'Open');
+      }
+    }
+
+    while (!signal?.aborted) {
+      for (const hash of paymentHashes) {
+        if (signal?.aborted) return;
+
+        try {
+          const invoice = await this.getInvoice({ payment_hash: hash });
+          const previousStatus = knownStatuses.get(hash);
+
+          if (
+            invoice.status !== previousStatus &&
+            (invoice.status === 'Accepted' || invoice.status === 'Settled')
+          ) {
+            knownStatuses.set(hash, invoice.status);
+            onPayment(invoice);
+          } else if (invoice.status !== previousStatus) {
+            knownStatuses.set(hash, invoice.status);
+          }
+        } catch {
+          // Invoice may not exist yet or node unreachable — skip this round
+        }
+      }
+
+      await new Promise<void>((resolve) => {
+        if (signal?.aborted) { resolve(); return; }
+        const timer = setTimeout(resolve, interval);
+        signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+      });
+    }
   }
 }
 

@@ -97,10 +97,9 @@ export interface PaymentInfo {
 
 export type InvoiceStatus =
   | 'Open'
-  | 'Cancelled'
-  | 'Expired'
-  | 'Received'
-  | 'Paid';
+  | 'Accepted'
+  | 'Settled'
+  | 'Cancelled';
 
 /**
  * Invoice attribute types as returned by Fiber RPC.
@@ -304,6 +303,12 @@ export interface UpdateChannelParams {
 
 // --- Payment Module ---
 
+/** Trampoline routing hop for delegated path-finding */
+export interface TrampolineHop {
+  pubkey: HexString;
+  fee_rate: HexString;
+}
+
 export interface SendPaymentParams {
   invoice?: string;
   target_pubkey?: HexString;
@@ -312,11 +317,15 @@ export interface SendPaymentParams {
   final_tlc_expiry_delta?: HexString;
   tlc_expiry_limit?: HexString;
   max_fee_amount?: HexString;
-  max_parts?: number;
+  max_parts?: HexString;
   keysend?: boolean;
   udt_type_script?: Script;
   allow_self_payment?: boolean;
   dry_run?: boolean;
+  /** Custom TLV records attached to the payment (up to 2KB total) */
+  custom_records?: Record<string, HexString>;
+  /** Trampoline hops for delegated routing (light client mode) */
+  trampoline_hops?: TrampolineHop[];
 }
 
 export interface SendPaymentResult {
@@ -345,7 +354,10 @@ export interface NewInvoiceParams {
   final_expiry_delta?: HexString;
   final_cltv?: HexString;
   udt_type_script?: Script;
+  /** Preimage for standard invoices (auto-generates payment_hash) */
   payment_preimage?: HexString;
+  /** Payment hash for hold invoices (provide instead of preimage) */
+  payment_hash?: PaymentHash;
   hash_algorithm?: 'sha256' | 'blake2b';
 }
 
@@ -370,6 +382,47 @@ export interface GetInvoiceResult extends InvoiceInfo {}
 
 export interface CancelInvoiceParams {
   payment_hash: PaymentHash;
+}
+
+export interface SettleInvoiceParams {
+  payment_hash: PaymentHash;
+  payment_preimage: HexString;
+}
+
+// --- Router Module ---
+
+/** Hop info for building a custom route */
+export interface RouterHopInfo {
+  pubkey: HexString;
+  channel_outpoint: string;
+}
+
+export interface BuildRouterParams {
+  /** Amount to route (hex-encoded shannons) */
+  amount: HexString;
+  /** Ordered list of hops defining the route */
+  hops_info: RouterHopInfo[];
+}
+
+/** A single hop in a pre-built route */
+export interface RouterHop {
+  target: HexString;
+  channel_outpoint: string;
+  amount_received: HexString;
+  fee: HexString;
+}
+
+export interface BuildRouterResult {
+  router_hops: RouterHop[];
+}
+
+export interface SendPaymentWithRouterParams {
+  /** Pre-built route from build_router */
+  router: RouterHop[];
+  /** Use keysend (no invoice) */
+  keysend?: boolean;
+  /** Allow circular payments back to self */
+  allow_self_payment?: boolean;
 }
 
 // --- Graph Module ---

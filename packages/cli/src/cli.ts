@@ -3,7 +3,6 @@
  * Command-line interface for AI agents to manage CKB Lightning payments
  */
 
-import { parseArgs } from 'util';
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import {

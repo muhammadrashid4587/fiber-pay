@@ -13,6 +13,7 @@ export type {
   BalanceInfo,
   PaymentResult,
   InvoiceResult,
+  HoldInvoiceResult,
   ChannelSummary,
 } from './fiber-pay.js';
 

@@ -27,6 +27,8 @@ import type {
   PaymentProof,
   PaymentProofSummary,
   LiquidityReport,
+  TrampolineHop,
+  PaymentHash,
 } from '@fiber-pay/sdk';
 import type { DownloadProgress, FiberNodeConfig } from '@fiber-pay/node';
 
@@ -98,7 +100,23 @@ export interface InvoiceResult {
   /** Expiry time (ISO string) */
   expiresAt: string;
   /** Status */
-  status: 'open' | 'paid' | 'expired' | 'cancelled';
+  status: 'open' | 'accepted' | 'settled' | 'cancelled';
+}
+
+/**
+ * Hold invoice result (for escrow / conditional payments)
+ */
+export interface HoldInvoiceResult {
+  /** Invoice string to share with payer */
+  invoice: string;
+  /** Payment hash for tracking */
+  paymentHash: string;
+  /** Amount to receive (in CKB) */
+  amountCkb: number;
+  /** Expiry time (ISO string) */
+  expiresAt: string;
+  /** Status — starts as 'open', becomes 'accepted' when payer sends */
+  status: 'open' | 'accepted' | 'settled' | 'cancelled';
 }
 
 /**
@@ -383,6 +401,12 @@ export class FiberPay {
     amountCkb?: number;
     /** Maximum fee in CKB */
     maxFeeCkb?: number;
+    /** Custom TLV records to attach (up to 2KB) */
+    customRecords?: Record<string, HexString>;
+    /** Trampoline hops for delegated routing */
+    trampolineHops?: TrampolineHop[];
+    /** Maximum number of MPP parts (e.g. 4) */
+    maxParts?: number;
   }): Promise<AgentResult<PaymentResult>> {
     this.ensureInitialized();
 
@@ -434,6 +458,9 @@ export class FiberPay {
         amount: params.recipientNodeId ? amountHex : undefined,
         keysend: params.recipientNodeId ? true : undefined,
         max_fee_amount: params.maxFeeCkb ? ckbToShannons(params.maxFeeCkb) : undefined,
+        custom_records: params.customRecords,
+        trampoline_hops: params.trampolineHops,
+        max_parts: params.maxParts ? toHex(params.maxParts) : undefined,
       });
 
       // Record successful payment
@@ -627,7 +654,7 @@ export class FiberPay {
           paymentHash: result.payment_hash,
           amountCkb: result.amount ? shannonsToCkb(result.amount) : 0,
           expiresAt: result.expiry ? new Date(Number(fromHex(result.created_at)) + Number(fromHex(result.expiry)) * 1000).toISOString() : '',
-          status: result.status.toLowerCase() as 'open' | 'paid' | 'expired' | 'cancelled',
+          status: this.mapInvoiceStatus(result.status),
         },
         metadata: { timestamp: Date.now() },
       };
@@ -960,6 +987,181 @@ export class FiberPay {
   }
 
   // ===========================================================================
+  // Hold Invoice & Settlement Methods
+  // ===========================================================================
+
+  /**
+   * Create a hold invoice (for escrow / conditional payments)
+   * The payer's funds are held until you explicitly settle with the preimage,
+   * or cancelled if you don't settle before expiry.
+   *
+   * @example
+   * ```typescript
+   * const invoice = await fiber.createHoldInvoice({
+   *   amountCkb: 10,
+   *   paymentHash: '0x...',  // SHA-256 hash of your secret preimage
+   *   description: 'Escrow for service',
+   * });
+   * // Share invoice.data.invoice with the payer
+   * // When conditions are met, call settleInvoice() with the preimage
+   * ```
+   */
+  async createHoldInvoice(params: {
+    /** Amount to receive in CKB */
+    amountCkb: number;
+    /** Payment hash (SHA-256 of preimage you control) */
+    paymentHash: string;
+    /** Description for the payer */
+    description?: string;
+    /** Expiry time in minutes (default: 60) */
+    expiryMinutes?: number;
+  }): Promise<AgentResult<HoldInvoiceResult>> {
+    this.ensureInitialized();
+
+    try {
+      const amountHex = ckbToShannons(params.amountCkb);
+      const expirySeconds = (params.expiryMinutes || 60) * 60;
+
+      const result = await this.rpc!.newInvoice({
+        amount: amountHex,
+        currency: this.config.chain === 'mainnet' ? 'Fibb' : 'Fibt',
+        description: params.description,
+        expiry: toHex(expirySeconds),
+        payment_hash: params.paymentHash as HexString,
+      });
+
+      const expiresAt = new Date(Date.now() + expirySeconds * 1000).toISOString();
+
+      const invoiceResult: HoldInvoiceResult = {
+        invoice: result.invoice_address,
+        paymentHash: result.invoice.payment_hash,
+        amountCkb: params.amountCkb,
+        expiresAt,
+        status: 'open',
+      };
+
+      this.policy.addAuditEntry('HOLD_INVOICE_CREATED', true, { ...invoiceResult });
+
+      return {
+        success: true,
+        data: invoiceResult,
+        metadata: { timestamp: Date.now() },
+      };
+    } catch (error) {
+      return this.errorResult(error, 'HOLD_INVOICE_FAILED', true);
+    }
+  }
+
+  /**
+   * Settle a hold invoice by revealing the preimage
+   * This releases the held funds to you. No policy check needed since
+   * settling receives money, it doesn't spend it.
+   *
+   * @example
+   * ```typescript
+   * await fiber.settleInvoice({
+   *   paymentHash: '0x...',
+   *   preimage: '0x...',  // The secret preimage whose hash matches paymentHash
+   * });
+   * ```
+   */
+  async settleInvoice(params: {
+    /** Payment hash of the hold invoice */
+    paymentHash: string;
+    /** Preimage that hashes to the payment hash */
+    preimage: string;
+  }): Promise<AgentResult<void>> {
+    this.ensureInitialized();
+
+    try {
+      await this.rpc!.settleInvoice({
+        payment_hash: params.paymentHash as HexString,
+        payment_preimage: params.preimage as HexString,
+      });
+
+      this.policy.addAuditEntry('HOLD_INVOICE_SETTLED', true, {
+        paymentHash: params.paymentHash,
+      });
+
+      return {
+        success: true,
+        metadata: { timestamp: Date.now() },
+      };
+    } catch (error) {
+      return this.errorResult(error, 'SETTLE_INVOICE_FAILED', true);
+    }
+  }
+
+  // ===========================================================================
+  // Waiting / Watching Methods
+  // ===========================================================================
+
+  /**
+   * Wait for a payment to complete (Success or Failed)
+   * Wraps the SDK-level polling helper with AgentResult return type.
+   */
+  async waitForPayment(paymentHash: string, options?: {
+    /** Timeout in ms (default: 120000) */
+    timeoutMs?: number;
+  }): Promise<AgentResult<PaymentResult>> {
+    this.ensureInitialized();
+
+    try {
+      const result = await this.rpc!.waitForPayment(
+        paymentHash as HexString,
+        { timeout: options?.timeoutMs }
+      );
+
+      return {
+        success: result.status === 'Success',
+        data: {
+          paymentHash: result.payment_hash,
+          status: result.status === 'Success' ? 'success' : result.status === 'Failed' ? 'failed' : 'pending',
+          amountCkb: 0, // Amount not returned from get_payment
+          feeCkb: shannonsToCkb(result.fee),
+          failureReason: result.failed_error,
+        },
+        metadata: { timestamp: Date.now() },
+      };
+    } catch (error) {
+      return this.errorResult(error, 'WAIT_PAYMENT_FAILED', true);
+    }
+  }
+
+  /**
+   * Wait for a channel to become ready (ChannelReady state)
+   * Useful after opening a channel — waits for on-chain confirmation.
+   */
+  async waitForChannelReady(channelId: string, options?: {
+    /** Timeout in ms (default: 300000 = 5 min) */
+    timeoutMs?: number;
+  }): Promise<AgentResult<ChannelSummary>> {
+    this.ensureInitialized();
+
+    try {
+      const channel = await this.rpc!.waitForChannelReady(
+        channelId as HexString,
+        { timeout: options?.timeoutMs }
+      );
+
+      return {
+        success: true,
+        data: {
+          id: channel.channel_id,
+          peerId: channel.peer_id,
+          localBalanceCkb: shannonsToCkb(channel.local_balance),
+          remoteBalanceCkb: shannonsToCkb(channel.remote_balance),
+          state: channel.state.state_name,
+          isPublic: channel.is_public,
+        },
+        metadata: { timestamp: Date.now() },
+      };
+    } catch (error) {
+      return this.errorResult(error, 'WAIT_CHANNEL_FAILED', true);
+    }
+  }
+
+  // ===========================================================================
   // Liquidity & Fund Management Methods
   // ===========================================================================
 
@@ -1059,6 +1261,19 @@ export class FiberPay {
   private ensureInitialized(): void {
     if (!this.initialized) {
       throw new Error('FiberPay not initialized. Call initialize() first.');
+    }
+  }
+
+  /**
+   * Map RPC InvoiceStatus to agent-level status string
+   */
+  private mapInvoiceStatus(status: string): 'open' | 'accepted' | 'settled' | 'cancelled' {
+    switch (status) {
+      case 'Open': return 'open';
+      case 'Accepted': return 'accepted';
+      case 'Settled': return 'settled';
+      case 'Cancelled': return 'cancelled';
+      default: return 'open';
     }
   }
 
