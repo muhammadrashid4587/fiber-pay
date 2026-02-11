@@ -1,13 +1,16 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: { index: 'src/index.ts' },
+  entry: {
+    index: 'src/index.ts',
+    browser: 'src/browser.ts',
+  },
   format: ['esm'],
   dts: true,
   clean: true,
-  splitting: false,
+  splitting: true,
   sourcemap: true,
-  target: 'node18',
+  target: 'es2020',
   outDir: 'dist',
   shims: true,
 });
