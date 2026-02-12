@@ -285,6 +285,7 @@ export interface AcceptChannelResult {
 
 export interface ListChannelsParams {
   peer_id?: PeerId;
+  include_closed?: boolean;
 }
 
 export interface ListChannelsResult {

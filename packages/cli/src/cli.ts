@@ -31,6 +31,7 @@ import {
   ChannelState,
   type HexString,
   type Script,
+  type ChannelInfo,
 } from '@fiber-pay/sdk';
 
 // =============================================================================
@@ -163,6 +164,122 @@ function showProgress(progress: DownloadProgress): void {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function truncateMiddle(value: string, start = 10, end = 8): string {
+  if (!value || value.length <= start + end + 3) {
+    return value;
+  }
+  return `${value.slice(0, start)}...${value.slice(-end)}`;
+}
+
+function parseHexTimestampMs(hexTimestamp: string): number | null {
+  if (!hexTimestamp) return null;
+  try {
+    const raw = Number(BigInt(hexTimestamp));
+    if (!Number.isFinite(raw) || raw <= 0) return null;
+    return raw > 1_000_000_000_000 ? raw : raw * 1000;
+  } catch {
+    return null;
+  }
+}
+
+function formatAge(whenMs: number | null): string {
+  if (!whenMs) return 'unknown';
+  const diff = Date.now() - whenMs;
+  if (diff < 0) return 'just now';
+
+  const seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${minutes % 60}m ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h ago`;
+}
+
+function stateLabel(state: ChannelState): string {
+  switch (state) {
+    case ChannelState.NegotiatingFunding:
+      return '🔄 Negotiating Funding';
+    case ChannelState.CollaboratingFundingTx:
+      return '🧩 Collaborating Funding Tx';
+    case ChannelState.SigningCommitment:
+      return '✍️ Signing Commitment';
+    case ChannelState.AwaitingTxSignatures:
+      return '⏳ Awaiting Tx Signatures';
+    case ChannelState.AwaitingChannelReady:
+      return '⏳ Awaiting Channel Ready';
+    case ChannelState.ChannelReady:
+      return '✅ Channel Ready';
+    case ChannelState.ShuttingDown:
+      return '🛑 Shutting Down';
+    case ChannelState.Closed:
+      return '❌ Closed';
+    default:
+      return state;
+  }
+}
+
+function parseChannelState(input: string | undefined): ChannelState | undefined {
+  if (!input) return undefined;
+  const normalized = input.trim().toUpperCase();
+  return (Object.values(ChannelState) as string[]).includes(normalized)
+    ? (normalized as ChannelState)
+    : undefined;
+}
+
+function formatChannel(channel: ChannelInfo): Record<string, unknown> {
+  const local = BigInt(channel.local_balance);
+  const remote = BigInt(channel.remote_balance || '0x0');
+  const capacity = local + remote;
+  const localPct = capacity > 0n ? Number((local * 100n) / capacity) : 0;
+  const remotePct = capacity > 0n ? 100 - localPct : 0;
+
+  return {
+    channelId: channel.channel_id,
+    channelIdShort: truncateMiddle(channel.channel_id, 10, 8),
+    peerId: channel.peer_id,
+    peerIdShort: truncateMiddle(channel.peer_id, 10, 8),
+    state: channel.state.state_name,
+    stateLabel: stateLabel(channel.state.state_name),
+    stateFlags: channel.state.state_flags,
+    localBalanceCkb: shannonsToCkb(channel.local_balance),
+    remoteBalanceCkb: shannonsToCkb(channel.remote_balance),
+    capacityCkb: shannonsToCkb(toHex(capacity)),
+    balanceRatio: `${localPct}/${remotePct}`,
+    pendingTlcs: channel.pending_tlcs.length,
+    enabled: channel.enabled,
+    isPublic: channel.is_public,
+    age: formatAge(parseHexTimestampMs(channel.created_at)),
+  };
+}
+
+function getChannelSummary(channels: ChannelInfo[]): Record<string, unknown> {
+  let totalLocal = 0n;
+  let totalRemote = 0n;
+  let active = 0;
+
+  for (const channel of channels) {
+    totalLocal += BigInt(channel.local_balance);
+    totalRemote += BigInt(channel.remote_balance || '0x0');
+    if (channel.state.state_name === ChannelState.ChannelReady) {
+      active++;
+    }
+  }
+
+  return {
+    count: channels.length,
+    activeCount: active,
+    totalLocalCkb: shannonsToCkb(toHex(totalLocal)),
+    totalRemoteCkb: shannonsToCkb(toHex(totalRemote)),
+    totalCapacityCkb: shannonsToCkb(toHex(totalLocal + totalRemote)),
+  };
+}
+
 // =============================================================================
 // Command Handlers
 // =============================================================================
@@ -187,11 +304,13 @@ NODE MANAGEMENT:
 COMMANDS (require running node - connect via RPC):
   info                    Get node information
   balance                 Get current balance information
-  channels                List all payment channels
+  channels                List channels with human-readable state/balances
+  watch-channels          Monitor channel state changes in real-time
   peers                   List connected peers
   invoice                 Create an invoice to receive payment
   pay                     Pay an invoice or send directly
   open-channel            Open a new channel
+  abandon-channel         Abandon a pending/temporary channel
   close-channel           Close a channel
 
 BINARY MANAGEMENT:
@@ -243,6 +362,17 @@ INVOICE:
   fiber-pay invoice --amount <CKB> --description "For coffee"
 
 CHANNELS:
+  fiber-pay channels
+  fiber-pay channels --state CHANNEL_READY
+  fiber-pay channels --peer <peer_id>
+  fiber-pay channels --raw
+  fiber-pay watch-channels
+  fiber-pay watch-channels --include-closed
+  fiber-pay watch-channels --interval 2 --until CHANNEL_READY
+  fiber-pay watch-channels --channel <channelId> --timeout 300
+  fiber-pay abandon-channel <temporaryChannelId>
+
+  # Existing channel management commands:
   fiber-pay open-channel --peer <multiaddr> --funding <CKB>
   fiber-pay open-channel --peer <peer_id> --funding <CKB>
   fiber-pay close-channel <channelId>
@@ -350,15 +480,175 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
 
     case 'channels':
     case 'list-channels': {
-      const channels = await rpc.listChannels({});
+      let raw = false;
+      let peerId: string | undefined;
+      let stateFilter: ChannelState | undefined;
+      let includeClosed = false;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--raw') {
+          raw = true;
+        } else if (args[i] === '--peer' && args[i + 1]) {
+          peerId = args[++i];
+        } else if (args[i] === '--include-closed') {
+          includeClosed = true;
+        } else if (args[i] === '--state' && args[i + 1]) {
+          const parsed = parseChannelState(args[++i]);
+          if (!parsed) {
+            console.error(`Error: Invalid --state value. Use one of: ${Object.values(ChannelState).join(', ')}`);
+            process.exit(1);
+          }
+          stateFilter = parsed;
+        }
+      }
+
+      const channels = await rpc.listChannels(peerId ? { peer_id: peerId, include_closed: includeClosed } : { include_closed: includeClosed });
+      const filtered = stateFilter
+        ? channels.channels.filter(channel => channel.state.state_name === stateFilter)
+        : channels.channels;
+
+      if (raw) {
+        console.log(JSON.stringify({
+          success: true,
+          data: {
+            channels: filtered,
+            count: filtered.length,
+          }
+        }, null, 2));
+        return true;
+      }
+
       console.log(JSON.stringify({
         success: true,
         data: {
-          channels: channels.channels,
-          count: channels.channels.length,
+          channels: filtered.map(formatChannel),
+          summary: getChannelSummary(filtered),
         }
       }, null, 2));
       return true;
+    }
+
+    case 'watch-channels':
+    case 'watch':
+    case 'monitor-channels':
+    case 'channel-status': {
+      let intervalSeconds = 5;
+      let timeoutSeconds: number | undefined;
+      let channelIdFilter: string | undefined;
+      let peerId: string | undefined;
+      let stateFilter: ChannelState | undefined;
+      let untilState: ChannelState | undefined;
+      let noClear = false;
+      let includeClosed = false;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--interval' && args[i + 1]) {
+          intervalSeconds = parseInt(args[++i], 10);
+        } else if (args[i] === '--timeout' && args[i + 1]) {
+          timeoutSeconds = parseInt(args[++i], 10);
+        } else if (args[i] === '--channel' && args[i + 1]) {
+          channelIdFilter = args[++i];
+        } else if (args[i] === '--peer' && args[i + 1]) {
+          peerId = args[++i];
+        } else if (args[i] === '--include-closed') {
+          includeClosed = true;
+        } else if (args[i] === '--state' && args[i + 1]) {
+          const parsed = parseChannelState(args[++i]);
+          if (!parsed) {
+            console.error(`Error: Invalid --state value. Use one of: ${Object.values(ChannelState).join(', ')}`);
+            process.exit(1);
+          }
+          stateFilter = parsed;
+        } else if (args[i] === '--until' && args[i + 1]) {
+          const parsed = parseChannelState(args[++i]);
+          if (!parsed) {
+            console.error(`Error: Invalid --until value. Use one of: ${Object.values(ChannelState).join(', ')}`);
+            process.exit(1);
+          }
+          untilState = parsed;
+        } else if (args[i] === '--no-clear') {
+          noClear = true;
+        }
+      }
+
+      if (!Number.isFinite(intervalSeconds) || intervalSeconds <= 0) {
+        console.error('Error: --interval must be a positive integer');
+        process.exit(1);
+      }
+
+      if (timeoutSeconds !== undefined && (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0)) {
+        console.error('Error: --timeout must be a positive integer');
+        process.exit(1);
+      }
+
+      const startedAt = Date.now();
+      const previousStates = new Map<string, ChannelState>();
+
+      while (true) {
+        const response = await rpc.listChannels(peerId ? { peer_id: peerId, include_closed: includeClosed } : { include_closed: includeClosed });
+        let channels = response.channels;
+
+        if (channelIdFilter) {
+          channels = channels.filter(channel => channel.channel_id === channelIdFilter);
+        }
+
+        if (stateFilter) {
+          channels = channels.filter(channel => channel.state.state_name === stateFilter);
+        }
+
+        const stateChanges: Array<{ channelId: string; from: ChannelState; to: ChannelState }> = [];
+        for (const channel of channels) {
+          const previous = previousStates.get(channel.channel_id);
+          const current = channel.state.state_name;
+          if (previous && previous !== current) {
+            stateChanges.push({ channelId: channel.channel_id, from: previous, to: current });
+          }
+          previousStates.set(channel.channel_id, current);
+        }
+
+        if (!noClear) {
+          console.clear();
+        }
+
+        console.log(`⏱️  Channel monitor - ${new Date().toISOString()}`);
+        console.log(`   Refresh: ${intervalSeconds}s${timeoutSeconds ? ` | Timeout: ${timeoutSeconds}s` : ''}${untilState ? ` | Until: ${untilState}` : ''}`);
+        if (channelIdFilter) {
+          console.log(`   Filter channel: ${channelIdFilter}`);
+        }
+        if (peerId) {
+          console.log(`   Filter peer: ${peerId}`);
+        }
+        if (stateFilter) {
+          console.log(`   Filter state: ${stateFilter}`);
+        }
+
+        if (stateChanges.length > 0) {
+          console.log('\n🔔 State changes:');
+          for (const change of stateChanges) {
+            console.log(`   ${truncateMiddle(change.channelId)}: ${change.from} -> ${change.to}`);
+          }
+        }
+
+        console.log(JSON.stringify({
+          success: true,
+          data: {
+            channels: channels.map(formatChannel),
+            summary: getChannelSummary(channels),
+          }
+        }, null, 2));
+
+        if (untilState && channels.some(channel => channel.state.state_name === untilState)) {
+          console.log(`\n✅ Target state reached: ${untilState}`);
+          return true;
+        }
+
+        if (timeoutSeconds !== undefined && Date.now() - startedAt >= timeoutSeconds * 1000) {
+          console.log('\n⏰ Monitor timeout reached.');
+          return true;
+        }
+
+        await sleep(intervalSeconds * 1000);
+      }
     }
 
     case 'balance':
@@ -548,6 +838,35 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
           temporaryChannelId: result.temporary_channel_id,
           peer: peerId,
           fundingCkb,
+        }
+      }, null, 2));
+      return true;
+    }
+
+    case 'abandon-channel':
+    case 'abandon': {
+      let channelId: string | undefined;
+
+      for (let i = 0; i < args.length; i++) {
+        if (args[i] === '--channel' && args[i + 1]) {
+          channelId = args[++i];
+        } else if (!args[i].startsWith('--')) {
+          channelId = args[i];
+        }
+      }
+
+      if (!channelId) {
+        console.error('Error: Channel ID required. Usage: abandon-channel <channelId>');
+        process.exit(1);
+      }
+
+      await rpc.abandonChannel({ channel_id: channelId as HexString });
+
+      console.log(JSON.stringify({
+        success: true,
+        data: {
+          channelId,
+          message: 'Channel abandoned.',
         }
       }, null, 2));
       return true;
@@ -905,11 +1224,13 @@ async function main(): Promise<void> {
   const rpcOnlyCommands = [
     'info', 'node-info', 
     'channels', 'list-channels', 
+    'watch-channels', 'watch', 'monitor-channels', 'channel-status',
     'balance', 'get-balance', 
     'peers', 'list-peers',
     'invoice', 'create-invoice',
     'pay',
     'open-channel',
+    'abandon-channel', 'abandon',
     'close-channel',
     'verify-invoice', 'validate-invoice',
     'liquidity', 'liquidity-report', 'analyze-liquidity',
