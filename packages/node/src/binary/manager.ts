@@ -194,10 +194,6 @@ export class BinaryManager {
       patterns.push({ pattern: BINARY_PATTERNS.darwin.x64, usesRosetta: true });
     }
 
-    if (platform === 'linux' && arch === 'arm64') {
-      patterns.push({ pattern: BINARY_PATTERNS.linux.x64, usesRosetta: true });
-    }
-
     const candidates: AssetCandidate[] = [];
     for (const { pattern, usesRosetta } of patterns) {
       for (const ext of extensions) {
@@ -208,6 +204,25 @@ export class BinaryManager {
     }
 
     return candidates;
+  }
+
+  /**
+   * Validate Rosetta support when falling back to x86_64 binary on Apple Silicon.
+   */
+  private async ensureRosettaAvailable(): Promise<void> {
+    const { platform, arch } = this.getPlatformInfo();
+    if (platform !== 'darwin' || arch !== 'arm64') {
+      return;
+    }
+
+    try {
+      await execAsync('arch -x86_64 /usr/bin/true');
+    } catch {
+      throw new Error(
+        'Apple Silicon fallback selected x86_64 binary, but Rosetta 2 is not available. ' +
+        'Install Rosetta with: softwareupdate --install-rosetta --agree-to-license'
+      );
+    }
   }
 
   /**
@@ -281,6 +296,13 @@ export class BinaryManager {
       onProgress({
         phase: 'downloading',
         message: `No ARM64 binary available, using x86_64 version with Rosetta 2...`,
+      });
+
+      await this.ensureRosettaAvailable();
+
+      onProgress({
+        phase: 'downloading',
+        message: `Rosetta 2 available, continuing with x86_64 fallback binary...`,
       });
     }
 

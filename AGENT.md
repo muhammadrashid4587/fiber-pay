@@ -60,8 +60,11 @@ packages/
 │       ├── mcp-tools.ts    # MCP tool definitions for Claude/OpenClaw
 │       └── index.ts
 └── cli/                    # @fiber-pay/cli — Command-line tool
-    └── src/
-        └── cli.ts          # CLI entry point
+  ├── llm.txt             # CLI source-of-truth usage & maintenance guide
+  └── src/
+    ├── index.ts        # CLI entry point / alias routing
+    ├── commands/       # Command groups (node/channel/invoice/payment/...)
+    └── lib/            # Shared CLI helpers (config/rpc/format/pid/bootnode)
 
 skills/
 └── fiber-pay/              # Agent Skills integration (agentskills.io)
@@ -128,6 +131,9 @@ Records and stores payment proofs for audit trail. Validates preimage hashes, ma
 ### 8. `packages/sdk/src/funds/liquidity-analyzer.ts` - Liquidity Management
 Analyzes channel health, identifies liquidity gaps, generates rebalancing recommendations. Calculates health scores, detects imbalances, and estimates funding needs.
 
+### 9. `packages/cli/llm.txt` - CLI Canonical Guide
+Authoritative reference for CLI command surface, alias policy, output mode conventions, and maintenance workflow.
+
 ## Common Tasks
 
 ### Adding a New RPC Method
@@ -158,25 +164,26 @@ async newMethod(params): Promise<AgentResult<T>> {
 
 ### Adding a CLI Command
 
-Edit `packages/cli/src/cli.ts`:
+Read this file first:
 
-1. **For RPC commands** (info, balance, pay, invoice, channels, etc.):
-   - Add to `handleRpcCommand()` function
-   - Add command name to `rpcOnlyCommands` array in `main()`
-   - These commands connect to a running node via RPC
+- `packages/cli/llm.txt`
 
-2. **For standalone commands** (download, binary-info, etc.):
-   - Add to `handleStandaloneCommand()` function
-   - Add command name to `standaloneCommands` array in `main()`
-   - These don't need a running node
+CLI command maintenance now follows modular architecture:
 
-3. **For node management commands** (start, stop, status):
-   - Handle directly in `main()` function
+1. Add or update command logic in `packages/cli/src/commands/<group>.ts`
+2. Reuse shared helpers in `packages/cli/src/lib/*`
+3. Wire/adjust aliases in `packages/cli/src/index.ts` only when needed
+4. Keep output policy consistent:
+  - human-readable default
+  - `--json` machine output
+5. Update `packages/cli/llm.txt` when command surface/behavior changes
 
-4. Update `printHelp()` with the new command
+Validate:
 
-**Note:** Most commands should go into `handleRpcCommand()` since the node
-should be running separately via `fiber-pay start`.
+```bash
+pnpm --filter @fiber-pay/cli typecheck
+pnpm --filter @fiber-pay/cli build
+```
 
 ### Modifying Security Policy
 

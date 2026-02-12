@@ -168,80 +168,48 @@ await fiber.shutdown();
 
 ## CLI Usage
 
-### Node Lifecycle
+The CLI has been refactored to a grouped-command architecture. For complete and up-to-date guidance, use:
 
-The recommended way to use the CLI is to start the node once and run commands against it:
+- `packages/cli/llm.txt`
 
-```bash
-# Terminal 1: Start node (runs in foreground)
-fiber-pay start
+That file is the authoritative CLI reference for:
+- command groups and aliases
+- output policy (`human-readable` by default, `--json` for automation)
+- environment variables
+- maintenance notes for contributors
 
-# Terminal 2: Run commands against the running node
-fiber-pay status    # Check if node is running
-fiber-pay info      # Get node information
-fiber-pay balance   # Get current balance
-fiber-pay channels  # List channels
-fiber-pay peers     # List connected peers
-
-# Stop the node
-fiber-pay stop
-```
-
-### Binary Management
+### Quick Examples
 
 ```bash
-# Download binary (auto-detects platform)
-fiber-pay download
-fiber-pay download --version v0.6.0  # Specific version
-fiber-pay download --force           # Re-download
+# Start/stop node
+fiber-pay node start
+fiber-pay node status
+fiber-pay node stop
 
-# Check binary status
-fiber-pay binary-info
+# Channel/Invoice/Payment status workflows
+fiber-pay channel list
+fiber-pay channel get <channelId>
+fiber-pay invoice get <paymentHash>
+fiber-pay payment get <paymentHash>
+fiber-pay payment watch <paymentHash>
+
+# Typical receive flow (operator perspective)
+fiber-pay invoice create --amount 10 --description "service"
+fiber-pay invoice get <paymentHash>
+
+# Typical send flow (operator perspective)
+fiber-pay payment send <invoice>
+fiber-pay payment watch <paymentHash>
+
+# Machine-readable output for automation
+fiber-pay channel list --json
+fiber-pay invoice get <paymentHash> --json
 ```
 
-### Payments & Invoices
+### Binary Notes
 
-```bash
-# Pay an invoice
-fiber-pay pay fibt1qp...
-fiber-pay pay --invoice <invoice>
-fiber-pay pay --to <nodeId> --amount 10
-
-# Create invoice for 10 CKB
-fiber-pay invoice 10 --description "For services"
-```
-
-### Channel Management
-
-```bash
-# Open a channel with 100 CKB
-fiber-pay open-channel --peer /ip4/x.x.x.x/tcp/8228/p2p/QmXXX --funding 100
-
-# Close a channel
-fiber-pay close-channel <channelId>
-fiber-pay close-channel <channelId> --force
-```
-
-### Other Commands
-
-```bash
-# View audit log
-fiber-pay audit --limit 20
-
-# Get spending allowance
-fiber-pay allowance
-
-# Get help
-fiber-pay help
-```
-
-### Command Categories
-
-| Category | Commands | Behavior |
-|----------|----------|----------|
-| **Node Management** | `start`, `stop`, `status` | Control node lifecycle |
-| **RPC Operations** | `info`, `balance`, `channels`, `peers`, `pay`, `invoice`, `open-channel`, `close-channel` | Connect to running node via RPC |
-| **Standalone** | `download`, `binary-info`, `allowance`, `audit` | No running node required |
+- Binary download is managed by `@fiber-pay/node`.
+- On Apple Silicon, download prefers native ARM64 and falls back to x86_64 with Rosetta 2 when necessary.
 
 ## MCP Integration
 

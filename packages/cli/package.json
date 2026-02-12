@@ -27,6 +27,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "commander": "^13.1.0",
     "@fiber-pay/sdk": "workspace:*",
     "@fiber-pay/node": "workspace:*"
   }

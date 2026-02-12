@@ -1,0 +1,149 @@
+fiber-pay CLI Guide (LLM Reference)
+==================================
+
+Last updated: 2026-02-12
+Fiber Node target: v0.6.1
+Primary RPC reference:
+https://github.com/nervosnetwork/fiber/blob/v0.6.1/crates/fiber-lib/src/rpc/README.md
+
+Purpose
+-------
+This file is the source-of-truth guide for `@fiber-pay/cli` usage and maintenance.
+If README/AGENT summaries disagree, follow this file.
+
+CLI Architecture
+----------------
+Entry and composition:
+- src/index.ts                     (root command + aliases + global error handling)
+- src/commands/node.ts             (node lifecycle/info)
+- src/commands/channel.ts          (channel lifecycle + status)
+- src/commands/invoice.ts          (invoice lifecycle + status)
+- src/commands/payment.ts          (payment lifecycle + status)
+- src/commands/peer.ts             (peer list/connect/disconnect)
+- src/commands/balance.ts          (balance convenience command)
+- src/commands/binary.ts           (binary management)
+
+Shared helpers:
+- src/lib/config.ts                (CliConfig + env-driven config)
+- src/lib/rpc.ts                   (FiberRpcClient creation/readiness)
+- src/lib/format.ts                (human output + JSON helpers)
+- src/lib/pid.ts                   (pid file lifecycle)
+- src/lib/bootnode.ts              (bootnode extraction + auto-connect)
+
+Output Policy
+-------------
+Phase 2 rule:
+- Default output = human-readable
+- `--json` = machine-readable object payload
+
+Applied to core workflows:
+- channel / invoice / payment status commands
+- node info
+- peer list/connect/disconnect
+- balance
+- binary info/download
+
+Global Errors:
+- `--json` returns structured fatal error payloads
+- non-JSON keeps standard CLI-friendly text output
+
+Command Groups (Primary Surface)
+--------------------------------
+Node:
+- fiber-pay node start [--cors-proxy [port]]
+- fiber-pay node stop
+- fiber-pay node status
+- fiber-pay node info [--json]
+
+Channel:
+- fiber-pay channel list [--state <state>] [--peer <peerId>] [--include-closed] [--raw] [--json]
+- fiber-pay channel get <channelId> [--raw] [--json]
+- fiber-pay channel watch [--interval <sec>] [--timeout <sec>] [--channel <id>] [--peer <id>] [--state <state>] [--until <state>] [--include-closed] [--no-clear] [--json]
+- fiber-pay channel open --peer <peerIdOrMultiaddr> --funding <CKB> [--private]
+- fiber-pay channel close <channelId> [--force]
+- fiber-pay channel abandon <channelId>
+- fiber-pay channel update <channelId> [--enabled <true|false>] [--tlc-expiry-delta <ms>] [--tlc-minimum-value <hex>] [--tlc-fee-proportional-millionths <value>]
+
+Invoice:
+- fiber-pay invoice create [amount] [--amount <CKB>] [--description <text>] [--expiry <minutes>]
+- fiber-pay invoice get <paymentHash> [--json]
+- fiber-pay invoice parse <invoiceString>
+- fiber-pay invoice cancel <paymentHash> [--json]
+- fiber-pay invoice settle <paymentHash> --preimage <0x...> [--json]
+
+Payment:
+- fiber-pay payment send [invoice] [--invoice <invoice>] [--to <nodeId>] [--amount <CKB>] [--max-fee <CKB>] [--json]
+- fiber-pay payment get <paymentHash> [--json]
+- fiber-pay payment watch <paymentHash> [--interval <sec>] [--timeout <sec>] [--json]
+
+Peer:
+- fiber-pay peer list [--json]
+- fiber-pay peer connect <multiaddr> [--json]
+- fiber-pay peer disconnect <peerId> [--json]
+
+Binary:
+- fiber-pay binary download [--version <vX.Y.Z>] [--force] [--json]
+- fiber-pay binary info [--json]
+
+Convenience:
+- fiber-pay balance [--json]
+
+Compatibility Aliases (Kept)
+----------------------------
+- start -> node start
+- stop -> node stop
+- status -> node status
+- info -> node info
+- channels -> channel list
+- watch-channels -> channel watch
+- peers -> peer list
+- pay -> payment send
+- open-channel -> channel open
+- close-channel -> channel close
+- abandon-channel -> channel abandon
+- download -> binary download
+- binary-info -> binary info
+- create-invoice -> invoice create
+- verify-invoice -> invoice parse
+- invoice-get -> invoice get
+- payment-get -> payment get
+- payment-watch -> payment watch
+
+Removed low-value duplicate aliases during command-surface consolidation
+(e.g. list-channels, list-peers, monitor-channels, validate-invoice, etc).
+
+Environment Variables
+---------------------
+- FIBER_BINARY_PATH
+- FIBER_DATA_DIR
+- FIBER_NETWORK (testnet | mainnet)
+- FIBER_RPC_URL
+- FIBER_KEY_PASSWORD
+
+Binary Download Notes
+---------------------
+Binary manager behavior (`@fiber-pay/node`):
+- Platform-aware download from Fiber GitHub releases
+- Apple Silicon fallback:
+  - Tries native `aarch64-darwin` first
+  - Falls back to `x86_64-darwin` when native asset unavailable
+  - Verifies Rosetta 2 before fallback install
+  - If missing: recommends `softwareupdate --install-rosetta --agree-to-license`
+
+Maintenance Workflow
+--------------------
+When adding/changing CLI behavior:
+1) Update the relevant command file under src/commands/
+2) Reuse shared logic from src/lib/
+3) Maintain output policy (human default + --json)
+4) Update alias mapping in src/index.ts only if necessary
+5) Run:
+   - pnpm --filter @fiber-pay/cli typecheck
+   - pnpm --filter @fiber-pay/cli build
+6) Update this file if command surface or policy changes
+
+Phase Status
+------------
+- Phase 1: completed
+- Phase 2: completed (modularization + output consistency + alias consolidation)
+- Phase 3: deferred (future diagnostics/next-step guidance improvements)
