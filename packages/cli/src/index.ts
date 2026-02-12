@@ -63,39 +63,6 @@ async function main(): Promise<void> {
   program.addCommand(createBinaryCommand(config));
   program.addCommand(createBalanceCommand(config));
 
-  const aliasTo = (alias: string, target: string[]) => {
-    program
-      .command(alias)
-      .allowUnknownOption()
-      .description(`Alias of ${target.join(' ')}`)
-      .action(async () => {
-        const rest = process.argv.slice(3);
-        process.argv = [process.argv[0], process.argv[1], ...target, ...rest];
-        await program.parseAsync(process.argv);
-      });
-  };
-
-  // Backward-compatible convenience aliases
-  aliasTo('start', ['node', 'start']);
-  aliasTo('stop', ['node', 'stop']);
-  aliasTo('status', ['node', 'status']);
-  aliasTo('info', ['node', 'info']);
-
-  aliasTo('channels', ['channel', 'list']);
-  aliasTo('watch-channels', ['channel', 'watch']);
-  aliasTo('peers', ['peer', 'list']);
-  aliasTo('pay', ['payment', 'send']);
-  aliasTo('open-channel', ['channel', 'open']);
-  aliasTo('close-channel', ['channel', 'close']);
-  aliasTo('abandon-channel', ['channel', 'abandon']);
-  aliasTo('download', ['binary', 'download']);
-  aliasTo('binary-info', ['binary', 'info']);
-  aliasTo('create-invoice', ['invoice', 'create']);
-  aliasTo('verify-invoice', ['invoice', 'parse']);
-  aliasTo('invoice-get', ['invoice', 'get']);
-  aliasTo('payment-get', ['payment', 'get']);
-  aliasTo('payment-watch', ['payment', 'watch']);
-
   await program.parseAsync(process.argv);
 }
 

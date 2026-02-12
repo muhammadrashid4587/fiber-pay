@@ -48,7 +48,7 @@
 - Add consistent output layer:
   - human-readable default
   - `--json` mode for automation/agents
-- Consolidate aliases and normalize command naming.
+- Remove legacy aliases and normalize grouped command naming.
 
 ### Phase 2 Status (2026-02-12)
 
@@ -59,7 +59,7 @@
   - peer list/connect/disconnect
   - balance
   - binary info/download
-- ✅ Completed: command surface consolidation by trimming low-value duplicate legacy aliases while retaining high-value compatibility aliases (`start`, `stop`, `status`, `info`, `channels`, `watch-channels`, `pay`, `open-channel`, `close-channel`, `abandon-channel`, `download`, `binary-info`, `create-invoice`, `verify-invoice`, `invoice-get`, `payment-get`, `payment-watch`).
+- ✅ Completed: command surface consolidation by removing legacy top-level aliases and keeping grouped commands as the only supported interface.
 
 ### Phase 3 (Deferred)
 

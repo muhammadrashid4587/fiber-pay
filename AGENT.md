@@ -62,7 +62,7 @@ packages/
 └── cli/                    # @fiber-pay/cli — Command-line tool
   ├── llm.txt             # CLI source-of-truth usage & maintenance guide
   └── src/
-    ├── index.ts        # CLI entry point / alias routing
+    ├── index.ts        # CLI entry point / root command wiring
     ├── commands/       # Command groups (node/channel/invoice/payment/...)
     └── lib/            # Shared CLI helpers (config/rpc/format/pid/bootnode)
 
@@ -132,7 +132,7 @@ Records and stores payment proofs for audit trail. Validates preimage hashes, ma
 Analyzes channel health, identifies liquidity gaps, generates rebalancing recommendations. Calculates health scores, detects imbalances, and estimates funding needs.
 
 ### 9. `packages/cli/llm.txt` - CLI Canonical Guide
-Authoritative reference for CLI command surface, alias policy, output mode conventions, and maintenance workflow.
+Authoritative guide for CLI runtime behavior, command surface, output conventions, troubleshooting flow, and maintenance workflow.
 
 ## Common Tasks
 
@@ -168,15 +168,21 @@ Read this file first:
 
 - `packages/cli/llm.txt`
 
-CLI command maintenance now follows modular architecture:
+`packages/cli/llm.txt` is the canonical CLI operations guide. It defines:
+- runtime behavior (node start, bootnode auto-connect, optional CORS proxy)
+- command groups
+- output decisions (`human-readable` vs `--json`)
+- troubleshooting checklist for agents/operators
+
+CLI command maintenance follows modular architecture:
 
 1. Add or update command logic in `packages/cli/src/commands/<group>.ts`
 2. Reuse shared helpers in `packages/cli/src/lib/*`
-3. Wire/adjust aliases in `packages/cli/src/index.ts` only when needed
+3. Wire grouped commands in `packages/cli/src/index.ts`
 4. Keep output policy consistent:
   - human-readable default
   - `--json` machine output
-5. Update `packages/cli/llm.txt` when command surface/behavior changes
+5. Update `packages/cli/llm.txt` when command behavior, guidance, or command surface changes
 
 Validate:
 
@@ -386,20 +392,20 @@ pnpm build
 pnpm --filter @fiber-pay/sdk build
 
 # Start node (after linking CLI globally)
-fiber-pay start
+fiber-pay node start
 
 # In another terminal:
-fiber-pay status      # Check if running
-fiber-pay info        # Node info
-fiber-pay balance     # Balance
-fiber-pay channels    # List channels
+fiber-pay node status    # Check if running
+fiber-pay node info      # Node info
+fiber-pay balance        # Balance
+fiber-pay channel list   # List channels
 
 # Stop node
-fiber-pay stop
+fiber-pay node stop
 
 # Binary management
-fiber-pay download
-fiber-pay binary-info
+fiber-pay binary download
+fiber-pay binary info
 
 # Test fnn directly
 ~/.fiber-pay/bin/fnn --version

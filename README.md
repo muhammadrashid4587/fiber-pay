@@ -101,13 +101,13 @@ The Fiber Network Node binary is **automatically downloaded** when needed. You c
 
 ```bash
 # Using the CLI
-npx @fiber-pay/cli download
+npx @fiber-pay/cli binary download
 
 # Download specific version
-npx @fiber-pay/cli download --version v0.6.0
+npx @fiber-pay/cli binary download --version v0.6.0
 
 # Check binary status
-npx @fiber-pay/cli binary-info
+npx @fiber-pay/cli binary info
 ```
 
 Or programmatically:
@@ -168,15 +168,22 @@ await fiber.shutdown();
 
 ## CLI Usage
 
-The CLI has been refactored to a grouped-command architecture. For complete and up-to-date guidance, use:
+The CLI is organized as grouped commands and is designed for both operators and agents. For complete and up-to-date guidance, use:
 
 - `packages/cli/llm.txt`
 
-That file is the authoritative CLI reference for:
-- command groups and aliases
+That file is the authoritative CLI guide for:
+- command groups
+- runtime behavior (node start, bootnode auto-connect, optional CORS proxy)
 - output policy (`human-readable` by default, `--json` for automation)
 - environment variables
-- maintenance notes for contributors
+- troubleshooting and maintenance notes
+
+### Runtime Notes
+
+- `fiber-pay node start` runs the node in foreground and auto-connects bootnodes from config after RPC is ready.
+- CORS proxy is opt-in: use `--cors-proxy` (default port `28227`) or `--cors-proxy <port>`.
+- For agent pipelines and machine parsing, prefer `--json`.
 
 ### Quick Examples
 
