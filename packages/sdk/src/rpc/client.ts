@@ -69,7 +69,12 @@ export interface RpcClientConfig {
   timeout?: number;
   /** Custom headers */
   headers?: Record<string, string>;
-  /** Biscuit token for authentication */
+  /**
+   * Biscuit token for authentication.
+   *
+   * Prefer server-side usage. In browser apps, avoid embedding long-lived
+   * privileged tokens and use a trusted backend/proxy where possible.
+   */
   biscuitToken?: string;
 }
 
@@ -109,6 +114,13 @@ export class FiberRpcClient {
 
   /**
    * Make a raw JSON-RPC call
+    *
+    * Useful for advanced/experimental RPCs not wrapped by convenience methods.
+    *
+    * @example
+    * ```ts
+    * const result = await client.call<MyResult>('some_method', [{ foo: 'bar' }]);
+    * ```
    */
   async call<TResult>(method: string, params: unknown[] = []): Promise<TResult> {
     const request: JsonRpcRequest = {
@@ -149,6 +161,10 @@ export class FiberRpcClient {
 
       if (json.error) {
         throw FiberRpcError.fromJsonRpcError(json.error);
+      }
+
+      if (json.result === undefined) {
+        throw new FiberRpcError(-32000, 'Invalid JSON-RPC response: missing result and error');
       }
 
       return json.result as TResult;

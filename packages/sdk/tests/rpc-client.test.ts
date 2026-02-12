@@ -59,6 +59,22 @@ describe('FiberRpcClient - New Methods', () => {
     vi.restoreAllMocks();
   });
 
+  describe('call', () => {
+    it('should throw if JSON-RPC response has neither result nor error', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          jsonrpc: '2.0',
+          id: 1,
+        }),
+      });
+
+      await expect(client.call('node_info', [])).rejects.toThrow(
+        'Invalid JSON-RPC response: missing result and error'
+      );
+    });
+  });
+
   // ===========================================================================
   // settleInvoice
   // ===========================================================================

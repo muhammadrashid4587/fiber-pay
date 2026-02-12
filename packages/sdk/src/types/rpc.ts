@@ -65,15 +65,25 @@ export type InvoiceSignature = HexString;
  * Each attribute is an object with a single key indicating the attribute type.
  */
 export type Attribute =
+  /** Deprecated since v0.6.0, preserved for compatibility. */
   | { FinalHtlcTimeout: HexString }
+  /** Final TLC minimum expiry delta in milliseconds. */
   | { FinalHtlcMinimumExpiryDelta: HexString }
+  /** Invoice expiry time in seconds. */
   | { ExpiryTime: HexString }
+  /** Human-readable invoice description. */
   | { Description: string }
+  /** Fallback address for on-chain settlement. */
   | { FallbackAddr: string }
+  /** UDT script for token invoices. */
   | { UdtScript: UdtScript }
+  /** Payee public key. */
   | { PayeePublicKey: Pubkey }
+  /** Hash algorithm used in the payment hash lock. */
   | { HashAlgorithm: HashAlgorithm }
+  /** Feature flags list. */
   | { Feature: string[] }
+  /** Payment secret. */
   | { PaymentSecret: Hash256 };
 
 export interface InvoiceData {
@@ -111,6 +121,9 @@ export enum ChannelState {
   Closed = 'Closed',
 }
 
+/** Channel state flags are serialized as flag names by upstream RPC and may evolve. */
+export type ChannelStateFlags = string[];
+
 /** TLC status. The upstream spec defines OutboundTlcStatus / InboundTlcStatus, which may evolve. */
 export type TlcStatus =
   | { Outbound: unknown }
@@ -134,7 +147,7 @@ export interface Channel {
   funding_udt_type_script: Script | null;
   state: {
     state_name: ChannelState;
-    state_flags?: unknown;
+    state_flags?: ChannelStateFlags;
   };
   local_balance: HexString;
   offered_tlc_balance: HexString;
@@ -165,6 +178,12 @@ export interface PeerInfo {
 
 export type PaymentStatus = 'Created' | 'Inflight' | 'Success' | 'Failed';
 
+/**
+ * Custom records for payments.
+ *
+ * Keys are hex-encoded u32 values (e.g. `0x1`, range 0..=65535),
+ * values are hex-encoded byte arrays (0x-prefixed).
+ */
 export type PaymentCustomRecords = Record<string, HexString>;
 
 export interface SessionRouteNode {
@@ -488,7 +507,7 @@ export interface GraphNodesParams {
 
 export interface GraphNodesResult {
   nodes: GraphNodeInfo[];
-  last_cursor?: HexString;
+  last_cursor: HexString;
 }
 
 export interface GraphChannelsParams {
@@ -498,7 +517,66 @@ export interface GraphChannelsParams {
 
 export interface GraphChannelsResult {
   channels: GraphChannelInfo[];
-  last_cursor?: HexString;
+  last_cursor: HexString;
+}
+
+// =============================================================================
+// Additional Upstream RPC Types (for advanced custom call usage)
+// =============================================================================
+
+/** Cross-chain hub invoice variant. */
+export type CchInvoice = { Fiber: string } | { Lightning: string };
+
+/** Cross-chain hub order status. */
+export type CchOrderStatus =
+  | 'Pending'
+  | 'IncomingAccepted'
+  | 'OutgoingInFlight'
+  | 'OutgoingSettled'
+  | 'Succeeded'
+  | 'Failed';
+
+/** Reason for removing a TLC in Dev module APIs. */
+export type RemoveTlcReason =
+  | { RemoveTlcFulfill: Hash256 }
+  | { RemoveTlcFail: HexString };
+
+/** TLC id wrapper in watchtower-related types. */
+export type TLCId =
+  | { Offered: HexString }
+  | { Received: HexString };
+
+/** Minimal CKB cell output representation used by watchtower revocation data. */
+export interface CellOutput {
+  capacity: HexString;
+  lock: Script;
+  type?: Script | null;
+}
+
+/** Settlement TLC data used by watchtower operations. */
+export interface SettlementTlc {
+  tlc_id: TLCId;
+  hash_algorithm: HashAlgorithm;
+  payment_amount: HexString;
+  payment_hash: Hash256;
+  expiry: HexString;
+  local_key: Privkey;
+  remote_key: Pubkey;
+}
+
+/** Settlement data used by watchtower operations. */
+export interface SettlementData {
+  local_amount: HexString;
+  remote_amount: HexString;
+  tlcs: SettlementTlc[];
+}
+
+/** Revocation data used by watchtower operations. */
+export interface RevocationData {
+  commitment_number: HexString;
+  aggregated_signature: HexString;
+  output: CellOutput;
+  output_data: HexString;
 }
 
 // --- Info Module ---
