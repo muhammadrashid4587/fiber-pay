@@ -6,15 +6,12 @@
  * @packageDocumentation
  */
 
-// RPC client (uses fetch — browser-compatible)
-export { FiberRpcClient, FiberRpcError } from './rpc/index.js';
-
-// Utility functions (pure JS — browser-compatible)
-export { toHex, fromHex, ckbToShannons, shannonsToCkb, randomBytes32 } from './utils.js';
-
+export type { Script } from './address.js';
 // Address encoding (pure JS — browser-compatible)
 export { scriptToAddress } from './address.js';
-export type { Script } from './address.js';
-
+// RPC client (uses fetch — browser-compatible)
+export { FiberRpcClient, FiberRpcError } from './rpc/index.js';
 // Types — all types are compile-time only, always safe
 export type * from './types/index.js';
+// Utility functions (pure JS — browser-compatible)
+export { ckbToShannons, fromHex, randomBytes32, shannonsToCkb, toHex } from './utils.js';

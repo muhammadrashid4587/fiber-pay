@@ -4,57 +4,54 @@
  */
 
 import type {
-  JsonRpcRequest,
-  JsonRpcResponse,
-  JsonRpcError,
+  AbandonChannelParams,
+  AcceptChannelParams,
+  AcceptChannelResult,
+  // Router methods
+  BuildRouterParams,
+  BuildRouterResult,
+  CancelInvoiceParams,
+  CancelInvoiceResult,
+  Channel,
+  ChannelId,
+  CkbInvoiceStatus,
   // Peer methods
   ConnectPeerParams,
   ConnectPeerResult,
   DisconnectPeerParams,
-  ListPeersResult,
-  // Channel methods
-  OpenChannelParams,
-  OpenChannelResult,
-  AcceptChannelParams,
-  AcceptChannelResult,
-  ListChannelsParams,
-  ListChannelsResult,
-  ShutdownChannelParams,
-  AbandonChannelParams,
-  UpdateChannelParams,
-  // Payment methods
-  SendPaymentParams,
-  SendPaymentResult,
-  GetPaymentParams,
-  GetPaymentResult,
-  // Router methods
-  BuildRouterParams,
-  BuildRouterResult,
-  SendPaymentWithRouterParams,
-  // Invoice methods
-  NewInvoiceParams,
-  NewInvoiceResult,
-  ParseInvoiceParams,
-  ParseInvoiceResult,
   GetInvoiceParams,
   GetInvoiceResult,
-  CancelInvoiceParams,
-  CancelInvoiceResult,
-  SettleInvoiceParams,
+  GetPaymentParams,
+  GetPaymentResult,
+  GraphChannelsParams,
+  GraphChannelsResult,
   // Graph methods
   GraphNodesParams,
   GraphNodesResult,
-  GraphChannelsParams,
-  GraphChannelsResult,
+  JsonRpcError,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  ListChannelsParams,
+  ListChannelsResult,
+  ListPeersResult,
+  // Invoice methods
+  NewInvoiceParams,
+  NewInvoiceResult,
   // Info methods
   NodeInfoResult,
-  // Common types
-  HexString,
+  // Channel methods
+  OpenChannelParams,
+  OpenChannelResult,
+  ParseInvoiceParams,
+  ParseInvoiceResult,
   PaymentHash,
-  ChannelId,
-  Channel,
-  CkbInvoiceStatus,
-  PaymentStatus,
+  // Payment methods
+  SendPaymentParams,
+  SendPaymentResult,
+  SendPaymentWithRouterParams,
+  SettleInvoiceParams,
+  ShutdownChannelParams,
+  UpdateChannelParams,
 } from '../types/index.js';
 import { ChannelState } from '../types/index.js';
 
@@ -86,7 +83,7 @@ export class FiberRpcError extends Error {
   constructor(
     public code: number,
     message: string,
-    public data?: unknown
+    public data?: unknown,
   ) {
     super(message);
     this.name = 'FiberRpcError';
@@ -114,13 +111,13 @@ export class FiberRpcClient {
 
   /**
    * Make a raw JSON-RPC call
-    *
-    * Useful for advanced/experimental RPCs not wrapped by convenience methods.
-    *
-    * @example
-    * ```ts
-    * const result = await client.call<MyResult>('some_method', [{ foo: 'bar' }]);
-    * ```
+   *
+   * Useful for advanced/experimental RPCs not wrapped by convenience methods.
+   *
+   * @example
+   * ```ts
+   * const result = await client.call<MyResult>('some_method', [{ foo: 'bar' }]);
+   * ```
    */
   async call<TResult>(method: string, params: unknown[] = []): Promise<TResult> {
     const request: JsonRpcRequest = {
@@ -136,7 +133,7 @@ export class FiberRpcClient {
     };
 
     if (this.config.biscuitToken) {
-      headers['Authorization'] = `Bearer ${this.config.biscuitToken}`;
+      headers.Authorization = `Bearer ${this.config.biscuitToken}`;
     }
 
     const controller = new AbortController();
@@ -151,10 +148,7 @@ export class FiberRpcClient {
       });
 
       if (!response.ok) {
-        throw new FiberRpcError(
-          -32000,
-          `HTTP error: ${response.status} ${response.statusText}`
-        );
+        throw new FiberRpcError(-32000, `HTTP error: ${response.status} ${response.statusText}`);
       }
 
       const json = (await response.json()) as JsonRpcResponse<TResult>;
@@ -382,9 +376,7 @@ export class FiberRpcClient {
   /**
    * Wait for the node to be ready
    */
-  async waitForReady(
-    options: { timeout?: number; interval?: number } = {}
-  ): Promise<void> {
+  async waitForReady(options: { timeout?: number; interval?: number } = {}): Promise<void> {
     const { timeout = 60000, interval = 1000 } = options;
     const start = Date.now();
 
@@ -411,7 +403,7 @@ export class FiberRpcClient {
    */
   async waitForPayment(
     paymentHash: PaymentHash,
-    options: { timeout?: number; interval?: number } = {}
+    options: { timeout?: number; interval?: number } = {},
   ): Promise<GetPaymentResult> {
     const { timeout = 120000, interval = 2000 } = options;
     const start = Date.now();
@@ -436,7 +428,7 @@ export class FiberRpcClient {
    */
   async waitForChannelReady(
     channelId: ChannelId,
-    options: { timeout?: number; interval?: number } = {}
+    options: { timeout?: number; interval?: number } = {},
   ): Promise<Channel> {
     const { timeout = 300000, interval = 5000 } = options;
     const start = Date.now();
@@ -448,9 +440,7 @@ export class FiberRpcClient {
       if (!channel) {
         // Channel may use temporary_channel_id initially, check all
         const allChannels = result.channels;
-        const found = allChannels.find(
-          (ch) => ch.channel_id === channelId
-        );
+        const found = allChannels.find((ch) => ch.channel_id === channelId);
         if (!found) {
           // Channel not yet visible or was abandoned - keep waiting
           await new Promise((resolve) => setTimeout(resolve, interval));
@@ -469,12 +459,15 @@ export class FiberRpcClient {
       await new Promise((resolve) => setTimeout(resolve, interval));
     }
 
-    throw new FiberRpcError(-32000, `Channel ${channelId} did not become ready within ${timeout}ms`);
+    throw new FiberRpcError(
+      -32000,
+      `Channel ${channelId} did not become ready within ${timeout}ms`,
+    );
   }
 
   /**
    * Wait for an invoice to reach a specific status.
-    * Useful for hold invoice workflows: wait for 'Received' before settling.
+   * Useful for hold invoice workflows: wait for 'Received' before settling.
    *
    * @returns The invoice info once the target status is reached
    * @throws FiberRpcError on timeout
@@ -482,7 +475,7 @@ export class FiberRpcClient {
   async waitForInvoiceStatus(
     paymentHash: PaymentHash,
     targetStatus: CkbInvoiceStatus | CkbInvoiceStatus[],
-    options: { timeout?: number; interval?: number } = {}
+    options: { timeout?: number; interval?: number } = {},
   ): Promise<GetInvoiceResult> {
     const { timeout = 120000, interval = 2000 } = options;
     const statuses = Array.isArray(targetStatus) ? targetStatus : [targetStatus];
@@ -502,7 +495,7 @@ export class FiberRpcClient {
 
     throw new FiberRpcError(
       -32000,
-      `Invoice ${paymentHash} did not reach status [${statuses.join(', ')}] within ${timeout}ms`
+      `Invoice ${paymentHash} did not reach status [${statuses.join(', ')}] within ${timeout}ms`,
     );
   }
 
@@ -568,9 +561,19 @@ export class FiberRpcClient {
       }
 
       await new Promise<void>((resolve) => {
-        if (signal?.aborted) { resolve(); return; }
+        if (signal?.aborted) {
+          resolve();
+          return;
+        }
         const timer = setTimeout(resolve, interval);
-        signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+        signal?.addEventListener(
+          'abort',
+          () => {
+            clearTimeout(timer);
+            resolve();
+          },
+          { once: true },
+        );
       });
     }
   }
@@ -580,4 +583,4 @@ export class FiberRpcClient {
 // Re-export utility functions
 // =============================================================================
 
-export { toHex, fromHex, ckbToShannons, shannonsToCkb, randomBytes32 } from '../utils.js';
+export { ckbToShannons, fromHex, randomBytes32, shannonsToCkb, toHex } from '../utils.js';

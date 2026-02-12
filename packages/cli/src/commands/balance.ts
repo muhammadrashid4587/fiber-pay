@@ -1,8 +1,8 @@
-import { Command } from 'commander';
 import { ChannelState } from '@fiber-pay/sdk';
+import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
-import { createReadyRpcClient } from '../lib/rpc.js';
 import { printBalanceHuman, printJson } from '../lib/format.js';
+import { createReadyRpcClient } from '../lib/rpc.js';
 
 export function createBalanceCommand(config: CliConfig): Command {
   return new Command('balance')

@@ -1,18 +1,18 @@
-import { Command } from 'commander';
-import { join } from 'path';
-import { fileURLToPath } from 'url';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   ensureFiberBinary,
+  type FiberNodeConfig,
   getDefaultBinaryPath,
   ProcessManager,
-  type FiberNodeConfig,
 } from '@fiber-pay/node';
 import { CorsProxy, scriptToAddress } from '@fiber-pay/sdk';
-import type { CliConfig } from '../lib/config.js';
+import { Command } from 'commander';
 import { autoConnectBootnodes, extractBootnodeAddrs } from '../lib/bootnode.js';
-import { removePidFile, isProcessRunning, readPidFile, writePidFile } from '../lib/pid.js';
-import { createRpcClient, createReadyRpcClient } from '../lib/rpc.js';
+import type { CliConfig } from '../lib/config.js';
 import { printJson, printNodeInfoHuman } from '../lib/format.js';
+import { isProcessRunning, readPidFile, removePidFile, writePidFile } from '../lib/pid.js';
+import { createReadyRpcClient, createRpcClient } from '../lib/rpc.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -31,11 +31,12 @@ export function createNodeCommand(config: CliConfig): Command {
         process.exit(1);
       }
 
-      const corsProxyPort = options.corsProxy === true
-        ? 28227
-        : options.corsProxy
-          ? parseInt(String(options.corsProxy), 10)
-          : undefined;
+      const corsProxyPort =
+        options.corsProxy === true
+          ? 28227
+          : options.corsProxy
+            ? parseInt(String(options.corsProxy), 10)
+            : undefined;
 
       const binaryPath = config.binaryPath || getDefaultBinaryPath();
       await ensureFiberBinary();
@@ -43,14 +44,19 @@ export function createNodeCommand(config: CliConfig): Command {
       const nodeConfig: FiberNodeConfig = {
         binaryPath,
         dataDir: config.dataDir,
-        configFilePath: config.network === 'testnet' ? join(PROJECT_ROOT, 'testnet-config.yml') : undefined,
+        configFilePath:
+          config.network === 'testnet' ? join(PROJECT_ROOT, 'testnet-config.yml') : undefined,
         chain: config.network,
       };
 
       const processManager = new ProcessManager(nodeConfig);
       await processManager.start();
-      if (processManager['process']) {
-        writePidFile(config.dataDir, processManager['process'].pid!);
+      const processManagerState = processManager as unknown as {
+        process?: { pid?: number };
+      };
+      const processId = processManagerState.process?.pid;
+      if (processId !== undefined) {
+        writePidFile(config.dataDir, processId);
       }
 
       let corsProxy: CorsProxy | undefined;
@@ -64,7 +70,9 @@ export function createNodeCommand(config: CliConfig): Command {
           await corsProxy.start();
           console.log(`🌐 CORS proxy started on http://127.0.0.1:${corsProxyPort}`);
         } catch (error) {
-          console.error(`⚠️  Failed to start CORS proxy: ${error instanceof Error ? error.message : String(error)}`);
+          console.error(
+            `⚠️  Failed to start CORS proxy: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
       }
 
@@ -105,61 +113,57 @@ export function createNodeCommand(config: CliConfig): Command {
       await new Promise(() => {});
     });
 
-  node
-    .command('stop')
-    .action(async () => {
-      const pid = readPidFile(config.dataDir);
-      if (!pid) {
-        console.log('❌ No PID file found. Node may not be running.');
-        process.exit(1);
-      }
+  node.command('stop').action(async () => {
+    const pid = readPidFile(config.dataDir);
+    if (!pid) {
+      console.log('❌ No PID file found. Node may not be running.');
+      process.exit(1);
+    }
 
-      if (!isProcessRunning(pid)) {
-        console.log(`❌ Process ${pid} is not running. Cleaning up PID file.`);
-        removePidFile(config.dataDir);
-        process.exit(1);
-      }
-
-      console.log(`🛑 Stopping node (PID: ${pid})...`);
-      process.kill(pid, 'SIGTERM');
-
-      let attempts = 0;
-      while (isProcessRunning(pid) && attempts < 30) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        attempts++;
-      }
-
-      if (isProcessRunning(pid)) {
-        process.kill(pid, 'SIGKILL');
-      }
-
+    if (!isProcessRunning(pid)) {
+      console.log(`❌ Process ${pid} is not running. Cleaning up PID file.`);
       removePidFile(config.dataDir);
-      console.log('✅ Node stopped.');
-    });
+      process.exit(1);
+    }
 
-  node
-    .command('status')
-    .action(async () => {
-      const pid = readPidFile(config.dataDir);
-      if (pid && isProcessRunning(pid)) {
-        console.log(`✅ Node is running (PID: ${pid})`);
-        try {
-          const rpc = await createReadyRpcClient(config);
-          const nodeInfo = await rpc.nodeInfo();
-          console.log(`   Node ID: ${nodeInfo.node_id}`);
-          console.log(`   RPC: ${config.rpcUrl}`);
-        } catch {
-          console.log('   ⚠️  RPC not responding');
-        }
-      } else {
-        if (pid) {
-          console.log(`❌ Node is not running (stale PID file: ${pid})`);
-          removePidFile(config.dataDir);
-        } else {
-          console.log('❌ Node is not running');
-        }
+    console.log(`🛑 Stopping node (PID: ${pid})...`);
+    process.kill(pid, 'SIGTERM');
+
+    let attempts = 0;
+    while (isProcessRunning(pid) && attempts < 30) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      attempts++;
+    }
+
+    if (isProcessRunning(pid)) {
+      process.kill(pid, 'SIGKILL');
+    }
+
+    removePidFile(config.dataDir);
+    console.log('✅ Node stopped.');
+  });
+
+  node.command('status').action(async () => {
+    const pid = readPidFile(config.dataDir);
+    if (pid && isProcessRunning(pid)) {
+      console.log(`✅ Node is running (PID: ${pid})`);
+      try {
+        const rpc = await createReadyRpcClient(config);
+        const nodeInfo = await rpc.nodeInfo();
+        console.log(`   Node ID: ${nodeInfo.node_id}`);
+        console.log(`   RPC: ${config.rpcUrl}`);
+      } catch {
+        console.log('   ⚠️  RPC not responding');
       }
-    });
+    } else {
+      if (pid) {
+        console.log(`❌ Node is not running (stale PID file: ${pid})`);
+        removePidFile(config.dataDir);
+      } else {
+        console.log('❌ Node is not running');
+      }
+    }
+  });
 
   node
     .command('info')

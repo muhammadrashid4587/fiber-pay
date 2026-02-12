@@ -4,10 +4,10 @@
  * Keys are isolated from LLM context for security
  */
 
-import { randomBytes, createCipheriv, createDecipheriv, scryptSync, createHash } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'fs';
-import { join, dirname } from 'path';
-import type { KeyConfig, KeyInfo, HexString } from '../types/index.js';
+import { createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import type { HexString, KeyConfig, KeyInfo } from '../types/index.js';
 
 // =============================================================================
 // Constants
@@ -48,7 +48,7 @@ export class KeyManager {
       if (!this.config.autoGenerate) {
         throw new Error(
           `Keys not found and autoGenerate is disabled. ` +
-            `Missing: ${[!fiberExists && 'fiber', !ckbExists && 'ckb'].filter(Boolean).join(', ')}`
+            `Missing: ${[!fiberExists && 'fiber', !ckbExists && 'ckb'].filter(Boolean).join(', ')}`,
         );
       }
     }
@@ -164,31 +164,10 @@ export class KeyManager {
    * Check if key data is encrypted
    */
   private isEncrypted(data: Buffer): boolean {
-    return data.length >= ENCRYPTED_MAGIC.length &&
-      data.subarray(0, ENCRYPTED_MAGIC.length).equals(ENCRYPTED_MAGIC);
-  }
-
-  /**
-   * Encrypt a key using scrypt + AES-256-GCM
-   */
-  private encryptKey(key: Buffer, password: string): Buffer {
-    const salt = randomBytes(SALT_LENGTH);
-    const iv = randomBytes(IV_LENGTH);
-
-    // Derive encryption key using scrypt
-    const derivedKey = scryptSync(password, salt, KEY_LENGTH, {
-      N: SCRYPT_N,
-      r: SCRYPT_R,
-      p: SCRYPT_P,
-    });
-
-    // Encrypt using AES-256-GCM
-    const cipher = createCipheriv('aes-256-gcm', derivedKey, iv);
-    const encrypted = Buffer.concat([cipher.update(key), cipher.final()]);
-    const authTag = cipher.getAuthTag();
-
-    // Format: MAGIC | salt | iv | authTag | encrypted
-    return Buffer.concat([ENCRYPTED_MAGIC, salt, iv, authTag, encrypted]);
+    return (
+      data.length >= ENCRYPTED_MAGIC.length &&
+      data.subarray(0, ENCRYPTED_MAGIC.length).equals(ENCRYPTED_MAGIC)
+    );
   }
 
   /**
@@ -215,7 +194,7 @@ export class KeyManager {
     // Decrypt using AES-256-GCM
     const decipher = createDecipheriv('aes-256-gcm', derivedKey, iv);
     decipher.setAuthTag(authTag);
-    
+
     return Buffer.concat([decipher.update(encrypted), decipher.final()]);
   }
 
@@ -235,10 +214,7 @@ export class KeyManager {
 /**
  * Create a key manager with environment-based configuration
  */
-export function createKeyManager(
-  baseDir: string,
-  options?: Partial<KeyConfig>
-): KeyManager {
+export function createKeyManager(baseDir: string, options?: Partial<KeyConfig>): KeyManager {
   const password = process.env.FIBER_KEY_PASSWORD || options?.encryptionPassword;
 
   return new KeyManager({

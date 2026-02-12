@@ -9,7 +9,7 @@ fiber-pay is a TypeScript SDK that enables AI agents to autonomously manage Ligh
 ## Quick Context
 
 - **Language**: TypeScript (ES2022, ESM modules)
-- **Runtime**: Node.js 18+
+- **Runtime**: Node.js 20+
 - **Package Manager**: pnpm (workspaces monorepo)
 - **Build Tool**: tsup (per-package)
 - **Test Framework**: vitest
@@ -417,6 +417,8 @@ grep "^export" packages/sdk/src/index.ts
 ## Code Quality Checklist
 
 Before committing changes:
+- [ ] `pnpm lint` passes
+- [ ] `pnpm format:check` passes
 - [ ] `pnpm typecheck` passes
 - [ ] `pnpm test` passes
 - [ ] `pnpm build` succeeds

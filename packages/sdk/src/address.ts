@@ -48,7 +48,7 @@ function convertBits(data: Uint8Array, fromBits: number, toBits: number, pad: bo
   let bits = 0;
   const ret: number[] = [];
   const maxv = (1 << toBits) - 1;
-  
+
   for (const value of data) {
     acc = (acc << fromBits) | value;
     bits += fromBits;
@@ -57,18 +57,18 @@ function convertBits(data: Uint8Array, fromBits: number, toBits: number, pad: bo
       ret.push((acc >> bits) & maxv);
     }
   }
-  
+
   if (pad && bits > 0) {
     ret.push((acc << (toBits - bits)) & maxv);
   }
-  
+
   return ret;
 }
 
 function bech32mEncode(hrp: string, data: number[]): string {
   const checksum = bech32mCreateChecksum(hrp, data);
   const combined = data.concat(checksum);
-  let result = hrp + '1';
+  let result = `${hrp}1`;
   for (const d of combined) {
     result += BECH32_CHARSET[d];
   }
@@ -89,38 +89,38 @@ export interface Script {
  */
 export function scriptToAddress(script: Script, network: 'testnet' | 'mainnet'): string {
   const hrp = network === 'mainnet' ? 'ckb' : 'ckt';
-  
+
   // CKB full address format (2021)
   // Format: 0x00 | code_hash | hash_type | args
-  const hashTypeByte = script.hash_type === 'type' ? 0x01 
-    : script.hash_type === 'data' ? 0x00 
-    : script.hash_type === 'data1' ? 0x02
-    : 0x04; // data2
-  
-  const codeHash = script.code_hash.startsWith('0x') 
-    ? script.code_hash.slice(2) 
-    : script.code_hash;
-  const args = script.args.startsWith('0x') 
-    ? script.args.slice(2) 
-    : script.args;
-  
+  const hashTypeByte =
+    script.hash_type === 'type'
+      ? 0x01
+      : script.hash_type === 'data'
+        ? 0x00
+        : script.hash_type === 'data1'
+          ? 0x02
+          : 0x04; // data2
+
+  const codeHash = script.code_hash.startsWith('0x') ? script.code_hash.slice(2) : script.code_hash;
+  const args = script.args.startsWith('0x') ? script.args.slice(2) : script.args;
+
   // Construct the payload: format_type(0x00) + code_hash(32) + hash_type(1) + args
   const payload = new Uint8Array(1 + 32 + 1 + args.length / 2);
   payload[0] = 0x00; // Full format type
-  
+
   // code_hash
   for (let i = 0; i < 32; i++) {
     payload[1 + i] = parseInt(codeHash.slice(i * 2, i * 2 + 2), 16);
   }
-  
+
   // hash_type
   payload[33] = hashTypeByte;
-  
+
   // args
   for (let i = 0; i < args.length / 2; i++) {
     payload[34 + i] = parseInt(args.slice(i * 2, i * 2 + 2), 16);
   }
-  
+
   // Convert to 5-bit groups and encode with bech32m
   const data = convertBits(payload, 8, 5, true);
   return bech32mEncode(hrp, data);

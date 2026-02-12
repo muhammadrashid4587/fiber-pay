@@ -5,26 +5,33 @@
 
 export function stringify(obj: unknown, indent = 0): string {
   const spaces = '  '.repeat(indent);
-  
+
   if (obj === null || obj === undefined) {
     return 'null';
   }
-  
+
   if (typeof obj === 'string') {
     // Quote strings that need it
-    if (obj.includes(':') || obj.includes('#') || obj.includes('\n') || 
-        obj.startsWith(' ') || obj.endsWith(' ') ||
-        obj === '' || obj === 'true' || obj === 'false' ||
-        !isNaN(Number(obj))) {
+    if (
+      obj.includes(':') ||
+      obj.includes('#') ||
+      obj.includes('\n') ||
+      obj.startsWith(' ') ||
+      obj.endsWith(' ') ||
+      obj === '' ||
+      obj === 'true' ||
+      obj === 'false' ||
+      !Number.isNaN(Number(obj))
+    ) {
       return JSON.stringify(obj);
     }
     return obj;
   }
-  
+
   if (typeof obj === 'number' || typeof obj === 'boolean') {
     return String(obj);
   }
-  
+
   if (Array.isArray(obj)) {
     if (obj.length === 0) {
       return '[]';
@@ -35,13 +42,16 @@ export function stringify(obj: unknown, indent = 0): string {
         if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
           // Multi-line object in array
           const lines = value.split('\n');
-          return `${spaces}- ${lines[0]}\n${lines.slice(1).map(l => spaces + '  ' + l).join('\n')}`;
+          return `${spaces}- ${lines[0]}\n${lines
+            .slice(1)
+            .map((l) => `${spaces}  ${l}`)
+            .join('\n')}`;
         }
         return `${spaces}- ${value}`;
       })
       .join('\n');
   }
-  
+
   if (typeof obj === 'object') {
     const entries = Object.entries(obj as Record<string, unknown>);
     if (entries.length === 0) {
@@ -50,16 +60,19 @@ export function stringify(obj: unknown, indent = 0): string {
     return entries
       .map(([key, value]) => {
         const valueStr = stringify(value, indent + 1);
-        if (typeof value === 'object' && value !== null && 
-            !(Array.isArray(value) && value.length === 0) &&
-            !(typeof value === 'object' && Object.keys(value).length === 0)) {
+        if (
+          typeof value === 'object' &&
+          value !== null &&
+          !(Array.isArray(value) && value.length === 0) &&
+          !(typeof value === 'object' && Object.keys(value).length === 0)
+        ) {
           return `${spaces}${key}:\n${valueStr}`;
         }
         return `${spaces}${key}: ${valueStr}`;
       })
       .join('\n');
   }
-  
+
   return String(obj);
 }
 
@@ -110,8 +123,10 @@ export function parse(yaml: string): unknown {
 
 function parseValue(value: string): unknown {
   // Remove quotes
-  if ((value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))) {
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
     return value.slice(1, -1);
   }
 
@@ -124,7 +139,7 @@ function parseValue(value: string): unknown {
 
   // Number
   const num = Number(value);
-  if (!isNaN(num)) return num;
+  if (!Number.isNaN(num)) return num;
 
   // Array (inline)
   if (value.startsWith('[') && value.endsWith(']')) {

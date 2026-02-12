@@ -3,10 +3,10 @@
  * Handles downloading, installing, and managing the Fiber Network Node (fnn) binary
  */
 
-import { existsSync, mkdirSync, chmodSync, unlinkSync, renameSync } from 'fs';
-import { join } from 'path';
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { exec } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
 
@@ -62,7 +62,7 @@ const DEFAULT_INSTALL_DIR = join(process.env.HOME || '~', '.fiber-pay', 'bin');
 const BINARY_PATTERNS: Record<Platform, Record<Arch, string>> = {
   darwin: {
     x64: 'x86_64-darwin',
-    arm64: 'aarch64-darwin',  // May not exist yet, will fallback to x64
+    arm64: 'aarch64-darwin', // May not exist yet, will fallback to x64
   },
   linux: {
     x64: 'x86_64-linux',
@@ -220,7 +220,7 @@ export class BinaryManager {
     } catch {
       throw new Error(
         'Apple Silicon fallback selected x86_64 binary, but Rosetta 2 is not available. ' +
-        'Install Rosetta with: softwareupdate --install-rosetta --agree-to-license'
+          'Install Rosetta with: softwareupdate --install-rosetta --agree-to-license',
       );
     }
   }
@@ -229,11 +229,7 @@ export class BinaryManager {
    * Download and install the Fiber binary
    */
   async download(options: DownloadOptions = {}): Promise<BinaryInfo> {
-    const {
-      version,
-      force = false,
-      onProgress = () => {},
-    } = options;
+    const { version, force = false, onProgress = () => {} } = options;
 
     const binaryPath = this.getBinaryPath();
 
@@ -259,7 +255,7 @@ export class BinaryManager {
 
     // Build asset candidates
     const candidates = this.buildAssetCandidates(tag);
-    
+
     let response: Response | undefined;
     let selected: AssetCandidate | undefined;
     const attempted: string[] = [];
@@ -283,7 +279,7 @@ export class BinaryManager {
     }
 
     if (!response || !selected) {
-      const attemptedUrls = candidates.map(candidate => candidate.url).join(', ');
+      const attemptedUrls = candidates.map((candidate) => candidate.url).join(', ');
       throw new Error(`Download failed. Tried: ${attempted.join(', ')}. URLs: ${attemptedUrls}`);
     }
 
@@ -306,7 +302,7 @@ export class BinaryManager {
       });
     }
 
-    const contentLength = parseInt(response.headers.get('content-length') || '0');
+    const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
 
     // Stream download with progress
     const body = response.body;
@@ -321,22 +317,22 @@ export class BinaryManager {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      
+
       chunks.push(value);
       downloaded += value.length;
-      
+
       if (contentLength > 0) {
         const percent = Math.round((downloaded / contentLength) * 100);
-        onProgress({ 
-          phase: 'downloading', 
-          message: `Downloading... ${percent}%`, 
-          percent 
+        onProgress({
+          phase: 'downloading',
+          message: `Downloading... ${percent}%`,
+          percent,
         });
       }
     }
 
     const buffer = Buffer.concat(chunks);
-    
+
     // Handle different archive formats
     onProgress({ phase: 'extracting', message: 'Extracting binary...' });
 
@@ -346,7 +342,7 @@ export class BinaryManager {
       await this.extractZip(buffer, binaryPath);
     } else {
       // Direct binary
-      const { writeFile } = await import('fs/promises');
+      const { writeFile } = await import('node:fs/promises');
       await writeFile(binaryPath, buffer);
     }
 
@@ -365,9 +361,9 @@ export class BinaryManager {
    * Extract tar.gz archive
    */
   private async extractTarGz(buffer: Buffer, targetPath: string): Promise<void> {
-    const { writeFile, readdir, rename, rm } = await import('fs/promises');
+    const { writeFile, readdir, rename, rm } = await import('node:fs/promises');
     const tempDir = `${targetPath}.extract`;
-    
+
     // Create temp directory
     if (!existsSync(tempDir)) {
       mkdirSync(tempDir, { recursive: true });
@@ -380,14 +376,14 @@ export class BinaryManager {
     // Extract using tar command
     try {
       await execAsync(`tar -xzf "${archivePath}" -C "${tempDir}"`);
-    } catch (error) {
+    } catch (_error) {
       // Fallback: try with gunzip + tar separately
       await execAsync(`gunzip -c "${archivePath}" | tar -xf - -C "${tempDir}"`);
     }
 
     // Find the binary in extracted files
     const files = await readdir(tempDir, { recursive: true });
-    const binaryFile = files.find(f => {
+    const binaryFile = files.find((f) => {
       const name = String(f);
       return name.endsWith('fnn') || name.endsWith('fnn.exe');
     });
@@ -398,8 +394,8 @@ export class BinaryManager {
     } else {
       // If no fnn found, maybe the archive contains a single binary
       const extractedFiles = await readdir(tempDir);
-      const possibleBinary = extractedFiles.find(f => 
-        f !== 'archive.tar.gz' && !f.startsWith('.')
+      const possibleBinary = extractedFiles.find(
+        (f) => f !== 'archive.tar.gz' && !f.startsWith('.'),
       );
       if (possibleBinary) {
         await rename(join(tempDir, possibleBinary), targetPath);
@@ -414,9 +410,9 @@ export class BinaryManager {
    * Extract zip archive (primarily for Windows)
    */
   private async extractZip(buffer: Buffer, targetPath: string): Promise<void> {
-    const { writeFile, readdir, rename, rm } = await import('fs/promises');
+    const { writeFile, readdir, rename, rm } = await import('node:fs/promises');
     const tempDir = `${targetPath}.extract`;
-    
+
     if (!existsSync(tempDir)) {
       mkdirSync(tempDir, { recursive: true });
     }
@@ -427,14 +423,16 @@ export class BinaryManager {
     // Extract using unzip command
     const { platform } = this.getPlatformInfo();
     if (platform === 'win32') {
-      await execAsync(`powershell -command "Expand-Archive -Path '${archivePath}' -DestinationPath '${tempDir}'"`);
+      await execAsync(
+        `powershell -command "Expand-Archive -Path '${archivePath}' -DestinationPath '${tempDir}'"`,
+      );
     } else {
       await execAsync(`unzip -o "${archivePath}" -d "${tempDir}"`);
     }
 
     // Find and move the binary
     const files = await readdir(tempDir, { recursive: true });
-    const binaryFile = files.find(f => {
+    const binaryFile = files.find((f) => {
       const name = String(f);
       return name.endsWith('fnn') || name.endsWith('fnn.exe');
     });
@@ -464,9 +462,7 @@ export class BinaryManager {
 /**
  * Download the Fiber binary to the default location
  */
-export async function downloadFiberBinary(
-  options: DownloadOptions = {}
-): Promise<BinaryInfo> {
+export async function downloadFiberBinary(options: DownloadOptions = {}): Promise<BinaryInfo> {
   const manager = new BinaryManager(options.installDir);
   return manager.download(options);
 }
@@ -474,9 +470,7 @@ export async function downloadFiberBinary(
 /**
  * Get information about the installed binary
  */
-export async function getFiberBinaryInfo(
-  installDir?: string
-): Promise<BinaryInfo> {
+export async function getFiberBinaryInfo(installDir?: string): Promise<BinaryInfo> {
   const manager = new BinaryManager(installDir);
   return manager.getBinaryInfo();
 }
@@ -484,9 +478,7 @@ export async function getFiberBinaryInfo(
 /**
  * Ensure the Fiber binary is available, downloading if necessary
  */
-export async function ensureFiberBinary(
-  options: DownloadOptions = {}
-): Promise<string> {
+export async function ensureFiberBinary(options: DownloadOptions = {}): Promise<string> {
   const manager = new BinaryManager(options.installDir);
   const info = await manager.getBinaryInfo();
 

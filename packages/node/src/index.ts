@@ -1,22 +1,22 @@
 /**
  * @fiber-pay/node
  * Fiber Network node binary management and process lifecycle
- * 
+ *
  * @packageDocumentation
  */
 
-// Binary management
-export {
-  BinaryManager,
-  downloadFiberBinary,
-  getFiberBinaryInfo,
-  ensureFiberBinary,
-  getDefaultBinaryPath,
-} from './binary/index.js';
 export type {
   BinaryInfo,
   DownloadOptions,
   DownloadProgress,
+} from './binary/index.js';
+// Binary management
+export {
+  BinaryManager,
+  downloadFiberBinary,
+  ensureFiberBinary,
+  getDefaultBinaryPath,
+  getFiberBinaryInfo,
 } from './binary/index.js';
 
 // Process management

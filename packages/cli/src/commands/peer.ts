@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
-import { createReadyRpcClient } from '../lib/rpc.js';
 import { printJson, printPeerListHuman } from '../lib/format.js';
+import { createReadyRpcClient } from '../lib/rpc.js';
 
 export function createPeerCommand(config: CliConfig): Command {
   const peer = new Command('peer').description('Peer management');

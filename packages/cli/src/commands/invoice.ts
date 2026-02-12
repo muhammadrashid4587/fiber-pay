@@ -1,8 +1,14 @@
+import { ckbToShannons, type HexString, randomBytes32, shannonsToCkb, toHex } from '@fiber-pay/sdk';
 import { Command } from 'commander';
-import { ckbToShannons, randomBytes32, shannonsToCkb, toHex, type HexString } from '@fiber-pay/sdk';
 import type { CliConfig } from '../lib/config.js';
+import {
+  extractInvoiceMetadata,
+  hasJsonFlag,
+  parseHexTimestampMs,
+  printInvoiceDetailHuman,
+  printJson,
+} from '../lib/format.js';
 import { createReadyRpcClient } from '../lib/rpc.js';
-import { extractInvoiceMetadata, hasJsonFlag, parseHexTimestampMs, printInvoiceDetailHuman, printJson } from '../lib/format.js';
 
 export function createInvoiceCommand(config: CliConfig): Command {
   const invoice = new Command('invoice').description('Invoice lifecycle and status commands');
@@ -16,7 +22,11 @@ export function createInvoiceCommand(config: CliConfig): Command {
     .action(async (amountArg, options) => {
       const rpc = await createReadyRpcClient(config);
 
-      const amountCkb = options.amount ? parseFloat(options.amount) : amountArg ? parseFloat(amountArg) : 0;
+      const amountCkb = options.amount
+        ? parseFloat(options.amount)
+        : amountArg
+          ? parseFloat(amountArg)
+          : 0;
       if (!amountCkb) {
         console.error('Error: Amount required. Usage: invoice create --amount <CKB>');
         process.exit(1);
@@ -53,6 +63,7 @@ export function createInvoiceCommand(config: CliConfig): Command {
       const rpc = await createReadyRpcClient(config);
       const result = await rpc.getInvoice({ payment_hash: paymentHash as HexString });
       const metadata = extractInvoiceMetadata(result.invoice);
+      const createdAtMs = parseHexTimestampMs(result.invoice.data.timestamp);
       const output = {
         paymentHash,
         status: result.status,
@@ -60,8 +71,8 @@ export function createInvoiceCommand(config: CliConfig): Command {
         amountCkb: result.invoice.amount ? shannonsToCkb(result.invoice.amount) : undefined,
         currency: result.invoice.currency,
         description: metadata.description,
-        createdAt: parseHexTimestampMs(result.invoice.data.timestamp)
-          ? new Date(parseHexTimestampMs(result.invoice.data.timestamp)!).toISOString()
+        createdAt: createdAtMs
+          ? new Date(createdAtMs).toISOString()
           : result.invoice.data.timestamp,
         expiresAt: metadata.expiresAt,
         age: metadata.age,

@@ -1,11 +1,6 @@
+import { type ChannelState, ckbToShannons, type HexString } from '@fiber-pay/sdk';
 import { Command } from 'commander';
-import {
-  ckbToShannons,
-  ChannelState,
-  type HexString,
-} from '@fiber-pay/sdk';
 import type { CliConfig } from '../lib/config.js';
-import { createReadyRpcClient } from '../lib/rpc.js';
 import {
   formatChannel,
   getChannelSummary,
@@ -17,6 +12,7 @@ import {
   sleep,
   truncateMiddle,
 } from '../lib/format.js';
+import { createReadyRpcClient } from '../lib/rpc.js';
 
 export function createChannelCommand(config: CliConfig): Command {
   const channel = new Command('channel').description('Channel lifecycle and status commands');
@@ -31,7 +27,11 @@ export function createChannelCommand(config: CliConfig): Command {
     .action(async (options) => {
       const rpc = await createReadyRpcClient(config);
       const stateFilter = parseChannelState(options.state);
-      const response = await rpc.listChannels(options.peer ? { peer_id: options.peer, include_closed: Boolean(options.includeClosed) } : { include_closed: Boolean(options.includeClosed) });
+      const response = await rpc.listChannels(
+        options.peer
+          ? { peer_id: options.peer, include_closed: Boolean(options.includeClosed) }
+          : { include_closed: Boolean(options.includeClosed) },
+      );
       const channels = stateFilter
         ? response.channels.filter((item) => item.state.state_name === stateFilter)
         : response.channels;
@@ -87,7 +87,11 @@ export function createChannelCommand(config: CliConfig): Command {
       const previousStates = new Map<string, ChannelState>();
 
       while (true) {
-        const response = await rpc.listChannels(options.peer ? { peer_id: options.peer, include_closed: Boolean(options.includeClosed) } : { include_closed: Boolean(options.includeClosed) });
+        const response = await rpc.listChannels(
+          options.peer
+            ? { peer_id: options.peer, include_closed: Boolean(options.includeClosed) }
+            : { include_closed: Boolean(options.includeClosed) },
+        );
         let channels = response.channels;
 
         if (options.channel) {
@@ -111,7 +115,9 @@ export function createChannelCommand(config: CliConfig): Command {
         }
 
         console.log(`⏱️  Channel monitor - ${new Date().toISOString()}`);
-        console.log(`   Refresh: ${intervalSeconds}s${timeoutSeconds ? ` | Timeout: ${timeoutSeconds}s` : ''}${untilState ? ` | Until: ${untilState}` : ''}`);
+        console.log(
+          `   Refresh: ${intervalSeconds}s${timeoutSeconds ? ` | Timeout: ${timeoutSeconds}s` : ''}${untilState ? ` | Until: ${untilState}` : ''}`,
+        );
 
         if (stateChanges.length > 0) {
           console.log('\n🔔 State changes:');
@@ -169,7 +175,10 @@ export function createChannelCommand(config: CliConfig): Command {
         public: !options.private,
       });
 
-      printJson({ success: true, data: { temporaryChannelId: result.temporary_channel_id, peer: peerId, fundingCkb } });
+      printJson({
+        success: true,
+        data: { temporaryChannelId: result.temporary_channel_id, peer: peerId, fundingCkb },
+      });
     });
 
   channel
@@ -178,7 +187,10 @@ export function createChannelCommand(config: CliConfig): Command {
     .option('--force')
     .action(async (channelId, options) => {
       const rpc = await createReadyRpcClient(config);
-      await rpc.shutdownChannel({ channel_id: channelId as HexString, force: Boolean(options.force) });
+      await rpc.shutdownChannel({
+        channel_id: channelId as HexString,
+        force: Boolean(options.force),
+      });
       printJson({
         success: true,
         data: {

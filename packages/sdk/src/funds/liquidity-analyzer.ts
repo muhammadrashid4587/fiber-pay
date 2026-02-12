@@ -4,9 +4,9 @@
  */
 
 import type { FiberRpcClient } from '../rpc/client.js';
-import { ChannelState } from '../types/index.js';
 import type { Channel } from '../types/index.js';
-import { shannonsToCkb, fromHex } from '../utils.js';
+import { ChannelState } from '../types/index.js';
+import { shannonsToCkb } from '../utils.js';
 
 // =============================================================================
 // Types
@@ -102,17 +102,22 @@ export class LiquidityAnalyzer {
 
     // Fetch data
     const channels = await this.rpc.listChannels({});
-    const nodeInfo = await this.rpc.nodeInfo();
 
     // Analyze each channel
     const channelMetrics: ChannelHealthMetrics[] = channels.channels.map((ch) =>
-      this.analyzeChannelHealth(ch)
+      this.analyzeChannelHealth(ch),
     );
 
     // Calculate totals
-    const totalCkb = channelMetrics.reduce((sum, ch) => sum + ch.localBalanceCkb + ch.remoteBalanceCkb, 0);
+    const totalCkb = channelMetrics.reduce(
+      (sum, ch) => sum + ch.localBalanceCkb + ch.remoteBalanceCkb,
+      0,
+    );
     const availableToSendCkb = channelMetrics.reduce((sum, ch) => sum + ch.availableToSendCkb, 0);
-    const availableToReceiveCkb = channelMetrics.reduce((sum, ch) => sum + ch.availableToReceiveCkb, 0);
+    const availableToReceiveCkb = channelMetrics.reduce(
+      (sum, ch) => sum + ch.availableToReceiveCkb,
+      0,
+    );
 
     // Identify gaps and issues
     const gaps = this.identifyLiquidityGaps(channelMetrics, availableToSendCkb);
@@ -140,7 +145,10 @@ export class LiquidityAnalyzer {
       channels: {
         count: channels.channels.length,
         health: channelMetrics,
-        averageHealthScore: channelMetrics.length > 0 ? channelMetrics.reduce((sum, ch) => sum + ch.healthScore, 0) / channelMetrics.length : 0,
+        averageHealthScore:
+          channelMetrics.length > 0
+            ? channelMetrics.reduce((sum, ch) => sum + ch.healthScore, 0) / channelMetrics.length
+            : 0,
         balancedCount: channelMetrics.filter((ch) => ch.isBalanced).length,
         imbalancedCount: channelMetrics.filter((ch) => !ch.isBalanced).length,
       },
@@ -171,7 +179,8 @@ export class LiquidityAnalyzer {
     const availableToSend = Math.max(0, localBalance - pendingLocal);
     const availableToReceive = Math.max(0, remoteBalance - pendingRemote);
 
-    const utilizationPercent = totalCapacity > 0 ? ((pendingLocal + pendingRemote) / totalCapacity) * 100 : 0;
+    const utilizationPercent =
+      totalCapacity > 0 ? ((pendingLocal + pendingRemote) / totalCapacity) * 100 : 0;
     const balanceRatioPercent = totalCapacity > 0 ? (localBalance / totalCapacity) * 100 : 50;
 
     // Channel is balanced if local balance is 40-60% of total
@@ -214,7 +223,10 @@ export class LiquidityAnalyzer {
   /**
    * Identify liquidity shortfalls and gaps
    */
-  private identifyLiquidityGaps(metrics: ChannelHealthMetrics[], totalSendable: number): LiquidityGap[] {
+  private identifyLiquidityGaps(
+    metrics: ChannelHealthMetrics[],
+    _totalSendable: number,
+  ): LiquidityGap[] {
     const gaps: LiquidityGap[] = [];
 
     // Gap 1: No send-capable channels
@@ -255,7 +267,8 @@ export class LiquidityAnalyzer {
     if (allHighUtilization) {
       gaps.push({
         amount: 0,
-        reason: 'High utilization in all channels. Many pending payments. Risk of payment failures.',
+        reason:
+          'High utilization in all channels. Many pending payments. Risk of payment failures.',
         severity: 'medium',
         affectedChannels: metrics.map((ch) => ch.channelId),
       });
@@ -267,7 +280,9 @@ export class LiquidityAnalyzer {
   /**
    * Generate rebalance recommendations between channels
    */
-  private generateRebalanceRecommendations(metrics: ChannelHealthMetrics[]): RebalanceRecommendation[] {
+  private generateRebalanceRecommendations(
+    metrics: ChannelHealthMetrics[],
+  ): RebalanceRecommendation[] {
     const recommendations: RebalanceRecommendation[] = [];
 
     // Look for pairs: one local-heavy, one remote-heavy
@@ -298,7 +313,10 @@ export class LiquidityAnalyzer {
           reason: `Rebalance liquidity: source is ${source.balanceRatioPercent.toFixed(0)}% local, destination is ${dest.balanceRatioPercent.toFixed(0)}% local`,
           benefit: `Improves payment success rate by balancing channel liquidity`,
           estimatedRoutingFeeCkb: amountToMove * 0.001, // 0.1% estimated fee
-          priority: Math.round((Math.abs(50 - source.balanceRatioPercent) + Math.abs(50 - dest.balanceRatioPercent)) / 20), // 1-10
+          priority: Math.round(
+            (Math.abs(50 - source.balanceRatioPercent) + Math.abs(50 - dest.balanceRatioPercent)) /
+              20,
+          ), // 1-10
         });
       }
     }
@@ -309,7 +327,10 @@ export class LiquidityAnalyzer {
   /**
    * Estimate funding needs for future operations
    */
-  private estimateFundingNeeds(metrics: ChannelHealthMetrics[], gaps: LiquidityGap[]): FundingNeed[] {
+  private estimateFundingNeeds(
+    metrics: ChannelHealthMetrics[],
+    gaps: LiquidityGap[],
+  ): FundingNeed[] {
     const needs: FundingNeed[] = [];
 
     // If there are critical gaps, funding is needed
@@ -319,8 +340,8 @@ export class LiquidityAnalyzer {
       const bestChannel = [...metrics]
         .filter((ch) => ch.state === ChannelState.ChannelReady)
         .sort((a, b) => {
-          const scoreA = a.healthScore + (a.totalCapacityCkb / 1000); // Higher score + capacity = better
-          const scoreB = b.healthScore + (b.totalCapacityCkb / 1000);
+          const scoreA = a.healthScore + a.totalCapacityCkb / 1000; // Higher score + capacity = better
+          const scoreB = b.healthScore + b.totalCapacityCkb / 1000;
           return scoreB - scoreA;
         })[0];
 
@@ -335,7 +356,10 @@ export class LiquidityAnalyzer {
     }
 
     // If all channels are small, recommend growth
-    const avgCapacity = metrics.length > 0 ? metrics.reduce((sum, ch) => sum + ch.totalCapacityCkb, 0) / metrics.length : 0;
+    const avgCapacity =
+      metrics.length > 0
+        ? metrics.reduce((sum, ch) => sum + ch.totalCapacityCkb, 0) / metrics.length
+        : 0;
 
     if (avgCapacity < 100) {
       needs.push({
@@ -353,7 +377,7 @@ export class LiquidityAnalyzer {
    */
   private estimateRunway(
     availableToSend: number,
-    metrics: ChannelHealthMetrics[]
+    _metrics: ChannelHealthMetrics[],
   ): {
     daysAtCurrentRate?: number;
     estimatedDailySpendCkb?: number;
@@ -383,7 +407,7 @@ export class LiquidityAnalyzer {
     runway: {
       daysAtCurrentRate?: number;
       estimatedDailySpendCkb?: number;
-    }
+    },
   ): string {
     const parts: string[] = [];
 
@@ -391,7 +415,9 @@ export class LiquidityAnalyzer {
       return 'No channels available. Open a channel to start making payments.';
     }
 
-    parts.push(`Channel Health: ${metrics.filter((ch) => ch.healthScore >= 70).length}/${metrics.length} channels healthy`);
+    parts.push(
+      `Channel Health: ${metrics.filter((ch) => ch.healthScore >= 70).length}/${metrics.length} channels healthy`,
+    );
 
     const avgScore = metrics.reduce((sum, ch) => sum + ch.healthScore, 0) / metrics.length;
     if (avgScore >= 80) {
@@ -407,7 +433,9 @@ export class LiquidityAnalyzer {
     }
 
     if (fundingNeeds.length > 0) {
-      parts.push(`Need to fund ${fundingNeeds.map((n) => n.amount).join(', ')} CKB to resolve issues.`);
+      parts.push(
+        `Need to fund ${fundingNeeds.map((n) => n.amount).join(', ')} CKB to resolve issues.`,
+      );
     }
 
     if (runway.daysAtCurrentRate) {

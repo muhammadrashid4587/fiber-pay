@@ -1,12 +1,12 @@
 import { Command } from 'commander';
-import { getConfig } from './lib/config.js';
-import { createNodeCommand } from './commands/node.js';
-import { createChannelCommand } from './commands/channel.js';
-import { createInvoiceCommand } from './commands/invoice.js';
-import { createPaymentCommand } from './commands/payment.js';
-import { createPeerCommand } from './commands/peer.js';
 import { createBalanceCommand } from './commands/balance.js';
 import { createBinaryCommand } from './commands/binary.js';
+import { createChannelCommand } from './commands/channel.js';
+import { createInvoiceCommand } from './commands/invoice.js';
+import { createNodeCommand } from './commands/node.js';
+import { createPaymentCommand } from './commands/payment.js';
+import { createPeerCommand } from './commands/peer.js';
+import { getConfig } from './lib/config.js';
 
 function shouldOutputJson(): boolean {
   return process.argv.includes('--json');
@@ -20,13 +20,19 @@ function printFatal(error: unknown): void {
       : undefined;
 
   if (shouldOutputJson()) {
-    console.log(JSON.stringify({
-      success: false,
-      error: {
-        code: commanderCode ?? 'CLI_FATAL',
-        message,
-      },
-    }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          success: false,
+          error: {
+            code: commanderCode ?? 'CLI_FATAL',
+            message,
+          },
+        },
+        null,
+        2,
+      ),
+    );
   } else {
     if (commanderCode?.startsWith('commander.')) {
       return;

@@ -7,7 +7,7 @@ export function createRpcClient(config: CliConfig): FiberRpcClient {
 
 export async function createReadyRpcClient(
   config: CliConfig,
-  options: { timeout?: number; interval?: number } = {}
+  options: { timeout?: number; interval?: number } = {},
 ): Promise<FiberRpcClient> {
   const rpc = createRpcClient(config);
   await rpc.waitForReady({ timeout: options.timeout ?? 3000, interval: options.interval ?? 500 });

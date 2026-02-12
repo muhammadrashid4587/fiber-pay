@@ -5,8 +5,8 @@
  */
 
 import type { FiberRpcClient } from '../rpc/client.js';
+import type { Attribute, CkbInvoice, HexString } from '../types/index.js';
 import { fromHex, shannonsToCkb } from '../utils.js';
-import type { CkbInvoice, HexString, Attribute } from '../types/index.js';
 
 // =============================================================================
 // Types
@@ -102,7 +102,7 @@ export class InvoiceVerifier {
     // Default details if parsing failed
     const details = {
       paymentHash: invoice?.data.payment_hash || 'unknown',
-      amountCkb: invoice && invoice.amount ? shannonsToCkb(invoice.amount) : 0,
+      amountCkb: invoice?.amount ? shannonsToCkb(invoice.amount) : 0,
       expiresAt: this.getExpiryTimestamp(invoice),
       description: this.getDescription(invoice),
       isExpired: invoice ? this.isInvoiceExpired(invoice) : true,
@@ -122,7 +122,7 @@ export class InvoiceVerifier {
     }
 
     // 4. Validate amount
-    if (invoice && invoice.amount) {
+    if (invoice?.amount) {
       const validAmount = this.validateAmount(invoice.amount);
       checks.validAmount = validAmount.valid;
       if (!validAmount.valid) {
@@ -194,7 +194,9 @@ export class InvoiceVerifier {
       details,
       peer: {
         nodeId: payeePublicKey, // Use the already-extracted payee public key
-        isConnected: checks.peerConnected || issues.filter((i) => i.code === 'NO_PEERS_CONNECTED').length === 0,
+        isConnected:
+          checks.peerConnected ||
+          issues.filter((i) => i.code === 'NO_PEERS_CONNECTED').length === 0,
         trustScore: this.calculateTrustScore(checks, issues),
       },
       checks: {
@@ -282,7 +284,8 @@ export class InvoiceVerifier {
     // Invoice timestamp is in seconds since UNIX epoch.
     try {
       const createdSeconds = fromHex(invoice.data.timestamp as HexString);
-      const expiryDeltaSeconds = this.getAttributeU64(invoice.data.attrs, 'ExpiryTime') ?? BigInt(60 * 60);
+      const expiryDeltaSeconds =
+        this.getAttributeU64(invoice.data.attrs, 'ExpiryTime') ?? BigInt(60 * 60);
       return Number(createdSeconds + expiryDeltaSeconds) * 1000;
     } catch {
       // Fall through to default
@@ -292,7 +295,10 @@ export class InvoiceVerifier {
     return Date.now() + 60 * 60 * 1000;
   }
 
-  private getAttributeU64(attrs: Attribute[], key: 'ExpiryTime' | 'FinalHtlcTimeout' | 'FinalHtlcMinimumExpiryDelta'): bigint | undefined {
+  private getAttributeU64(
+    attrs: Attribute[],
+    key: 'ExpiryTime' | 'FinalHtlcTimeout' | 'FinalHtlcMinimumExpiryDelta',
+  ): bigint | undefined {
     for (const attr of attrs) {
       if (key in attr) {
         return fromHex((attr as Record<string, HexString>)[key] as HexString);
@@ -340,7 +346,7 @@ export class InvoiceVerifier {
       validAmount: boolean;
       peerConnected: boolean;
     },
-    issues: VerificationIssue[]
+    issues: VerificationIssue[],
   ): number {
     let score = 100;
 

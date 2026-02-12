@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type { FiberRpcClient } from '@fiber-pay/sdk';
 
 export function extractBootnodeAddrs(configFilePath: string): string[] {
@@ -12,8 +12,7 @@ export function extractBootnodeAddrs(configFilePath: string): string[] {
 
     if (sectionMatch) {
       const section = sectionMatch[1];
-      let match: RegExpExecArray | null;
-      while ((match = regex.exec(section)) !== null) {
+      for (const match of section.matchAll(regex)) {
         addrs.push(match[1]);
       }
     }
@@ -24,7 +23,10 @@ export function extractBootnodeAddrs(configFilePath: string): string[] {
   }
 }
 
-export async function autoConnectBootnodes(rpc: FiberRpcClient, bootnodes: string[]): Promise<void> {
+export async function autoConnectBootnodes(
+  rpc: FiberRpcClient,
+  bootnodes: string[],
+): Promise<void> {
   if (bootnodes.length === 0) return;
 
   console.log(`🔗 Connecting to ${bootnodes.length} bootnode(s)...`);

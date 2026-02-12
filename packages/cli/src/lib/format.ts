@@ -1,10 +1,10 @@
 import {
-  ChannelState,
-  shannonsToCkb,
-  toHex,
   type Channel,
+  ChannelState,
   type CkbInvoice,
   type GetPaymentResult,
+  shannonsToCkb,
+  toHex,
 } from '@fiber-pay/sdk';
 
 export function sleep(ms: number): Promise<void> {
@@ -161,9 +161,10 @@ export function extractInvoiceMetadata(invoice: CkbInvoice): {
   }
 
   const createdMs = parseHexTimestampMs(invoice.data.timestamp);
-  const expiresAt = createdMs && expirySeconds
-    ? new Date(createdMs + expirySeconds * 1000).toISOString()
-    : undefined;
+  const expiresAt =
+    createdMs && expirySeconds
+      ? new Date(createdMs + expirySeconds * 1000).toISOString()
+      : undefined;
 
   return {
     description,
@@ -174,17 +175,16 @@ export function extractInvoiceMetadata(invoice: CkbInvoice): {
 }
 
 export function formatPaymentResult(payment: GetPaymentResult): Record<string, unknown> {
+  const createdAtMs = parseHexTimestampMs(payment.created_at);
+  const updatedAtMs = parseHexTimestampMs(payment.last_updated_at);
+
   return {
     paymentHash: payment.payment_hash,
     status: payment.status,
     feeCkb: shannonsToCkb(payment.fee),
     failureReason: payment.failed_error,
-    createdAt: parseHexTimestampMs(payment.created_at)
-      ? new Date(parseHexTimestampMs(payment.created_at)!).toISOString()
-      : payment.created_at,
-    updatedAt: parseHexTimestampMs(payment.last_updated_at)
-      ? new Date(parseHexTimestampMs(payment.last_updated_at)!).toISOString()
-      : payment.last_updated_at,
+    createdAt: createdAtMs ? new Date(createdAtMs).toISOString() : payment.created_at,
+    updatedAt: updatedAtMs ? new Date(updatedAtMs).toISOString() : payment.last_updated_at,
     routeCount: payment.routers?.length ?? 0,
     routers: payment.routers,
   };
@@ -206,13 +206,19 @@ export function printChannelDetailHuman(channel: Channel): void {
   console.log('Channel');
   console.log(`  ID:            ${channel.channel_id}`);
   console.log(`  Peer:          ${channel.peer_id}`);
-  console.log(`  State:         ${stateLabel(channel.state.state_name)} (${channel.state.state_name})`);
+  console.log(
+    `  State:         ${stateLabel(channel.state.state_name)} (${channel.state.state_name})`,
+  );
   console.log(`  Enabled:       ${channel.enabled ? 'yes' : 'no'}`);
   console.log(`  Public:        ${channel.is_public ? 'yes' : 'no'}`);
-  console.log(`  Balance:       local ${local} CKB | remote ${remote} CKB | capacity ${capacity} CKB`);
+  console.log(
+    `  Balance:       local ${local} CKB | remote ${remote} CKB | capacity ${capacity} CKB`,
+  );
   console.log(`  Pending TLCs:  ${channel.pending_tlcs.length}`);
   console.log(`  Age:           ${formatAge(parseHexTimestampMs(channel.created_at))}`);
-  console.log(`  Outpoint:      ${channel.channel_outpoint ? `${channel.channel_outpoint.tx_hash}:${channel.channel_outpoint.index}` : 'n/a'}`);
+  console.log(
+    `  Outpoint:      ${channel.channel_outpoint ? `${channel.channel_outpoint.tx_hash}:${channel.channel_outpoint.index}` : 'n/a'}`,
+  );
   console.log(`  Commitment Tx: ${channel.latest_commitment_transaction_hash ?? 'n/a'}`);
   console.log(`  Shutdown Tx:   ${channel.shutdown_transaction_hash ?? 'n/a'}`);
 }
@@ -231,7 +237,9 @@ export function printInvoiceDetailHuman(data: {
   console.log('Invoice');
   console.log(`  Payment Hash:  ${data.paymentHash}`);
   console.log(`  Status:        ${data.status}`);
-  console.log(`  Amount:        ${data.amountCkb ?? 'n/a'} ${data.amountCkb !== undefined ? 'CKB' : ''}`.trim());
+  console.log(
+    `  Amount:        ${data.amountCkb ?? 'n/a'} ${data.amountCkb !== undefined ? 'CKB' : ''}`.trim(),
+  );
   console.log(`  Currency:      ${data.currency}`);
   console.log(`  Description:   ${data.description ?? 'n/a'}`);
   console.log(`  Created At:    ${data.createdAt}`);
@@ -241,13 +249,20 @@ export function printInvoiceDetailHuman(data: {
 }
 
 export function printPaymentDetailHuman(payment: GetPaymentResult): void {
+  const createdAtMs = parseHexTimestampMs(payment.created_at);
+  const updatedAtMs = parseHexTimestampMs(payment.last_updated_at);
+
   console.log('Payment');
   console.log(`  Hash:          ${payment.payment_hash}`);
   console.log(`  Status:        ${payment.status}`);
   console.log(`  Fee:           ${shannonsToCkb(payment.fee)} CKB`);
   console.log(`  Failure:       ${payment.failed_error ?? 'n/a'}`);
-  console.log(`  Created At:    ${parseHexTimestampMs(payment.created_at) ? new Date(parseHexTimestampMs(payment.created_at)!).toISOString() : payment.created_at}`);
-  console.log(`  Updated At:    ${parseHexTimestampMs(payment.last_updated_at) ? new Date(parseHexTimestampMs(payment.last_updated_at)!).toISOString() : payment.last_updated_at}`);
+  console.log(
+    `  Created At:    ${createdAtMs ? new Date(createdAtMs).toISOString() : payment.created_at}`,
+  );
+  console.log(
+    `  Updated At:    ${updatedAtMs ? new Date(updatedAtMs).toISOString() : payment.last_updated_at}`,
+  );
   const routers = payment.routers ?? [];
   console.log(`  Routes:        ${routers.length}`);
   if (routers.length > 0) {
@@ -273,10 +288,16 @@ export function printChannelListHuman(channels: Channel[]): void {
   };
 
   console.log(`Channels: ${summary.count} total, ${summary.activeCount} ready`);
-  console.log(`Liquidity: local ${summary.totalLocalCkb} CKB | remote ${summary.totalRemoteCkb} CKB | capacity ${summary.totalCapacityCkb} CKB`);
+  console.log(
+    `Liquidity: local ${summary.totalLocalCkb} CKB | remote ${summary.totalRemoteCkb} CKB | capacity ${summary.totalCapacityCkb} CKB`,
+  );
   console.log('');
-  console.log('ID                     PEER                   STATE                     LOCAL      REMOTE     TLC');
-  console.log('---------------------------------------------------------------------------------------------------');
+  console.log(
+    'ID                     PEER                   STATE                     LOCAL      REMOTE     TLC',
+  );
+  console.log(
+    '---------------------------------------------------------------------------------------------------',
+  );
 
   for (const channel of channels) {
     const id = truncateMiddle(channel.channel_id, 10, 8).padEnd(22, ' ');
@@ -300,10 +321,14 @@ export function printBalanceHuman(data: {
   console.log(`  Total:                ${data.totalCkb} CKB`);
   console.log(`  Available To Send:    ${data.availableToSend} CKB`);
   console.log(`  Available To Receive: ${data.availableToReceive} CKB`);
-  console.log(`  Channels:             ${data.channelCount} total (${data.activeChannelCount} active)`);
+  console.log(
+    `  Channels:             ${data.channelCount} total (${data.activeChannelCount} active)`,
+  );
 }
 
-export function printPeerListHuman(peers: Array<{ peer_id: string; pubkey: string; address: string }>): void {
+export function printPeerListHuman(
+  peers: Array<{ peer_id: string; pubkey: string; address: string }>,
+): void {
   if (peers.length === 0) {
     console.log('No connected peers.');
     return;

@@ -1,22 +1,21 @@
 /**
  * @fiber-pay/agent
  * AI agent orchestration layer for Fiber Network with MCP tools
- * 
+ *
  * @packageDocumentation
  */
 
-// Main agent interface
-export { FiberPay, createFiberPay } from './fiber-pay.js';
 export type {
-  FiberPayConfig,
   AgentResult,
   BalanceInfo,
-  PaymentResult,
-  InvoiceResult,
-  HoldInvoiceResult,
   ChannelSummary,
+  FiberPayConfig,
+  HoldInvoiceResult,
+  InvoiceResult,
+  PaymentResult,
 } from './fiber-pay.js';
-
+// Main agent interface
+export { createFiberPay, FiberPay } from './fiber-pay.js';
+export type { McpToolInput, McpToolName, McpToolResult } from './mcp-tools.js';
 // MCP tool definitions
 export { MCP_TOOLS } from './mcp-tools.js';
-export type { McpToolName, McpToolInput, McpToolResult } from './mcp-tools.js';

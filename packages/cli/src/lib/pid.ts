@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 export function getPidFilePath(dataDir: string): string {
   return join(dataDir, 'fiber.pid');

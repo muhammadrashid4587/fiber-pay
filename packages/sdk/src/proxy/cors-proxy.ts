@@ -80,7 +80,7 @@ export class CorsProxy {
               };
               res.writeHead(proxyRes.statusCode || 500, headers);
               proxyRes.pipe(res);
-            }
+            },
           );
 
           proxyReq.on('error', (err) => {

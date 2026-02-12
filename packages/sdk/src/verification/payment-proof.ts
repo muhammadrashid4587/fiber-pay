@@ -1,25 +1,24 @@
 /**
  * Payment Proof & Tracking System
  * Records, stores, and verifies payment evidence for audit trail and reconciliation
- * 
+ *
  * IMPORTANT LIMITATION:
  * Fiber Network RPC currently does NOT return the payment preimage to the sender
  * after a successful payment. In standard Lightning protocol, the preimage serves
  * as cryptographic proof of payment (SHA256(preimage) === payment_hash).
- * 
+ *
  * Until Fiber exposes the preimage in send_payment/get_payment responses:
  * - Payment proofs are based on RPC status (Success/Failed) rather than preimage
  * - For invoices YOU create (as receiver), preimage IS available
  * - This limitation affects sender-side proof verification only
- * 
+ *
  * Tracking issue: Preimage not exposed in Fiber RPC send_payment result
  */
 
-import { readFile, writeFile } from 'fs/promises';
-import { dirname } from 'path';
-import { createHash } from 'crypto';
-import type { PaymentStatus, HexString } from '../types/index.js';
-import { shannonsToCkb, fromHex } from '../utils.js';
+import { createHash } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import type { HexString, PaymentStatus } from '../types/index.js';
 
 // =============================================================================
 // Types
@@ -153,7 +152,7 @@ export class PaymentProofManager {
       peerAddress?: string;
       channelUsed?: string;
       routePath?: string[];
-    }
+    },
   ): PaymentProof {
     const now = Date.now();
     const fullProof: PaymentProof = {
@@ -214,7 +213,10 @@ export class PaymentProofManager {
 
     // Try to verify preimage now
     if (proof.proof?.preimage) {
-      const hashValid = this.verifyPreimageHash(proof.proof.preimage, proof.invoiceDetails.paymentHash);
+      const hashValid = this.verifyPreimageHash(
+        proof.proof.preimage,
+        proof.invoiceDetails.paymentHash,
+      );
       if (!hashValid) {
         return {
           valid: false,
@@ -320,7 +322,7 @@ export class PaymentProofManager {
 
     proofs.forEach((p) => {
       lines.push(
-        `${p.id.slice(0, 16)}... | ${p.status} | ${p.execution.amountCkb.toFixed(4)} | ${p.execution.feeCkb.toFixed(8)} | ${p.verified ? 'Yes' : 'No'} | ${new Date(p.metadata.createdAt).toISOString()}`
+        `${p.id.slice(0, 16)}... | ${p.status} | ${p.execution.amountCkb.toFixed(4)} | ${p.execution.feeCkb.toFixed(8)} | ${p.verified ? 'Yes' : 'No'} | ${new Date(p.metadata.createdAt).toISOString()}`,
       );
     });
 
@@ -354,7 +356,9 @@ export class PaymentProofManager {
    * Remove oldest proofs to keep storage bounded
    */
   private pruneOldestProofs(count: number): void {
-    const sorted = Array.from(this.proofs.values()).sort((a, b) => a.metadata.createdAt - b.metadata.createdAt);
+    const sorted = Array.from(this.proofs.values()).sort(
+      (a, b) => a.metadata.createdAt - b.metadata.createdAt,
+    );
 
     const toRemove = sorted.slice(0, Math.floor(sorted.length - count));
     toRemove.forEach((p) => {
@@ -368,8 +372,8 @@ export class PaymentProofManager {
   private async ensureDirectory(): Promise<void> {
     const dir = dirname(this.proofFilePath);
     try {
-      // Use Node.js 18+ mkdir with recursive option
-      const fs = await import('fs');
+      // Use Node.js 20+ mkdir with recursive option
+      const fs = await import('node:fs');
       fs.mkdirSync(dir, { recursive: true });
     } catch {
       // Ignore if fails

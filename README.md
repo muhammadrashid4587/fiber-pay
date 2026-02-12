@@ -415,7 +415,7 @@ This SDK has been tested on CKB testnet with real funds:
 
 ### Prerequisites
 
-- Node.js >= 18
+- Node.js >= 20
 - pnpm (recommended) or npm
 
 ### Setup
@@ -461,6 +461,10 @@ pnpm dev
 
 # Type checking across all packages
 pnpm typecheck
+
+# Lint and format checks
+pnpm lint
+pnpm format:check
 
 # Run tests (SDK package)
 pnpm --filter @fiber-pay/sdk test

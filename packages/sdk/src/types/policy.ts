@@ -4,7 +4,7 @@
  */
 
 import { z } from 'zod';
-import type { HexString, PeerId, Script } from './rpc.js';
+import type { HexString } from './rpc.js';
 
 // =============================================================================
 // Policy Configuration Schema
@@ -18,7 +18,10 @@ export const SpendingLimitSchema = z.object({
   /** Time window in seconds */
   windowSeconds: z.number().positive(),
   /** Current spent amount in window (runtime state) */
-  currentSpent: z.string().regex(/^0x[0-9a-fA-F]+$/).optional(),
+  currentSpent: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]+$/)
+    .optional(),
   /** Window start timestamp (runtime state) */
   windowStart: z.number().optional(),
 });
@@ -61,9 +64,15 @@ export const ChannelPolicySchema = z.object({
   /** Allow force close */
   allowForceClose: z.boolean().default(false),
   /** Maximum funding amount for new channels */
-  maxFundingAmount: z.string().regex(/^0x[0-9a-fA-F]+$/).optional(),
+  maxFundingAmount: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]+$/)
+    .optional(),
   /** Minimum funding amount for new channels */
-  minFundingAmount: z.string().regex(/^0x[0-9a-fA-F]+$/).optional(),
+  minFundingAmount: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]+$/)
+    .optional(),
   /** Maximum number of channels */
   maxChannels: z.number().positive().optional(),
 });
@@ -86,7 +95,10 @@ export const SecurityPolicySchema = z.object({
   /** Channel operation policy */
   channels: ChannelPolicySchema.optional(),
   /** Require confirmation for amounts above this threshold */
-  confirmationThreshold: z.string().regex(/^0x[0-9a-fA-F]+$/).optional(),
+  confirmationThreshold: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]+$/)
+    .optional(),
   /** Log all transactions to audit log */
   auditLogging: z.boolean().default(true),
   /** Custom metadata */

@@ -1,37 +1,40 @@
 /**
  * FiberPay - AI Agent-Friendly Payment Interface
  * High-level, LLM-friendly commands for payment operations
- * 
+ *
  * This is the primary interface designed for AI agents to manage
  * payments on the CKB Lightning Network (Fiber Network).
  */
 
-import { FiberRpcClient, ckbToShannons, shannonsToCkb, randomBytes32, toHex, fromHex, ChannelState } from '@fiber-pay/sdk';
-import { PolicyEngine } from '@fiber-pay/sdk';
-import { KeyManager, createKeyManager } from '@fiber-pay/sdk';
-import { ProcessManager } from '@fiber-pay/node';
-import { ensureFiberBinary, getDefaultBinaryPath } from '@fiber-pay/node';
-import { InvoiceVerifier } from '@fiber-pay/sdk';
-import { PaymentProofManager } from '@fiber-pay/sdk';
-import { LiquidityAnalyzer } from '@fiber-pay/sdk';
+import type { DownloadProgress } from '@fiber-pay/node';
+import { ensureFiberBinary, ProcessManager } from '@fiber-pay/node';
 import type {
-  SecurityPolicy,
-  DEFAULT_SECURITY_POLICY,
-  PolicyCheckResult,
-  HexString,
-  Channel,
-  PaymentInfo,
-  NodeInfo,
-  InvoiceVerificationResult,
-  PaymentProof,
-  PaymentProofSummary,
-  LiquidityReport,
-  PaymentHash,
+  Attribute,
   CkbInvoice,
   CkbInvoiceStatus,
-  Attribute,
+  HexString,
+  InvoiceVerificationResult,
+  LiquidityReport,
+  PaymentProof,
+  PaymentProofSummary,
+  PolicyCheckResult,
+  SecurityPolicy,
 } from '@fiber-pay/sdk';
-import type { DownloadProgress, FiberNodeConfig } from '@fiber-pay/node';
+import {
+  ChannelState,
+  ckbToShannons,
+  createKeyManager,
+  FiberRpcClient,
+  fromHex,
+  InvoiceVerifier,
+  type KeyManager,
+  LiquidityAnalyzer,
+  PaymentProofManager,
+  PolicyEngine,
+  randomBytes32,
+  shannonsToCkb,
+  toHex,
+} from '@fiber-pay/sdk';
 
 // =============================================================================
 // Agent-Friendly Result Types
@@ -183,24 +186,24 @@ export interface FiberPayConfig {
 
 /**
  * FiberPay - Main interface for AI agents
- * 
+ *
  * @example
  * ```typescript
  * const fiber = new FiberPay({
  *   binaryPath: '/usr/local/bin/fnn',
  *   dataDir: '~/.fiber-pay',
  * });
- * 
+ *
  * await fiber.initialize();
- * 
+ *
  * // Check balance
  * const balance = await fiber.getBalance();
- * 
+ *
  * // Send payment
  * const result = await fiber.pay({
  *   invoice: 'fibt1...',
  * });
- * 
+ *
  * // Create invoice to receive payment
  * const invoice = await fiber.createInvoice({
  *   amountCkb: 10,
@@ -281,7 +284,7 @@ export class FiberPay {
     try {
       // Resolve binary path - download if needed
       let binaryPath = this.config.binaryPath;
-      
+
       if (!binaryPath) {
         if (this.config.autoDownload !== false) {
           // Auto-download the binary
@@ -293,13 +296,13 @@ export class FiberPay {
           return this.errorResult(
             new Error('Binary path not provided and autoDownload is disabled'),
             'BINARY_NOT_FOUND',
-            true
+            true,
           );
         }
       }
 
       // Initialize keys
-      const keyInfo = await this.keys.initialize();
+      const _keyInfo = await this.keys.initialize();
 
       // Create process manager
       this.process = new ProcessManager({
@@ -380,13 +383,13 @@ export class FiberPay {
 
   /**
    * Pay an invoice or send directly to a node
-   * 
+   *
    * @example
    * // Pay invoice
    * await fiber.pay({ invoice: 'fibt1...' });
-   * 
+   *
    * // Send directly (keysend)
-   * await fiber.pay({ 
+   * await fiber.pay({
    *   recipientNodeId: 'QmXXX...',
    *   amountCkb: 10,
    * });
@@ -424,7 +427,7 @@ export class FiberPay {
         return this.errorResult(
           new Error('Either invoice or (recipientNodeId + amountCkb) required'),
           'INVALID_PARAMS',
-          true
+          true,
         );
       }
 
@@ -466,7 +469,12 @@ export class FiberPay {
 
       const paymentResult: PaymentResult = {
         paymentHash: result.payment_hash,
-        status: result.status === 'Success' ? 'success' : result.status === 'Failed' ? 'failed' : 'pending',
+        status:
+          result.status === 'Success'
+            ? 'success'
+            : result.status === 'Failed'
+              ? 'failed'
+              : 'pending',
         amountCkb: shannonsToCkb(amountHex),
         feeCkb: shannonsToCkb(result.fee),
         failureReason: result.failed_error,
@@ -491,7 +499,7 @@ export class FiberPay {
           result.status,
           {
             preimage: undefined, // Would need to get from RPC if available
-          }
+          },
         );
         // Save asynchronously (don't wait)
         this.paymentProofManager.save().catch(() => {
@@ -516,7 +524,7 @@ export class FiberPay {
 
   /**
    * Create an invoice to receive payment
-   * 
+   *
    * @example
    * const invoice = await fiber.createInvoice({
    *   amountCkb: 10,
@@ -578,7 +586,7 @@ export class FiberPay {
 
     try {
       const channels = await this.rpc!.listChannels({});
-      
+
       let totalLocal = 0n;
       let totalRemote = 0n;
       let activeChannels = 0;
@@ -622,7 +630,12 @@ export class FiberPay {
         success: true,
         data: {
           paymentHash: result.payment_hash,
-          status: result.status === 'Success' ? 'success' : result.status === 'Failed' ? 'failed' : 'pending',
+          status:
+            result.status === 'Success'
+              ? 'success'
+              : result.status === 'Failed'
+                ? 'failed'
+                : 'pending',
           amountCkb: 0, // Amount not returned from get_payment
           feeCkb: shannonsToCkb(result.fee),
           failureReason: result.failed_error,
@@ -814,12 +827,14 @@ export class FiberPay {
   /**
    * Get node information
    */
-  async getNodeInfo(): Promise<AgentResult<{
-    nodeId: string;
-    version: string;
-    channelCount: number;
-    peersCount: number;
-  }>> {
+  async getNodeInfo(): Promise<
+    AgentResult<{
+      nodeId: string;
+      version: string;
+      channelCount: number;
+      peersCount: number;
+    }>
+  > {
     this.ensureInitialized();
 
     try {
@@ -847,7 +862,7 @@ export class FiberPay {
   /**
    * Validate an invoice before payment
    * Checks format, expiry, amount, cryptographic correctness, and peer connectivity
-   * 
+   *
    * @example
    * ```typescript
    * const validation = await fiber.validateInvoice('fibt1...');
@@ -888,11 +903,13 @@ export class FiberPay {
    * Get payment proof (cryptographic evidence of payment)
    * Returns stored proof if available, or creates one from RPC status
    */
-  async getPaymentProof(paymentHash: string): Promise<AgentResult<{
-    proof: PaymentProof | null;
-    verified: boolean;
-    status: string;
-  }>> {
+  async getPaymentProof(paymentHash: string): Promise<
+    AgentResult<{
+      proof: PaymentProof | null;
+      verified: boolean;
+      status: string;
+    }>
+  > {
     this.ensureInitialized();
 
     try {
@@ -971,7 +988,10 @@ export class FiberPay {
         throw new Error('Payment proof manager not initialized');
       }
 
-      const report = this.paymentProofManager.exportAuditReport(options?.startTime, options?.endTime);
+      const report = this.paymentProofManager.exportAuditReport(
+        options?.startTime,
+        options?.endTime,
+      );
 
       return {
         success: true,
@@ -1097,23 +1117,30 @@ export class FiberPay {
    * Wait for a payment to complete (Success or Failed)
    * Wraps the SDK-level polling helper with AgentResult return type.
    */
-  async waitForPayment(paymentHash: string, options?: {
-    /** Timeout in ms (default: 120000) */
-    timeoutMs?: number;
-  }): Promise<AgentResult<PaymentResult>> {
+  async waitForPayment(
+    paymentHash: string,
+    options?: {
+      /** Timeout in ms (default: 120000) */
+      timeoutMs?: number;
+    },
+  ): Promise<AgentResult<PaymentResult>> {
     this.ensureInitialized();
 
     try {
-      const result = await this.rpc!.waitForPayment(
-        paymentHash as HexString,
-        { timeout: options?.timeoutMs }
-      );
+      const result = await this.rpc!.waitForPayment(paymentHash as HexString, {
+        timeout: options?.timeoutMs,
+      });
 
       return {
         success: result.status === 'Success',
         data: {
           paymentHash: result.payment_hash,
-          status: result.status === 'Success' ? 'success' : result.status === 'Failed' ? 'failed' : 'pending',
+          status:
+            result.status === 'Success'
+              ? 'success'
+              : result.status === 'Failed'
+                ? 'failed'
+                : 'pending',
           amountCkb: 0, // Amount not returned from get_payment
           feeCkb: shannonsToCkb(result.fee),
           failureReason: result.failed_error,
@@ -1129,17 +1156,19 @@ export class FiberPay {
    * Wait for a channel to become ready (ChannelReady state)
    * Useful after opening a channel — waits for on-chain confirmation.
    */
-  async waitForChannelReady(channelId: string, options?: {
-    /** Timeout in ms (default: 300000 = 5 min) */
-    timeoutMs?: number;
-  }): Promise<AgentResult<ChannelSummary>> {
+  async waitForChannelReady(
+    channelId: string,
+    options?: {
+      /** Timeout in ms (default: 300000 = 5 min) */
+      timeoutMs?: number;
+    },
+  ): Promise<AgentResult<ChannelSummary>> {
     this.ensureInitialized();
 
     try {
-      const channel = await this.rpc!.waitForChannelReady(
-        channelId as HexString,
-        { timeout: options?.timeoutMs }
-      );
+      const channel = await this.rpc!.waitForChannelReady(channelId as HexString, {
+        timeout: options?.timeoutMs,
+      });
 
       return {
         success: true,
@@ -1165,7 +1194,7 @@ export class FiberPay {
   /**
    * Analyze liquidity across all channels
    * Provides detailed health metrics and recommendations
-   * 
+   *
    * @example
    * ```typescript
    * const analysis = await fiber.analyzeLiquidity();
@@ -1196,12 +1225,14 @@ export class FiberPay {
   /**
    * Check if you have enough liquidity to send a specific amount
    */
-  async canSend(amountCkb: number): Promise<AgentResult<{
-    canSend: boolean;
-    shortfallCkb: number;
-    availableCkb: number;
-    recommendation: string;
-  }>> {
+  async canSend(amountCkb: number): Promise<
+    AgentResult<{
+      canSend: boolean;
+      shortfallCkb: number;
+      availableCkb: number;
+      recommendation: string;
+    }>
+  > {
     this.ensureInitialized();
 
     try {
@@ -1262,9 +1293,11 @@ export class FiberPay {
   }
 
   /**
-    * Map RPC CkbInvoiceStatus to agent-level status string
+   * Map RPC CkbInvoiceStatus to agent-level status string
    */
-  private mapInvoiceStatus(status: CkbInvoiceStatus): 'open' | 'accepted' | 'settled' | 'cancelled' {
+  private mapInvoiceStatus(
+    status: CkbInvoiceStatus,
+  ): 'open' | 'accepted' | 'settled' | 'cancelled' {
     switch (status) {
       case 'Open':
         return 'open';
@@ -1284,14 +1317,18 @@ export class FiberPay {
     // Spec: InvoiceData.timestamp is seconds since UNIX epoch, ExpiryTime attribute is seconds duration.
     try {
       const createdSeconds = fromHex(invoice.data.timestamp as HexString);
-      const expiryDeltaSeconds = this.getAttributeU64(invoice.data.attrs, 'ExpiryTime') ?? BigInt(60 * 60);
+      const expiryDeltaSeconds =
+        this.getAttributeU64(invoice.data.attrs, 'ExpiryTime') ?? BigInt(60 * 60);
       return new Date(Number(createdSeconds + expiryDeltaSeconds) * 1000).toISOString();
     } catch {
       return '';
     }
   }
 
-  private getAttributeU64(attrs: Attribute[], key: 'ExpiryTime' | 'FinalHtlcTimeout' | 'FinalHtlcMinimumExpiryDelta'): bigint | undefined {
+  private getAttributeU64(
+    attrs: Attribute[],
+    key: 'ExpiryTime' | 'FinalHtlcTimeout' | 'FinalHtlcMinimumExpiryDelta',
+  ): bigint | undefined {
     for (const attr of attrs) {
       if (key in attr) {
         return fromHex((attr as Record<string, HexString>)[key] as HexString);
@@ -1300,11 +1337,7 @@ export class FiberPay {
     return undefined;
   }
 
-  private errorResult<T>(
-    error: unknown,
-    code: string,
-    recoverable: boolean
-  ): AgentResult<T> {
+  private errorResult<T>(error: unknown, code: string, recoverable: boolean): AgentResult<T> {
     const message = error instanceof Error ? error.message : String(error);
     return {
       success: false,
@@ -1347,7 +1380,7 @@ export function createFiberPay(options?: {
   keyPassword?: string;
 }): FiberPay {
   const dataDir = options?.dataDir || `${process.env.HOME}/.fiber-pay`;
-  
+
   return new FiberPay({
     binaryPath: options?.binaryPath,
     dataDir,

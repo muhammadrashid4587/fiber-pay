@@ -3,7 +3,14 @@
  * These schemas are compatible with Claude, OpenClaw, and other MCP agents
  */
 
-import type { AgentResult, BalanceInfo, PaymentResult, InvoiceResult, HoldInvoiceResult, ChannelSummary } from './fiber-pay.js';
+import type {
+  AgentResult,
+  BalanceInfo,
+  ChannelSummary,
+  HoldInvoiceResult,
+  InvoiceResult,
+  PaymentResult,
+} from './fiber-pay.js';
 
 // =============================================================================
 // MCP Tool Schema Definitions
@@ -46,10 +53,7 @@ Returns payment status and tracking hash.`,
           description: 'Maximum fee willing to pay in CKB',
         },
       },
-      oneOf: [
-        { required: ['invoice'] },
-        { required: ['recipientNodeId', 'amountCkb'] },
-      ],
+      oneOf: [{ required: ['invoice'] }, { required: ['recipientNodeId', 'amountCkb'] }],
     },
   },
 
@@ -483,81 +487,113 @@ Returns channel info once ready.`,
 export type McpToolName = keyof typeof MCP_TOOLS;
 
 export type McpToolInput<T extends McpToolName> = T extends 'fiber_pay'
-  ? { invoice?: string; recipientNodeId?: string; amountCkb?: number; maxFeeCkb?: number; customRecords?: Record<string, string>; maxParts?: number }
+  ? {
+      invoice?: string;
+      recipientNodeId?: string;
+      amountCkb?: number;
+      maxFeeCkb?: number;
+      customRecords?: Record<string, string>;
+      maxParts?: number;
+    }
   : T extends 'fiber_create_invoice'
-  ? { amountCkb: number; description?: string; expiryMinutes?: number }
-  : T extends 'fiber_get_balance'
-  ? {}
-  : T extends 'fiber_get_payment_status'
-  ? { paymentHash: string }
-  : T extends 'fiber_get_invoice_status'
-  ? { paymentHash: string }
-  : T extends 'fiber_list_channels'
-  ? {}
-  : T extends 'fiber_open_channel'
-  ? { peer: string; fundingCkb: number; isPublic?: boolean }
-  : T extends 'fiber_close_channel'
-  ? { channelId: string; force?: boolean }
-  : T extends 'fiber_get_node_info'
-  ? {}
-  : T extends 'fiber_get_spending_allowance'
-  ? {}
-  : T extends 'fiber_download_binary'
-  ? { version?: string; force?: boolean }
-  : T extends 'fiber_validate_invoice'
-  ? { invoice: string }
-  : T extends 'fiber_get_payment_proof'
-  ? { paymentHash: string }
-  : T extends 'fiber_analyze_liquidity'
-  ? {}
-  : T extends 'fiber_can_send'
-  ? { amountCkb: number }
-  : T extends 'fiber_create_hold_invoice'
-  ? { amountCkb: number; paymentHash: string; description?: string; expiryMinutes?: number }
-  : T extends 'fiber_settle_invoice'
-  ? { paymentHash: string; preimage: string }
-  : T extends 'fiber_wait_for_payment'
-  ? { paymentHash: string; timeoutMs?: number }
-  : T extends 'fiber_wait_for_channel_ready'
-  ? { channelId: string; timeoutMs?: number }
-  : never;
+    ? { amountCkb: number; description?: string; expiryMinutes?: number }
+    : T extends 'fiber_get_balance'
+      ? {}
+      : T extends 'fiber_get_payment_status'
+        ? { paymentHash: string }
+        : T extends 'fiber_get_invoice_status'
+          ? { paymentHash: string }
+          : T extends 'fiber_list_channels'
+            ? {}
+            : T extends 'fiber_open_channel'
+              ? { peer: string; fundingCkb: number; isPublic?: boolean }
+              : T extends 'fiber_close_channel'
+                ? { channelId: string; force?: boolean }
+                : T extends 'fiber_get_node_info'
+                  ? {}
+                  : T extends 'fiber_get_spending_allowance'
+                    ? {}
+                    : T extends 'fiber_download_binary'
+                      ? { version?: string; force?: boolean }
+                      : T extends 'fiber_validate_invoice'
+                        ? { invoice: string }
+                        : T extends 'fiber_get_payment_proof'
+                          ? { paymentHash: string }
+                          : T extends 'fiber_analyze_liquidity'
+                            ? {}
+                            : T extends 'fiber_can_send'
+                              ? { amountCkb: number }
+                              : T extends 'fiber_create_hold_invoice'
+                                ? {
+                                    amountCkb: number;
+                                    paymentHash: string;
+                                    description?: string;
+                                    expiryMinutes?: number;
+                                  }
+                                : T extends 'fiber_settle_invoice'
+                                  ? { paymentHash: string; preimage: string }
+                                  : T extends 'fiber_wait_for_payment'
+                                    ? { paymentHash: string; timeoutMs?: number }
+                                    : T extends 'fiber_wait_for_channel_ready'
+                                      ? { channelId: string; timeoutMs?: number }
+                                      : never;
 
 export type McpToolResult<T extends McpToolName> = T extends 'fiber_pay'
   ? AgentResult<PaymentResult>
   : T extends 'fiber_create_invoice'
-  ? AgentResult<InvoiceResult>
-  : T extends 'fiber_get_balance'
-  ? AgentResult<BalanceInfo>
-  : T extends 'fiber_get_payment_status'
-  ? AgentResult<PaymentResult>
-  : T extends 'fiber_get_invoice_status'
-  ? AgentResult<InvoiceResult>
-  : T extends 'fiber_list_channels'
-  ? AgentResult<ChannelSummary[]>
-  : T extends 'fiber_open_channel'
-  ? AgentResult<{ channelId: string }>
-  : T extends 'fiber_close_channel'
-  ? AgentResult<void>
-  : T extends 'fiber_get_node_info'
-  ? AgentResult<{ nodeId: string; publicKey: string; version: string; channelCount: number; peersCount: number }>
-  : T extends 'fiber_get_spending_allowance'
-  ? { perTransactionCkb: number; perWindowCkb: number }
-  : T extends 'fiber_download_binary'
-  ? AgentResult<{ path: string; version: string; platform: string; arch: string }>
-  : T extends 'fiber_validate_invoice'
-  ? AgentResult<import('./fiber-pay.js').InvoiceValidationResult>
-  : T extends 'fiber_get_payment_proof'
-  ? AgentResult<{ proof: import('./fiber-pay.js').PaymentProof | null; verified: boolean; status: string }>
-  : T extends 'fiber_analyze_liquidity'
-  ? AgentResult<import('./fiber-pay.js').LiquidityAnalysisResult>
-  : T extends 'fiber_can_send'
-  ? AgentResult<{ canSend: boolean; shortfallCkb: number; availableCkb: number; recommendation: string }>
-  : T extends 'fiber_create_hold_invoice'
-  ? AgentResult<HoldInvoiceResult>
-  : T extends 'fiber_settle_invoice'
-  ? AgentResult<void>
-  : T extends 'fiber_wait_for_payment'
-  ? AgentResult<PaymentResult>
-  : T extends 'fiber_wait_for_channel_ready'
-  ? AgentResult<ChannelSummary>
-  : never;
+    ? AgentResult<InvoiceResult>
+    : T extends 'fiber_get_balance'
+      ? AgentResult<BalanceInfo>
+      : T extends 'fiber_get_payment_status'
+        ? AgentResult<PaymentResult>
+        : T extends 'fiber_get_invoice_status'
+          ? AgentResult<InvoiceResult>
+          : T extends 'fiber_list_channels'
+            ? AgentResult<ChannelSummary[]>
+            : T extends 'fiber_open_channel'
+              ? AgentResult<{ channelId: string }>
+              : T extends 'fiber_close_channel'
+                ? AgentResult<void>
+                : T extends 'fiber_get_node_info'
+                  ? AgentResult<{
+                      nodeId: string;
+                      publicKey: string;
+                      version: string;
+                      channelCount: number;
+                      peersCount: number;
+                    }>
+                  : T extends 'fiber_get_spending_allowance'
+                    ? { perTransactionCkb: number; perWindowCkb: number }
+                    : T extends 'fiber_download_binary'
+                      ? AgentResult<{
+                          path: string;
+                          version: string;
+                          platform: string;
+                          arch: string;
+                        }>
+                      : T extends 'fiber_validate_invoice'
+                        ? AgentResult<import('./fiber-pay.js').InvoiceValidationResult>
+                        : T extends 'fiber_get_payment_proof'
+                          ? AgentResult<{
+                              proof: import('./fiber-pay.js').PaymentProof | null;
+                              verified: boolean;
+                              status: string;
+                            }>
+                          : T extends 'fiber_analyze_liquidity'
+                            ? AgentResult<import('./fiber-pay.js').LiquidityAnalysisResult>
+                            : T extends 'fiber_can_send'
+                              ? AgentResult<{
+                                  canSend: boolean;
+                                  shortfallCkb: number;
+                                  availableCkb: number;
+                                  recommendation: string;
+                                }>
+                              : T extends 'fiber_create_hold_invoice'
+                                ? AgentResult<HoldInvoiceResult>
+                                : T extends 'fiber_settle_invoice'
+                                  ? AgentResult<void>
+                                  : T extends 'fiber_wait_for_payment'
+                                    ? AgentResult<PaymentResult>
+                                    : T extends 'fiber_wait_for_channel_ready'
+                                      ? AgentResult<ChannelSummary>
+                                      : never;

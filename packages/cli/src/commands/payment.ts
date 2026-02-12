@@ -1,8 +1,8 @@
+import { ckbToShannons, type HexString, shannonsToCkb } from '@fiber-pay/sdk';
 import { Command } from 'commander';
-import { ckbToShannons, shannonsToCkb, type HexString } from '@fiber-pay/sdk';
 import type { CliConfig } from '../lib/config.js';
-import { createReadyRpcClient } from '../lib/rpc.js';
 import { formatPaymentResult, printJson, printPaymentDetailHuman, sleep } from '../lib/format.js';
+import { createReadyRpcClient } from '../lib/rpc.js';
 
 export function createPaymentCommand(config: CliConfig): Command {
   const payment = new Command('payment').description('Payment lifecycle and status commands');
@@ -41,7 +41,12 @@ export function createPaymentCommand(config: CliConfig): Command {
 
       const payload = {
         paymentHash: result.payment_hash,
-        status: result.status === 'Success' ? 'success' : result.status === 'Failed' ? 'failed' : 'pending',
+        status:
+          result.status === 'Success'
+            ? 'success'
+            : result.status === 'Failed'
+              ? 'failed'
+              : 'pending',
         feeCkb: shannonsToCkb(result.fee),
         failureReason: result.failed_error,
       };

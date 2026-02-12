@@ -3,10 +3,10 @@
  * Manages the lifecycle of the Fiber Network Node (fnn) binary
  */
 
-import { spawn, ChildProcess } from 'child_process';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { EventEmitter } from 'events';
+import { type ChildProcess, spawn } from 'node:child_process';
+import { EventEmitter } from 'node:events';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import * as yaml from './yaml.js';
 
 // =============================================================================

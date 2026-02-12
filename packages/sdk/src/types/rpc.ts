@@ -99,12 +99,7 @@ export interface CkbInvoice {
   data: InvoiceData;
 }
 
-export type CkbInvoiceStatus =
-  | 'Open'
-  | 'Cancelled'
-  | 'Expired'
-  | 'Received'
-  | 'Paid';
+export type CkbInvoiceStatus = 'Open' | 'Cancelled' | 'Expired' | 'Received' | 'Paid';
 
 // =============================================================================
 // Channel Types
@@ -125,9 +120,7 @@ export enum ChannelState {
 export type ChannelStateFlags = string[];
 
 /** TLC status. The upstream spec defines OutboundTlcStatus / InboundTlcStatus, which may evolve. */
-export type TlcStatus =
-  | { Outbound: unknown }
-  | { Inbound: unknown };
+export type TlcStatus = { Outbound: unknown } | { Inbound: unknown };
 
 export interface Htlc {
   id: HexString;
@@ -537,14 +530,10 @@ export type CchOrderStatus =
   | 'Failed';
 
 /** Reason for removing a TLC in Dev module APIs. */
-export type RemoveTlcReason =
-  | { RemoveTlcFulfill: Hash256 }
-  | { RemoveTlcFail: HexString };
+export type RemoveTlcReason = { RemoveTlcFulfill: Hash256 } | { RemoveTlcFail: HexString };
 
 /** TLC id wrapper in watchtower-related types. */
-export type TLCId =
-  | { Offered: HexString }
-  | { Received: HexString };
+export type TLCId = { Offered: HexString } | { Received: HexString };
 
 /** Minimal CKB cell output representation used by watchtower revocation data. */
 export interface CellOutput {

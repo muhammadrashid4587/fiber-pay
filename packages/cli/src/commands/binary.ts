@@ -1,5 +1,5 @@
+import { type DownloadProgress, downloadFiberBinary, getFiberBinaryInfo } from '@fiber-pay/node';
 import { Command } from 'commander';
-import { downloadFiberBinary, getFiberBinaryInfo, type DownloadProgress } from '@fiber-pay/node';
 import type { CliConfig } from '../lib/config.js';
 import { printJson } from '../lib/format.js';
 

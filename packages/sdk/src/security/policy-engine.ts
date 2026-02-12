@@ -5,13 +5,13 @@
  */
 
 import type {
-  SecurityPolicy,
-  PolicyViolation,
-  PolicyCheckResult,
-  SpendingLimit,
-  RateLimit,
-  AuditLogEntry,
   AuditAction,
+  AuditLogEntry,
+  PolicyCheckResult,
+  PolicyViolation,
+  RateLimit,
+  SecurityPolicy,
+  SpendingLimit,
 } from '../types/index.js';
 import { fromHex, toHex } from '../utils.js';
 
@@ -27,17 +27,25 @@ export class PolicyEngine {
 
   constructor(policy: SecurityPolicy) {
     this.policy = policy;
-    
+
     // Initialize spending state
     this.spendingState = {
-      ...policy.spending!,
+      ...(policy.spending ?? {
+        maxPerTransaction: '0x0',
+        maxPerWindow: '0x0',
+        windowSeconds: 3600,
+      }),
       currentSpent: '0x0',
       windowStart: Date.now(),
     };
-    
+
     // Initialize rate limit state
     this.rateLimitState = {
-      ...policy.rateLimit!,
+      ...(policy.rateLimit ?? {
+        maxTransactions: 0,
+        windowSeconds: 3600,
+        cooldownSeconds: 0,
+      }),
       currentCount: 0,
       windowStart: Date.now(),
       lastTransaction: 0,
@@ -78,7 +86,7 @@ export class PolicyEngine {
       this.refreshSpendingWindow();
       const currentSpent = fromHex(this.spendingState.currentSpent as `0x${string}`);
       const maxPerWindow = fromHex(this.policy.spending.maxPerWindow as `0x${string}`);
-      
+
       if (currentSpent + amount > maxPerWindow) {
         const remaining = maxPerWindow - currentSpent;
         violations.push({
@@ -96,8 +104,8 @@ export class PolicyEngine {
     // Check rate limit
     if (this.policy.rateLimit) {
       this.refreshRateLimitWindow();
-      
-      if (this.rateLimitState.currentCount! >= this.policy.rateLimit.maxTransactions) {
+
+      if ((this.rateLimitState.currentCount ?? 0) >= this.policy.rateLimit.maxTransactions) {
         violations.push({
           type: 'RATE_LIMIT_EXCEEDED',
           message: `Rate limit of ${this.policy.rateLimit.maxTransactions} transactions per ${this.policy.rateLimit.windowSeconds}s exceeded`,
@@ -109,7 +117,7 @@ export class PolicyEngine {
       const now = Date.now();
       const cooldownMs = this.policy.rateLimit.cooldownSeconds * 1000;
       const timeSinceLast = now - (this.rateLimitState.lastTransaction || 0);
-      
+
       if (timeSinceLast < cooldownMs) {
         violations.push({
           type: 'RATE_LIMIT_COOLDOWN',
@@ -162,7 +170,7 @@ export class PolicyEngine {
     }
 
     return {
-      allowed: violations.filter(v => v.type !== 'REQUIRES_CONFIRMATION').length === 0,
+      allowed: violations.filter((v) => v.type !== 'REQUIRES_CONFIRMATION').length === 0,
       violations,
       requiresConfirmation,
     };
@@ -272,7 +280,7 @@ export class PolicyEngine {
     this.spendingState.currentSpent = toHex(currentSpent + paymentAmount);
 
     // Update rate limit
-    this.rateLimitState.currentCount! += 1;
+    this.rateLimitState.currentCount = (this.rateLimitState.currentCount ?? 0) + 1;
     this.rateLimitState.lastTransaction = Date.now();
   }
 
@@ -283,7 +291,7 @@ export class PolicyEngine {
     action: AuditAction,
     success: boolean,
     details: Record<string, unknown>,
-    violations?: PolicyViolation[]
+    violations?: PolicyViolation[],
   ): void {
     if (!this.policy.auditLogging) return;
 
@@ -307,8 +315,9 @@ export class PolicyEngine {
   getAuditLog(options?: { limit?: number; since?: number }): AuditLogEntry[] {
     let log = this.auditLog;
 
-    if (options?.since) {
-      log = log.filter((entry) => entry.timestamp >= options.since!);
+    const since = options?.since;
+    if (since !== undefined) {
+      log = log.filter((entry) => entry.timestamp >= since);
     }
 
     if (options?.limit) {
