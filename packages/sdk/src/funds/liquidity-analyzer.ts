@@ -4,6 +4,7 @@
  */
 
 import type { FiberRpcClient } from '../rpc/client.js';
+import { ChannelState } from '../types/index.js';
 import type { ChannelInfo } from '../types/index.js';
 import { shannonsToCkb, fromHex } from '../utils.js';
 
@@ -28,7 +29,7 @@ export interface ChannelHealthMetrics {
   availableToSendCkb: number; // Can actually send right now
   availableToReceiveCkb: number; // Can actually receive right now
   healthScore: number; // 0-100
-  state: string;
+  state: ChannelState;
 }
 
 export interface LiquidityGap {
@@ -316,7 +317,7 @@ export class LiquidityAnalyzer {
     if (criticalGaps.length > 0) {
       // Find the best channel to fund (most balanced, highest capacity)
       const bestChannel = [...metrics]
-        .filter((ch) => ch.state === 'CHANNEL_READY')
+        .filter((ch) => ch.state === ChannelState.ChannelReady)
         .sort((a, b) => {
           const scoreA = a.healthScore + (a.totalCapacityCkb / 1000); // Higher score + capacity = better
           const scoreB = b.healthScore + (b.totalCapacityCkb / 1000);

@@ -55,6 +55,7 @@ import type {
   InvoiceStatus,
   PaymentStatus,
 } from '../types/index.js';
+import { ChannelState } from '../types/index.js';
 
 // =============================================================================
 // RPC Client Configuration
@@ -440,11 +441,11 @@ export class FiberRpcClient {
         }
       }
 
-      if (channel && channel.state.state_name === 'CHANNEL_READY') {
+      if (channel && channel.state.state_name === ChannelState.ChannelReady) {
         return channel;
       }
 
-      if (channel && channel.state.state_name === 'CLOSED') {
+      if (channel && channel.state.state_name === ChannelState.Closed) {
         throw new FiberRpcError(-32000, `Channel ${channelId} was closed before becoming ready`);
       }
 

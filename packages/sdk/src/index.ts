@@ -33,4 +33,5 @@ export type { LiquidityReport } from './funds/liquidity-analyzer.js';
 export { CorsProxy } from './proxy/cors-proxy.js';
 
 // Types - Re-export all types from types module
+export { ChannelState } from './types/index.js';
 export type * from './types/index.js';

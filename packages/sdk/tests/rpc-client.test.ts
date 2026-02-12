@@ -345,7 +345,7 @@ describe('FiberRpcClient - Polling Helpers', () => {
             {
               channel_id: '0xch1',
               peer_id: 'QmTest',
-              state: { state_name: 'AwaitingChannelReady', state_flags: [] },
+              state: { state_name: 'AWAITING_CHANNEL_READY', state_flags: [] },
               local_balance: '0x0',
               remote_balance: '0x0',
               offered_tlc_balance: '0x0',
@@ -362,7 +362,7 @@ describe('FiberRpcClient - Polling Helpers', () => {
             {
               channel_id: '0xch1',
               peer_id: 'QmTest',
-              state: { state_name: 'ChannelReady', state_flags: [] },
+              state: { state_name: 'CHANNEL_READY', state_flags: [] },
               local_balance: '0x5f5e100',
               remote_balance: '0x0',
               offered_tlc_balance: '0x0',
@@ -381,7 +381,7 @@ describe('FiberRpcClient - Polling Helpers', () => {
         interval: 10,
       });
 
-      expect(result.state.state_name).toBe('ChannelReady');
+      expect(result.state.state_name).toBe('CHANNEL_READY');
       expect(result.local_balance).toBe('0x5f5e100');
     });
 
@@ -391,7 +391,7 @@ describe('FiberRpcClient - Polling Helpers', () => {
           {
             channel_id: '0xch1',
             peer_id: 'QmTest',
-            state: { state_name: 'Closed', state_flags: [] },
+            state: { state_name: 'CLOSED', state_flags: [] },
             local_balance: '0x0',
             remote_balance: '0x0',
             offered_tlc_balance: '0x0',

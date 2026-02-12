@@ -36,15 +36,16 @@ export type UdtScript = Script | null;
 // Channel Types
 // =============================================================================
 
-export type ChannelState =
-  | 'NEGOTIATING_FUNDING'
-  | 'COLLABORATING_FUNDING_TX'
-  | 'SIGNING_COMMITMENT'
-  | 'AWAITING_TX_SIGNATURES'
-  | 'AWAITING_CHANNEL_READY'
-  | 'CHANNEL_READY'
-  | 'SHUTTING_DOWN'
-  | 'CLOSED';
+export enum ChannelState {
+  NegotiatingFunding = 'NEGOTIATING_FUNDING',
+  CollaboratingFundingTx = 'COLLABORATING_FUNDING_TX',
+  SigningCommitment = 'SIGNING_COMMITMENT',
+  AwaitingTxSignatures = 'AWAITING_TX_SIGNATURES',
+  AwaitingChannelReady = 'AWAITING_CHANNEL_READY',
+  ChannelReady = 'CHANNEL_READY',
+  ShuttingDown = 'SHUTTING_DOWN',
+  Closed = 'CLOSED',
+}
 
 export interface ChannelInfo {
   channel_id: ChannelId;

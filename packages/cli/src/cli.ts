@@ -22,6 +22,7 @@ import {
   randomBytes32,
   toHex,
   scriptToAddress,
+  ChannelState,
   type HexString,
   type Script,
 } from '@fiber-pay/sdk';
@@ -307,9 +308,8 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
       let activeChannelCount = 0;
       
       for (const ch of channels.channels) {
-        // Check for CHANNEL_READY state (case-insensitive)
-        const stateName = ch.state?.state_name?.toUpperCase() || '';
-        if (stateName === 'CHANNEL_READY' || stateName === 'CHANNELREADY') {
+        // Check for ChannelReady state
+        if (ch.state?.state_name === ChannelState.ChannelReady) {
           totalLocal += BigInt(ch.local_balance);
           totalRemote += BigInt(ch.remote_balance);
           activeChannelCount++;
@@ -561,7 +561,7 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
       let activeChannels = 0;
 
       for (const channel of channels.channels) {
-        if (channel.state.state_name === 'CHANNEL_READY') {
+        if (channel.state.state_name === ChannelState.ChannelReady) {
           activeChannels++;
           totalLocal += BigInt(channel.local_balance);
           totalRemote += BigInt(channel.remote_balance || '0x0');
@@ -619,7 +619,7 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
       
       let canSend = false;
       for (const channel of channels.channels) {
-        if (channel.state.state_name === 'CHANNEL_READY' && 
+        if (channel.state.state_name === ChannelState.ChannelReady && 
             BigInt(channel.local_balance) >= amountShannons) {
           canSend = true;
           break;
