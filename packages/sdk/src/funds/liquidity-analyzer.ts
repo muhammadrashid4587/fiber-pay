@@ -316,7 +316,7 @@ export class LiquidityAnalyzer {
     if (criticalGaps.length > 0) {
       // Find the best channel to fund (most balanced, highest capacity)
       const bestChannel = [...metrics]
-        .filter((ch) => ch.state === 'ChannelReady')
+        .filter((ch) => ch.state === 'CHANNEL_READY')
         .sort((a, b) => {
           const scoreA = a.healthScore + (a.totalCapacityCkb / 1000); // Higher score + capacity = better
           const scoreB = b.healthScore + (b.totalCapacityCkb / 1000);

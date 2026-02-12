@@ -37,28 +37,36 @@ export type UdtScript = Script | null;
 // =============================================================================
 
 export type ChannelState =
-  | 'NegotiatingFunding'
-  | 'CollaboratingFundingTx'
-  | 'SigningCommitment'
-  | 'AwaitingChannelReady'
-  | 'ChannelReady'
-  | 'ShuttingDown'
-  | 'Closed';
+  | 'NEGOTIATING_FUNDING'
+  | 'COLLABORATING_FUNDING_TX'
+  | 'SIGNING_COMMITMENT'
+  | 'AWAITING_TX_SIGNATURES'
+  | 'AWAITING_CHANNEL_READY'
+  | 'CHANNEL_READY'
+  | 'SHUTTING_DOWN'
+  | 'CLOSED';
 
 export interface ChannelInfo {
   channel_id: ChannelId;
   peer_id: PeerId;
+  is_public: boolean;
+  channel_outpoint: string | null;
+  funding_udt_type_script: Script | null;
   state: {
     state_name: ChannelState;
-    state_flags: string[];
+    state_flags?: string;
   };
   local_balance: HexString;
   remote_balance: HexString;
   offered_tlc_balance: HexString;
   received_tlc_balance: HexString;
+  pending_tlcs: unknown[];
+  latest_commitment_transaction_hash: HexString | null;
   created_at: HexString;
-  is_public: boolean;
-  local_is_tlc_fee_payer: boolean;
+  enabled: boolean;
+  tlc_expiry_delta: HexString;
+  tlc_fee_proportional_millionths: HexString;
+  shutdown_transaction_hash: HexString | null;
 }
 
 // =============================================================================
@@ -66,10 +74,9 @@ export interface ChannelInfo {
 // =============================================================================
 
 export interface PeerInfo {
+  pubkey: HexString;
   peer_id: PeerId;
-  addresses: Multiaddr[];
-  connected: boolean;
-  chain_hash?: HexString;
+  address: Multiaddr;
 }
 
 // =============================================================================
@@ -160,9 +167,10 @@ export interface InvoiceInfo {
 export interface NodeInfo {
   version: string;
   commit_hash: string;
-  public_key: HexString;
-  peer_id: PeerId;
+  node_id: HexString;
+  node_name: string | null;
   addresses: Multiaddr[];
+  features: string[];
   chain_hash: HexString;
   open_channel_auto_accept_min_ckb_funding_amount: HexString;
   auto_accept_channel_ckb_funding_amount: HexString;
@@ -170,9 +178,9 @@ export interface NodeInfo {
   tlc_expiry_delta: HexString;
   tlc_min_value: HexString;
   tlc_fee_proportional_millionths: HexString;
-  channel_count: number;
-  pending_channel_count: number;
-  peers_count: number;
+  channel_count: HexString;
+  pending_channel_count: HexString;
+  peers_count: HexString;
   udt_cfg_infos: UdtConfigInfo[];
 }
 

@@ -272,16 +272,15 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
       console.log(JSON.stringify({
         success: true,
         data: {
-          nodeId: nodeInfo.peer_id,
-          publicKey: nodeInfo.public_key,
+          nodeId: nodeInfo.node_id,
           addresses: nodeInfo.addresses,
           chainHash: nodeInfo.chain_hash,
           fundingAddress: fundingAddress,
           fundingLockScript: nodeInfo.default_funding_lock_script,
           version: nodeInfo.version,
-          channelCount: nodeInfo.channel_count,
-          pendingChannelCount: nodeInfo.pending_channel_count,
-          peersCount: nodeInfo.peers_count,
+          channelCount: parseInt(nodeInfo.channel_count, 16),
+          pendingChannelCount: parseInt(nodeInfo.pending_channel_count, 16),
+          peersCount: parseInt(nodeInfo.peers_count, 16),
         }
       }, null, 2));
       return true;
@@ -562,7 +561,7 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
       let activeChannels = 0;
 
       for (const channel of channels.channels) {
-        if (channel.state.state_name === 'ChannelReady') {
+        if (channel.state.state_name === 'CHANNEL_READY') {
           activeChannels++;
           totalLocal += BigInt(channel.local_balance);
           totalRemote += BigInt(channel.remote_balance || '0x0');
@@ -620,7 +619,7 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
       
       let canSend = false;
       for (const channel of channels.channels) {
-        if (channel.state.state_name === 'ChannelReady' && 
+        if (channel.state.state_name === 'CHANNEL_READY' && 
             BigInt(channel.local_balance) >= amountShannons) {
           canSend = true;
           break;
@@ -806,7 +805,7 @@ async function main(): Promise<void> {
         const rpc = new FiberRpcClient({ url: config.rpcUrl! });
         await rpc.waitForReady({ timeout: 3000 });
         const nodeInfo = await rpc.nodeInfo();
-        console.log(`   Node ID: ${nodeInfo.peer_id}`);
+        console.log(`   Node ID: ${nodeInfo.node_id}`);
         console.log(`   RPC: ${config.rpcUrl}`);
       } catch {
         console.log('   ⚠️  RPC not responding');

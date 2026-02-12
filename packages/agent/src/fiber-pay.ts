@@ -276,7 +276,7 @@ export class FiberPay {
    */
   async initialize(options?: {
     onDownloadProgress?: (progress: DownloadProgress) => void;
-  }): Promise<AgentResult<{ nodeId: string; publicKey: string }>> {
+  }): Promise<AgentResult<{ nodeId: string }>> {
     try {
       // Resolve binary path - download if needed
       let binaryPath = this.config.binaryPath;
@@ -337,15 +337,13 @@ export class FiberPay {
       const nodeInfo = await this.rpc.nodeInfo();
 
       this.policy.addAuditEntry('NODE_STARTED', true, {
-        nodeId: nodeInfo.peer_id,
-        publicKey: nodeInfo.public_key,
+        nodeId: nodeInfo.node_id,
       });
 
       return {
         success: true,
         data: {
-          nodeId: nodeInfo.peer_id,
-          publicKey: nodeInfo.public_key,
+          nodeId: nodeInfo.node_id,
         },
         metadata: { timestamp: Date.now() },
       };
@@ -588,7 +586,7 @@ export class FiberPay {
       let activeChannels = 0;
 
       for (const channel of channels.channels) {
-        if (channel.state.state_name === 'ChannelReady') {
+        if (channel.state.state_name === 'CHANNEL_READY') {
           totalLocal += fromHex(channel.local_balance);
           totalRemote += fromHex(channel.remote_balance);
           activeChannels++;
@@ -817,7 +815,6 @@ export class FiberPay {
    */
   async getNodeInfo(): Promise<AgentResult<{
     nodeId: string;
-    publicKey: string;
     version: string;
     channelCount: number;
     peersCount: number;
@@ -830,11 +827,10 @@ export class FiberPay {
       return {
         success: true,
         data: {
-          nodeId: info.peer_id,
-          publicKey: info.public_key,
+          nodeId: info.node_id,
           version: info.version,
-          channelCount: info.channel_count,
-          peersCount: info.peers_count,
+          channelCount: parseInt(info.channel_count, 16),
+          peersCount: parseInt(info.peers_count, 16),
         },
         metadata: { timestamp: Date.now() },
       };

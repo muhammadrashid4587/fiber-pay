@@ -440,11 +440,11 @@ export class FiberRpcClient {
         }
       }
 
-      if (channel && channel.state.state_name === 'ChannelReady') {
+      if (channel && channel.state.state_name === 'CHANNEL_READY') {
         return channel;
       }
 
-      if (channel && channel.state.state_name === 'Closed') {
+      if (channel && channel.state.state_name === 'CLOSED') {
         throw new FiberRpcError(-32000, `Channel ${channelId} was closed before becoming ready`);
       }
 
