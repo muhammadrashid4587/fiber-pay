@@ -4,7 +4,7 @@ Runnable TypeScript examples demonstrating common Fiber Network payment flows.
 
 ## Prerequisites
 
-1. **Running Fiber node** — Either start one via `fiber-pay start` or connect to an existing node
+1. **Running Fiber node** — Either start one via `fiber-pay node start` or connect to an existing node
 2. **Testnet CKB** — Get testnet CKB from the [faucet](https://faucet.nervos.org)
 3. **Open channel** — At least one channel in `ChannelReady` state
 4. **Dependencies built** — Run `pnpm build` from the repo root
