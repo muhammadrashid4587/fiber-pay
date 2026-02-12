@@ -1,5 +1,4 @@
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   ensureFiberBinary,
   type FiberNodeConfig,
@@ -9,14 +8,10 @@ import {
 import { CorsProxy, scriptToAddress } from '@fiber-pay/sdk';
 import { Command } from 'commander';
 import { autoConnectBootnodes, extractBootnodeAddrs } from '../lib/bootnode.js';
-import type { CliConfig } from '../lib/config.js';
+import { type CliConfig, ensureNodeConfigFile } from '../lib/config.js';
 import { printJson, printNodeInfoHuman } from '../lib/format.js';
 import { isProcessRunning, readPidFile, removePidFile, writePidFile } from '../lib/pid.js';
 import { createReadyRpcClient, createRpcClient } from '../lib/rpc.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
-const PROJECT_ROOT = join(__dirname, '..', '..', '..', '..');
 
 export function createNodeCommand(config: CliConfig): Command {
   const node = new Command('node').description('Node management');
@@ -40,12 +35,12 @@ export function createNodeCommand(config: CliConfig): Command {
 
       const binaryPath = config.binaryPath || getDefaultBinaryPath();
       await ensureFiberBinary();
+      const configFilePath = ensureNodeConfigFile(config.dataDir, config.network);
 
       const nodeConfig: FiberNodeConfig = {
         binaryPath,
         dataDir: config.dataDir,
-        configFilePath:
-          config.network === 'testnet' ? join(PROJECT_ROOT, 'testnet-config.yml') : undefined,
+        configFilePath,
         chain: config.network,
       };
 

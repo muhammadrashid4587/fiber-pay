@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { createBalanceCommand } from './commands/balance.js';
 import { createBinaryCommand } from './commands/binary.js';
 import { createChannelCommand } from './commands/channel.js';
+import { createConfigCommand } from './commands/config.js';
 import { createInvoiceCommand } from './commands/invoice.js';
 import { createNodeCommand } from './commands/node.js';
 import { createPaymentCommand } from './commands/payment.js';
@@ -67,6 +68,7 @@ async function main(): Promise<void> {
   program.addCommand(createPaymentCommand(config));
   program.addCommand(createPeerCommand(config));
   program.addCommand(createBinaryCommand(config));
+  program.addCommand(createConfigCommand(config));
   program.addCommand(createBalanceCommand(config));
 
   await program.parseAsync(process.argv);
