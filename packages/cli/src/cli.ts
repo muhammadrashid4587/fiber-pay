@@ -4,7 +4,13 @@
  */
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+// Project root: cli dist is at packages/cli/dist/cli.js -> 3 levels up
+const PROJECT_ROOT = join(__dirname, '..', '..', '..');
 import {
   downloadFiberBinary,
   getFiberBinaryInfo,
@@ -86,6 +92,61 @@ function isProcessRunning(pid: number): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+// =============================================================================
+// Bootnode Helpers
+// =============================================================================
+
+/**
+ * Extract bootnode addresses from a Fiber config YAML file.
+ * Uses simple regex since the YAML parser doesn't handle list items.
+ */
+function extractBootnodeAddrs(configFilePath: string): string[] {
+  if (!existsSync(configFilePath)) return [];
+  try {
+    const content = readFileSync(configFilePath, 'utf-8');
+    const addrs: string[] = [];
+    // Match lines like:  - "/ip4/.../p2p/Qm..."
+    const regex = /^\s*-\s*["']?(\/ip4\/[^"'\s]+)["']?\s*$/gm;
+    let match;
+    // Only capture addresses in the bootnode_addrs section
+    const sectionMatch = content.match(/bootnode_addrs:\s*\n((?:\s*-\s*.+\n?)+)/);
+    if (sectionMatch) {
+      const section = sectionMatch[1];
+      while ((match = regex.exec(section)) !== null) {
+        addrs.push(match[1]);
+      }
+    }
+    return addrs;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Auto-connect to bootnode addresses via RPC after node start.
+ * Assumes RPC is already ready.
+ */
+async function autoConnectBootnodes(rpc: FiberRpcClient, bootnodes: string[]): Promise<void> {
+  if (bootnodes.length === 0) return;
+
+  console.log(`🔗 Connecting to ${bootnodes.length} bootnode(s)...`);
+  for (const addr of bootnodes) {
+    const shortId = addr.match(/\/p2p\/(.+)$/)?.[1]?.slice(0, 12) || addr.slice(-12);
+    try {
+      await rpc.connectPeer({ address: addr });
+      console.log(`   ✅ Connected to ${shortId}...`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // "already connected" is fine
+      if (msg.toLowerCase().includes('already')) {
+        console.log(`   ✅ Already connected to ${shortId}...`);
+      } else {
+        console.error(`   ⚠️  Failed to connect to ${shortId}...: ${msg}`);
+      }
+    }
   }
 }
 
@@ -703,13 +764,18 @@ async function main(): Promise<void> {
     const nodeConfig: FiberNodeConfig = {
       binaryPath,
       dataDir: config.dataDir,
-      configFilePath: config.network === 'testnet' ? join(process.cwd(), 'testnet-config.yml') : undefined,
+      configFilePath: config.network === 'testnet' ? join(PROJECT_ROOT, 'testnet-config.yml') : undefined,
       chain: config.network,
     };
     const processManager = new ProcessManager(nodeConfig);
 
     await processManager.start();
     
+    // Write PID file
+    if (processManager['process']) {
+      writePidFile(config.dataDir, processManager['process'].pid!);
+    }
+
     // Start CORS proxy if requested
     let corsProxy: CorsProxy | undefined;
     if (corsProxyPort) {
@@ -725,9 +791,14 @@ async function main(): Promise<void> {
       }
     }
 
-    // Write PID file
-    if (processManager['process']) {
-      writePidFile(config.dataDir, processManager['process'].pid!);
+    // Wait for node RPC to be ready before auto-connecting
+    console.log('⏳ Waiting for node RPC to be ready...');
+    const rpc = new FiberRpcClient({ url: config.rpcUrl! });
+    try {
+      await rpc.waitForReady({ timeout: 30000, interval: 500 });
+    } catch {
+      console.error('⚠️  RPC did not become ready within 30s. Node may still be starting.');
+      console.log('   You can manually connect to bootnodes later.');
     }
 
     console.log('✅ Fiber node started successfully!');
@@ -737,6 +808,14 @@ async function main(): Promise<void> {
       console.log(`   CORS proxy:   http://127.0.0.1:${corsProxyPort} (use this from browser)`);
     }
     console.log(`   Data dir: ${config.dataDir}`);
+
+    // Auto-connect to bootnodes from config
+    const bootnodes = nodeConfig.configFilePath
+      ? extractBootnodeAddrs(nodeConfig.configFilePath)
+      : extractBootnodeAddrs(join(config.dataDir, 'config.yml'));
+    if (bootnodes.length > 0) {
+      await autoConnectBootnodes(rpc, bootnodes);
+    }
 
     // Handle graceful shutdown
     const shutdown = async () => {
