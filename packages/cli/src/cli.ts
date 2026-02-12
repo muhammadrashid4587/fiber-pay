@@ -31,7 +31,7 @@ import {
   ChannelState,
   type HexString,
   type Script,
-  type ChannelInfo,
+  type Channel,
 } from '@fiber-pay/sdk';
 
 // =============================================================================
@@ -226,15 +226,34 @@ function stateLabel(state: ChannelState): string {
 
 function parseChannelState(input: string | undefined): ChannelState | undefined {
   if (!input) return undefined;
-  const normalized = input.trim().toUpperCase();
-  return (Object.values(ChannelState) as string[]).includes(normalized)
-    ? (normalized as ChannelState)
-    : undefined;
+  const trimmed = input.trim();
+  const legacy = trimmed.toUpperCase();
+
+  // Accept legacy values that were previously used in this repo.
+  const legacyMap: Record<string, ChannelState> = {
+    NEGOTIATING_FUNDING: ChannelState.NegotiatingFunding,
+    COLLABORATING_FUNDING_TX: ChannelState.CollaboratingFundingTx,
+    SIGNING_COMMITMENT: ChannelState.SigningCommitment,
+    AWAITING_TX_SIGNATURES: ChannelState.AwaitingTxSignatures,
+    AWAITING_CHANNEL_READY: ChannelState.AwaitingChannelReady,
+    CHANNEL_READY: ChannelState.ChannelReady,
+    SHUTTING_DOWN: ChannelState.ShuttingDown,
+    CLOSED: ChannelState.Closed,
+  };
+
+  if (legacy in legacyMap) return legacyMap[legacy];
+
+  // Accept case-insensitive matches against the enum values.
+  for (const value of Object.values(ChannelState)) {
+    if (value.toLowerCase() === trimmed.toLowerCase()) return value;
+  }
+
+  return undefined;
 }
 
-function formatChannel(channel: ChannelInfo): Record<string, unknown> {
+function formatChannel(channel: Channel): Record<string, unknown> {
   const local = BigInt(channel.local_balance);
-  const remote = BigInt(channel.remote_balance || '0x0');
+  const remote = BigInt(channel.remote_balance);
   const capacity = local + remote;
   const localPct = capacity > 0n ? Number((local * 100n) / capacity) : 0;
   const remotePct = capacity > 0n ? 100 - localPct : 0;
@@ -258,7 +277,7 @@ function formatChannel(channel: ChannelInfo): Record<string, unknown> {
   };
 }
 
-function getChannelSummary(channels: ChannelInfo[]): Record<string, unknown> {
+function getChannelSummary(channels: Channel[]): Record<string, unknown> {
   let totalLocal = 0n;
   let totalRemote = 0n;
   let active = 0;
@@ -735,7 +754,7 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
         success: true,
         data: {
           invoice: result.invoice_address,
-          paymentHash: result.invoice.payment_hash,
+          paymentHash: result.invoice.data.payment_hash,
           amountCkb,
           expiresAt,
           status: 'open',
@@ -917,14 +936,29 @@ async function handleRpcCommand(command: string, args: string[], config: CliConf
       }
 
       const result = await rpc.parseInvoice({ invoice });
+
+      let description: string | undefined;
+      let expirySeconds: number | undefined;
+      for (const attr of result.invoice.data.attrs) {
+        if ('Description' in attr) description = attr.Description;
+        if ('ExpiryTime' in attr) {
+          try {
+            expirySeconds = Number(BigInt(attr.ExpiryTime));
+          } catch {
+            // ignore
+          }
+        }
+      }
+
       console.log(JSON.stringify({
         success: true,
         data: {
-          paymentHash: result.invoice.payment_hash,
+          paymentHash: result.invoice.data.payment_hash,
           amountCkb: result.invoice.amount ? shannonsToCkb(result.invoice.amount) : undefined,
-          description: result.invoice.description,
-          expirySeconds: result.invoice.expiry,
-          invoiceAddress: result.invoice.invoice_address,
+          currency: result.invoice.currency,
+          timestamp: result.invoice.data.timestamp,
+          description,
+          expirySeconds,
         }
       }, null, 2));
       return true;

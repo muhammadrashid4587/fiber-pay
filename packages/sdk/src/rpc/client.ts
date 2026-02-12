@@ -39,6 +39,7 @@ import type {
   GetInvoiceParams,
   GetInvoiceResult,
   CancelInvoiceParams,
+  CancelInvoiceResult,
   SettleInvoiceParams,
   // Graph methods
   GraphNodesParams,
@@ -51,8 +52,8 @@ import type {
   HexString,
   PaymentHash,
   ChannelId,
-  ChannelInfo,
-  InvoiceStatus,
+  Channel,
+  CkbInvoiceStatus,
   PaymentStatus,
 } from '../types/index.js';
 import { ChannelState } from '../types/index.js';
@@ -284,8 +285,8 @@ export class FiberRpcClient {
   /**
    * Cancel an open invoice
    */
-  async cancelInvoice(params: CancelInvoiceParams): Promise<null> {
-    return this.call<null>('cancel_invoice', [params]);
+  async cancelInvoice(params: CancelInvoiceParams): Promise<CancelInvoiceResult> {
+    return this.call<CancelInvoiceResult>('cancel_invoice', [params]);
   }
 
   /**
@@ -420,7 +421,7 @@ export class FiberRpcClient {
   async waitForChannelReady(
     channelId: ChannelId,
     options: { timeout?: number; interval?: number } = {}
-  ): Promise<ChannelInfo> {
+  ): Promise<Channel> {
     const { timeout = 300000, interval = 5000 } = options;
     const start = Date.now();
 
@@ -457,14 +458,14 @@ export class FiberRpcClient {
 
   /**
    * Wait for an invoice to reach a specific status.
-   * Useful for hold invoice workflows: wait for 'Accepted' before settling.
+    * Useful for hold invoice workflows: wait for 'Received' before settling.
    *
    * @returns The invoice info once the target status is reached
    * @throws FiberRpcError on timeout
    */
   async waitForInvoiceStatus(
     paymentHash: PaymentHash,
-    targetStatus: InvoiceStatus | InvoiceStatus[],
+    targetStatus: CkbInvoiceStatus | CkbInvoiceStatus[],
     options: { timeout?: number; interval?: number } = {}
   ): Promise<GetInvoiceResult> {
     const { timeout = 120000, interval = 2000 } = options;
@@ -508,7 +509,7 @@ export class FiberRpcClient {
   async watchIncomingPayments(options: {
     /** Payment hashes of invoices to watch */
     paymentHashes: PaymentHash[];
-    /** Callback when an invoice status changes to Accepted or Settled */
+    /** Callback when an invoice status changes to Received or Paid */
     onPayment: (invoice: GetInvoiceResult) => void;
     /** Polling interval in ms (default: 3000) */
     interval?: number;
@@ -516,7 +517,7 @@ export class FiberRpcClient {
     signal?: AbortSignal;
   }): Promise<void> {
     const { paymentHashes, onPayment, interval = 3000, signal } = options;
-    const knownStatuses = new Map<string, InvoiceStatus>();
+    const knownStatuses = new Map<string, CkbInvoiceStatus>();
 
     // Initialize known statuses
     for (const hash of paymentHashes) {
@@ -538,7 +539,7 @@ export class FiberRpcClient {
 
           if (
             invoice.status !== previousStatus &&
-            (invoice.status === 'Accepted' || invoice.status === 'Settled')
+            (invoice.status === 'Received' || invoice.status === 'Paid')
           ) {
             knownStatuses.set(hash, invoice.status);
             onPayment(invoice);

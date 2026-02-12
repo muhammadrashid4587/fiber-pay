@@ -4,10 +4,9 @@
  * This ensures the agent only pays valid invoices
  */
 
-import { createHash } from 'crypto';
 import type { FiberRpcClient } from '../rpc/client.js';
 import { fromHex, shannonsToCkb } from '../utils.js';
-import type { InvoiceInfo, HexString, InvoiceAttribute } from '../types/index.js';
+import type { CkbInvoice, HexString, Attribute } from '../types/index.js';
 
 // =============================================================================
 // Types
@@ -39,7 +38,6 @@ export interface InvoiceVerificationResult {
     notExpired: boolean;
     validAmount: boolean;
     peerConnected: boolean;
-    preimageValid?: boolean; // Only if preimage present
   };
   /** Issues found */
   issues: VerificationIssue[];
@@ -72,7 +70,6 @@ export class InvoiceVerifier {
       notExpired: false,
       validAmount: false,
       peerConnected: false,
-      preimageValid: undefined as boolean | undefined,
     };
 
     // 1. Validate format
@@ -86,7 +83,7 @@ export class InvoiceVerifier {
       });
     }
 
-    let invoice: InvoiceInfo | null = null;
+    let invoice: CkbInvoice | null = null;
 
     // 2. Parse invoice
     if (checks.validFormat) {
@@ -104,10 +101,10 @@ export class InvoiceVerifier {
 
     // Default details if parsing failed
     const details = {
-      paymentHash: invoice?.payment_hash || 'unknown',
+      paymentHash: invoice?.data.payment_hash || 'unknown',
       amountCkb: invoice && invoice.amount ? shannonsToCkb(invoice.amount) : 0,
       expiresAt: this.getExpiryTimestamp(invoice),
-      description: invoice?.description,
+      description: this.getDescription(invoice),
       isExpired: invoice ? this.isInvoiceExpired(invoice) : true,
     };
 
@@ -174,19 +171,6 @@ export class InvoiceVerifier {
       });
     }
 
-    // 6. Validate preimage if present
-    if (invoice && invoice.payment_preimage && invoice.payment_hash) {
-      const preimageValid = this.validatePreimage(invoice.payment_preimage, invoice.payment_hash);
-      checks.preimageValid = preimageValid;
-      if (!preimageValid) {
-        issues.push({
-          type: 'critical',
-          code: 'PREIMAGE_MISMATCH',
-          message: 'Payment preimage does not hash to the payment hash. This is a fraudulent invoice.',
-        });
-      }
-    }
-
     // Determine overall validity and recommendation
     const criticalIssues = issues.filter((i) => i.type === 'critical');
     const valid = criticalIssues.length === 0;
@@ -215,7 +199,6 @@ export class InvoiceVerifier {
       },
       checks: {
         ...checks,
-        preimageValid: checks.preimageValid,
       },
       issues,
       recommendation,
@@ -284,7 +267,7 @@ export class InvoiceVerifier {
   /**
    * Check if invoice has expired
    */
-  private isInvoiceExpired(invoice: InvoiceInfo): boolean {
+  private isInvoiceExpired(invoice: CkbInvoice): boolean {
     const expiryTimestamp = this.getExpiryTimestamp(invoice);
     return Date.now() > expiryTimestamp;
   }
@@ -292,64 +275,48 @@ export class InvoiceVerifier {
   /**
    * Get expiry timestamp in milliseconds
    */
-  private getExpiryTimestamp(invoice: InvoiceInfo | null): number {
+  private getExpiryTimestamp(invoice: CkbInvoice | null): number {
     if (!invoice) return 0;
 
-    // Expiry is a duration in seconds(hex), need to add to created_at
-    if (invoice.expiry && invoice.created_at) {
-      try {
-        const createdSeconds = fromHex(invoice.created_at as HexString);
-        const expiryDeltaSeconds = fromHex(invoice.expiry as HexString);
-        return Number(createdSeconds + expiryDeltaSeconds) * 1000;
-      } catch {
-        // Fall through to default
-      }
-    }
-
-    // If only created_at is available, add reasonable default (60 minutes)
-    if (invoice.created_at) {
-      try {
-        const createdSeconds = fromHex(invoice.created_at as HexString);
-        return Number(createdSeconds) * 1000 + 60 * 60 * 1000;
-      } catch {
-        // Fall through to default
-      }
+    // Expiry is a duration in seconds, stored as an attribute (ExpiryTime).
+    // Invoice timestamp is in seconds since UNIX epoch.
+    try {
+      const createdSeconds = fromHex(invoice.data.timestamp as HexString);
+      const expiryDeltaSeconds = this.getAttributeU64(invoice.data.attrs, 'ExpiryTime') ?? BigInt(60 * 60);
+      return Number(createdSeconds + expiryDeltaSeconds) * 1000;
+    } catch {
+      // Fall through to default
     }
 
     // Default: assume 1 hour from now
     return Date.now() + 60 * 60 * 1000;
   }
 
-  /**
-   * Validate preimage hashes to payment_hash correctly
-   * In Lightning: payment_hash = SHA256(payment_preimage)
-   */
-  private validatePreimage(preimage: HexString, paymentHash: HexString): boolean {
-    try {
-      // Remove 0x prefix if present
-      const preimageHex = preimage.startsWith('0x') ? preimage.slice(2) : preimage;
-      const paymentHashHex = paymentHash.startsWith('0x') ? paymentHash.slice(2) : paymentHash;
-
-      // Convert hex to buffer
-      const preimageBuffer = Buffer.from(preimageHex, 'hex');
-      const paymentHashBuffer = Buffer.from(paymentHashHex, 'hex');
-
-      // SHA256 hash the preimage
-      const hash = createHash('sha256').update(preimageBuffer).digest();
-
-      // Compare
-      return hash.equals(paymentHashBuffer);
-    } catch {
-      return false;
+  private getAttributeU64(attrs: Attribute[], key: 'ExpiryTime' | 'FinalHtlcTimeout' | 'FinalHtlcMinimumExpiryDelta'): bigint | undefined {
+    for (const attr of attrs) {
+      if (key in attr) {
+        return fromHex((attr as Record<string, HexString>)[key] as HexString);
+      }
     }
+    return undefined;
+  }
+
+  private getDescription(invoice: CkbInvoice | null): string | undefined {
+    if (!invoice) return undefined;
+    for (const attr of invoice.data.attrs) {
+      if ('Description' in attr) {
+        return attr.Description;
+      }
+    }
+    return undefined;
   }
 
   /**
    * Try to extract payee node public key from invoice attributes
    * The payee public key is embedded in the invoice as a PayeePublicKey attribute
    */
-  private extractNodeIdFromInvoice(invoice: InvoiceInfo | null): string | undefined {
-    if (!invoice?.data?.attrs) {
+  private extractNodeIdFromInvoice(invoice: CkbInvoice | null): string | undefined {
+    if (!invoice) {
       return undefined;
     }
 
@@ -372,7 +339,6 @@ export class InvoiceVerifier {
       notExpired: boolean;
       validAmount: boolean;
       peerConnected: boolean;
-      preimageValid?: boolean | undefined;
     },
     issues: VerificationIssue[]
   ): number {
@@ -383,7 +349,6 @@ export class InvoiceVerifier {
     if (!checks.notExpired) score -= 20;
     if (!checks.validAmount) score -= 15;
     if (!checks.peerConnected) score -= 10;
-    if (checks.preimageValid === false) score -= 20; // Critical issue
 
     // Deduct for warnings
     const warnings = issues.filter((i) => i.type === 'warning').length;

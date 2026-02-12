@@ -45,12 +45,12 @@ async function main() {
       description: `Watch example - ${amount} CKB`,
       expiry: toHex(3600),
       payment_preimage: preimage,
-      hash_algorithm: 'sha256',
+      hash_algorithm: 'Sha256',
     });
 
-    invoiceHashes.push(invoice.invoice.payment_hash);
+    invoiceHashes.push(invoice.invoice.data.payment_hash);
     console.log(`  ${amount} CKB → ${invoice.invoice_address.slice(0, 40)}...`);
-    console.log(`    Hash: ${invoice.invoice.payment_hash.slice(0, 20)}...`);
+    console.log(`    Hash: ${invoice.invoice.data.payment_hash.slice(0, 20)}...`);
   }
   console.log();
 
@@ -72,9 +72,9 @@ async function main() {
     interval: 3000, // Check every 3 seconds
     signal: controller.signal,
     onPayment: (invoice) => {
-      const amount = invoice.amount ? shannonsToCkb(invoice.amount) : 0;
+      const amount = invoice.invoice.amount ? shannonsToCkb(invoice.invoice.amount) : 0;
       console.log(`🔔 Payment received!`);
-      console.log(`   Hash:   ${invoice.payment_hash.slice(0, 20)}...`);
+      console.log(`   Hash:   ${invoice.invoice.data.payment_hash.slice(0, 20)}...`);
       console.log(`   Amount: ${amount} CKB`);
       console.log(`   Status: ${invoice.status}`);
       console.log();

@@ -5,7 +5,7 @@
 
 import type { FiberRpcClient } from '../rpc/client.js';
 import { ChannelState } from '../types/index.js';
-import type { ChannelInfo } from '../types/index.js';
+import type { Channel } from '../types/index.js';
 import { shannonsToCkb, fromHex } from '../utils.js';
 
 // =============================================================================
@@ -160,7 +160,7 @@ export class LiquidityAnalyzer {
   /**
    * Analyze individual channel health
    */
-  private analyzeChannelHealth(channel: ChannelInfo): ChannelHealthMetrics {
+  private analyzeChannelHealth(channel: Channel): ChannelHealthMetrics {
     const localBalance = shannonsToCkb(channel.local_balance);
     const remoteBalance = shannonsToCkb(channel.remote_balance);
     const totalCapacity = localBalance + remoteBalance;

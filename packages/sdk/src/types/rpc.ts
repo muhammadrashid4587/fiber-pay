@@ -1,73 +1,152 @@
 /**
- * Fiber Network Node RPC Types
- * Type definitions for all JSON-RPC methods exposed by the FNN binary
+ * Fiber Network Node RPC Types (Fiber v0.6.1)
+ *
+ * The types in this file are intended to align with the upstream RPC spec:
+ * https://github.com/nervosnetwork/fiber/blob/v0.6.1/crates/fiber-lib/src/rpc/README.md
  */
 
 // =============================================================================
 // Common Types
 // =============================================================================
 
-/** Hex-encoded string (prefixed with 0x) */
+/** Hex-encoded string (prefixed with 0x). The RPC serializes most numeric values as hex strings. */
 export type HexString = `0x${string}`;
 
-/** Peer ID in libp2p format */
+/** A 256-bit hash digest (Hash256 in the RPC spec). */
+export type Hash256 = HexString;
+
+/** Public key for a node (Pubkey in the RPC spec). */
+export type Pubkey = HexString;
+
+/** Private key (Privkey in the RPC spec). */
+export type Privkey = HexString;
+
+/** Peer ID in libp2p format. */
 export type PeerId = string;
 
-/** Multiaddr format for network addresses */
+/** Multiaddr format for network addresses. */
 export type Multiaddr = string;
 
-/** Channel ID (32-byte hex) */
-export type ChannelId = HexString;
+/** Channel ID (Hash256). */
+export type ChannelId = Hash256;
 
-/** Payment hash (32-byte hex) */
-export type PaymentHash = HexString;
+/** Payment hash (Hash256). */
+export type PaymentHash = Hash256;
 
-/** Script structure for CKB */
+/** Script structure for CKB. */
 export interface Script {
   code_hash: HexString;
   hash_type: 'type' | 'data' | 'data1' | 'data2';
   args: HexString;
 }
 
-/** UDT (User Defined Token) type script */
-export type UdtScript = Script | null;
+/** Transaction out point. */
+export interface OutPoint {
+  tx_hash: Hash256;
+  index: HexString;
+}
+
+/** UDT (User Defined Token) script (UdtScript in the RPC spec). */
+export type UdtScript = Script;
+
+// =============================================================================
+// Invoice Types
+// =============================================================================
+
+export type Currency = 'Fibb' | 'Fibt' | 'Fibd';
+
+export type HashAlgorithm = 'CkbHash' | 'Sha256';
+
+/** Recoverable signature (InvoiceSignature in the RPC spec). */
+export type InvoiceSignature = HexString;
+
+/**
+ * Invoice attribute types as returned by the RPC.
+ * Each attribute is an object with a single key indicating the attribute type.
+ */
+export type Attribute =
+  | { FinalHtlcTimeout: HexString }
+  | { FinalHtlcMinimumExpiryDelta: HexString }
+  | { ExpiryTime: HexString }
+  | { Description: string }
+  | { FallbackAddr: string }
+  | { UdtScript: UdtScript }
+  | { PayeePublicKey: Pubkey }
+  | { HashAlgorithm: HashAlgorithm }
+  | { Feature: string[] }
+  | { PaymentSecret: Hash256 };
+
+export interface InvoiceData {
+  timestamp: HexString;
+  payment_hash: PaymentHash;
+  attrs: Attribute[];
+}
+
+export interface CkbInvoice {
+  currency: Currency;
+  amount?: HexString;
+  signature?: InvoiceSignature;
+  data: InvoiceData;
+}
+
+export type CkbInvoiceStatus =
+  | 'Open'
+  | 'Cancelled'
+  | 'Expired'
+  | 'Received'
+  | 'Paid';
 
 // =============================================================================
 // Channel Types
 // =============================================================================
 
 export enum ChannelState {
-  NegotiatingFunding = 'NEGOTIATING_FUNDING',
-  CollaboratingFundingTx = 'COLLABORATING_FUNDING_TX',
-  SigningCommitment = 'SIGNING_COMMITMENT',
-  AwaitingTxSignatures = 'AWAITING_TX_SIGNATURES',
-  AwaitingChannelReady = 'AWAITING_CHANNEL_READY',
-  ChannelReady = 'CHANNEL_READY',
-  ShuttingDown = 'SHUTTING_DOWN',
-  Closed = 'CLOSED',
+  NegotiatingFunding = 'NegotiatingFunding',
+  CollaboratingFundingTx = 'CollaboratingFundingTx',
+  SigningCommitment = 'SigningCommitment',
+  AwaitingTxSignatures = 'AwaitingTxSignatures',
+  AwaitingChannelReady = 'AwaitingChannelReady',
+  ChannelReady = 'ChannelReady',
+  ShuttingDown = 'ShuttingDown',
+  Closed = 'Closed',
 }
 
-export interface ChannelInfo {
+/** TLC status. The upstream spec defines OutboundTlcStatus / InboundTlcStatus, which may evolve. */
+export type TlcStatus =
+  | { Outbound: unknown }
+  | { Inbound: unknown };
+
+export interface Htlc {
+  id: HexString;
+  amount: HexString;
+  payment_hash: PaymentHash;
+  expiry: HexString;
+  forwarding_channel_id?: Hash256;
+  forwarding_tlc_id?: HexString;
+  status: TlcStatus;
+}
+
+export interface Channel {
   channel_id: ChannelId;
-  peer_id: PeerId;
   is_public: boolean;
-  channel_outpoint: string | null;
+  channel_outpoint: OutPoint | null;
+  peer_id: PeerId;
   funding_udt_type_script: Script | null;
   state: {
     state_name: ChannelState;
-    state_flags?: string;
+    state_flags?: unknown;
   };
   local_balance: HexString;
-  remote_balance: HexString;
   offered_tlc_balance: HexString;
+  remote_balance: HexString;
   received_tlc_balance: HexString;
-  pending_tlcs: unknown[];
-  latest_commitment_transaction_hash: HexString | null;
+  pending_tlcs: Htlc[];
+  latest_commitment_transaction_hash: Hash256 | null;
   created_at: HexString;
   enabled: boolean;
   tlc_expiry_delta: HexString;
   tlc_fee_proportional_millionths: HexString;
-  shutdown_transaction_hash: HexString | null;
+  shutdown_transaction_hash: Hash256 | null;
 }
 
 // =============================================================================
@@ -75,7 +154,7 @@ export interface ChannelInfo {
 // =============================================================================
 
 export interface PeerInfo {
-  pubkey: HexString;
+  pubkey: Pubkey;
   peer_id: PeerId;
   address: Multiaddr;
 }
@@ -84,11 +163,19 @@ export interface PeerInfo {
 // Payment Types
 // =============================================================================
 
-export type PaymentStatus =
-  | 'Created'
-  | 'Inflight'
-  | 'Success'
-  | 'Failed';
+export type PaymentStatus = 'Created' | 'Inflight' | 'Success' | 'Failed';
+
+export type PaymentCustomRecords = Record<string, HexString>;
+
+export interface SessionRouteNode {
+  pubkey: Pubkey;
+  amount: HexString;
+  channel_outpoint: OutPoint;
+}
+
+export interface SessionRoute {
+  nodes: SessionRouteNode[];
+}
 
 export interface PaymentInfo {
   payment_hash: PaymentHash;
@@ -97,82 +184,48 @@ export interface PaymentInfo {
   last_updated_at: HexString;
   failed_error?: string;
   fee: HexString;
+  custom_records?: PaymentCustomRecords;
+  routers?: SessionRoute[];
+}
+
+export interface HopHint {
+  pubkey: Pubkey;
+  channel_outpoint: OutPoint;
+  fee_rate: HexString;
+  tlc_expiry_delta: HexString;
 }
 
 // =============================================================================
-// Invoice Types
+// Node / UDT Types
 // =============================================================================
 
-export type InvoiceStatus =
-  | 'Open'
-  | 'Accepted'
-  | 'Settled'
-  | 'Cancelled';
-
-/**
- * Invoice attribute types as returned by Fiber RPC.
- * Each attribute is an object with a single key indicating the type.
- */
-export type InvoiceAttribute =
-  | { FinalHtlcTimeout: HexString }
-  | { FinalHtlcMinimumExpiryDelta: HexString }
-  | { ExpiryTime: HexString }
-  | { Description: string }
-  | { FallbackAddr: string }
-  | { UdtScript: Script }
-  | { PayeePublicKey: HexString }  // The payee's node public key!
-  | { HashAlgorithm: 'CkbHash' | 'Sha256' }
-  | { Feature: string[] }
-  | { PaymentSecret: HexString };
-
-/**
- * Invoice data structure containing payment details and attributes
- */
-export interface InvoiceData {
-  timestamp: HexString;
-  payment_hash: PaymentHash;
-  attrs: InvoiceAttribute[];
+export interface UdtCellDep {
+  out_point: OutPoint;
+  dep_type: 'code' | 'dep_group';
 }
 
-/**
- * Full CKB Invoice structure as returned by parse_invoice
- */
-export interface CkbInvoice {
-  currency: string;
-  amount?: HexString;
-  signature?: HexString;
-  data: InvoiceData;
+export interface UdtDep {
+  cell_dep?: UdtCellDep | null;
+  type_id?: Script | null;
 }
 
-/**
- * Simplified invoice info (flattened for convenience)
- */
-export interface InvoiceInfo {
-  currency: string;
-  amount?: HexString;
-  payment_hash: PaymentHash;
-  payment_preimage?: HexString;
-  description?: string;
-  status: InvoiceStatus;
-  created_at: HexString;
-  expiry?: HexString;
-  invoice_address: string;
-  /** Full invoice data with attributes (when available from parse_invoice) */
-  data?: InvoiceData;
+export interface UdtArgInfo {
+  name: string;
+  script: UdtScript;
+  auto_accept_amount?: HexString;
+  cell_deps: UdtDep[];
 }
 
-// =============================================================================
-// Node Types
-// =============================================================================
+export type UdtCfgInfos = UdtArgInfo[];
 
 export interface NodeInfo {
   version: string;
   commit_hash: string;
-  node_id: HexString;
+  node_id: Pubkey;
+  features: string[];
   node_name: string | null;
   addresses: Multiaddr[];
-  features: string[];
-  chain_hash: HexString;
+  chain_hash: Hash256;
   open_channel_auto_accept_min_ckb_funding_amount: HexString;
   auto_accept_channel_ckb_funding_amount: HexString;
   default_funding_lock_script: Script;
@@ -182,48 +235,44 @@ export interface NodeInfo {
   channel_count: HexString;
   pending_channel_count: HexString;
   peers_count: HexString;
-  udt_cfg_infos: UdtConfigInfo[];
-}
-
-export interface UdtConfigInfo {
-  name: string;
-  script: Script;
-  auto_accept_amount?: HexString;
-  cell_deps: CellDep[];
-}
-
-export interface CellDep {
-  type_id?: Script;
-  out_point?: OutPoint;
-  dep_type: 'code' | 'dep_group';
-}
-
-export interface OutPoint {
-  tx_hash: HexString;
-  index: HexString;
+  udt_cfg_infos: UdtCfgInfos;
 }
 
 // =============================================================================
 // Graph Types
 // =============================================================================
 
-export interface GraphNode {
-  alias: string;
-  node_id: HexString;
-  addresses: Multiaddr[];
+export interface ChannelUpdateInfo {
   timestamp: HexString;
-  chain_hash: HexString;
+  enabled: boolean;
+  outbound_liquidity?: HexString;
+  tlc_expiry_delta: HexString;
+  tlc_minimum_value: HexString;
+  fee_rate: HexString;
 }
 
-export interface GraphChannel {
-  channel_outpoint: string;
-  node1: HexString;
-  node2: HexString;
+export interface GraphNodeInfo {
+  node_name: string;
+  version: string;
+  addresses: Multiaddr[];
+  features: string[];
+  node_id: Pubkey;
+  timestamp: HexString;
+  chain_hash: Hash256;
+  auto_accept_min_ckb_funding_amount: HexString;
+  udt_cfg_infos: UdtCfgInfos;
+}
+
+export interface GraphChannelInfo {
+  channel_outpoint: OutPoint;
+  node1: Pubkey;
+  node2: Pubkey;
+  created_timestamp: HexString;
+  update_info_of_node1?: ChannelUpdateInfo | null;
+  update_info_of_node2?: ChannelUpdateInfo | null;
   capacity: HexString;
-  udt_type_script?: Script;
-  created_timestamp?: HexString;
-  last_updated_timestamp_of_node1?: HexString;
-  last_updated_timestamp_of_node2?: HexString;
+  chain_hash: Hash256;
+  udt_type_script?: Script | null;
 }
 
 // =============================================================================
@@ -237,9 +286,8 @@ export interface ConnectPeerParams {
   save?: boolean;
 }
 
-export interface ConnectPeerResult {
-  peer_id: PeerId;
-}
+/** connect_peer returns None in v0.6.1 */
+export type ConnectPeerResult = null;
 
 export interface DisconnectPeerParams {
   peer_id: PeerId;
@@ -273,10 +321,13 @@ export interface OpenChannelResult {
 
 export interface AcceptChannelParams {
   temporary_channel_id: ChannelId;
-  funding_amount?: HexString;
+  funding_amount: HexString;
   shutdown_script?: Script;
   max_tlc_value_in_flight?: HexString;
   max_tlc_number_in_flight?: HexString;
+  tlc_min_value?: HexString;
+  tlc_fee_proportional_millionths?: HexString;
+  tlc_expiry_delta?: HexString;
 }
 
 export interface AcceptChannelResult {
@@ -289,7 +340,7 @@ export interface ListChannelsParams {
 }
 
 export interface ListChannelsResult {
-  channels: ChannelInfo[];
+  channels: Channel[];
 }
 
 export interface ShutdownChannelParams {
@@ -313,39 +364,25 @@ export interface UpdateChannelParams {
 
 // --- Payment Module ---
 
-/** Trampoline routing hop for delegated path-finding */
-export interface TrampolineHop {
-  pubkey: HexString;
-  fee_rate: HexString;
-}
-
 export interface SendPaymentParams {
-  invoice?: string;
-  target_pubkey?: HexString;
+  target_pubkey?: Pubkey;
   amount?: HexString;
   payment_hash?: PaymentHash;
   final_tlc_expiry_delta?: HexString;
   tlc_expiry_limit?: HexString;
+  invoice?: string;
+  timeout?: HexString;
   max_fee_amount?: HexString;
   max_parts?: HexString;
   keysend?: boolean;
   udt_type_script?: Script;
   allow_self_payment?: boolean;
+  custom_records?: PaymentCustomRecords;
+  hop_hints?: HopHint[];
   dry_run?: boolean;
-  /** Custom TLV records attached to the payment (up to 2KB total) */
-  custom_records?: Record<string, HexString>;
-  /** Trampoline hops for delegated routing (light client mode) */
-  trampoline_hops?: TrampolineHop[];
 }
 
-export interface SendPaymentResult {
-  payment_hash: PaymentHash;
-  status: PaymentStatus;
-  created_at: HexString;
-  last_updated_at: HexString;
-  failed_error?: string;
-  fee: HexString;
-}
+export interface SendPaymentResult extends PaymentInfo {}
 
 export interface GetPaymentParams {
   payment_hash: PaymentHash;
@@ -357,23 +394,21 @@ export interface GetPaymentResult extends PaymentInfo {}
 
 export interface NewInvoiceParams {
   amount: HexString;
-  currency: string;
   description?: string;
+  currency: Currency;
+  payment_preimage?: Hash256;
+  payment_hash?: PaymentHash;
   expiry?: HexString;
   fallback_address?: string;
   final_expiry_delta?: HexString;
-  final_cltv?: HexString;
   udt_type_script?: Script;
-  /** Preimage for standard invoices (auto-generates payment_hash) */
-  payment_preimage?: HexString;
-  /** Payment hash for hold invoices (provide instead of preimage) */
-  payment_hash?: PaymentHash;
-  hash_algorithm?: 'sha256' | 'blake2b';
+  hash_algorithm?: HashAlgorithm;
+  allow_mpp?: boolean;
 }
 
 export interface NewInvoiceResult {
   invoice_address: string;
-  invoice: InvoiceInfo;
+  invoice: CkbInvoice;
 }
 
 export interface ParseInvoiceParams {
@@ -381,45 +416,53 @@ export interface ParseInvoiceParams {
 }
 
 export interface ParseInvoiceResult {
-  invoice: InvoiceInfo;
+  invoice: CkbInvoice;
 }
 
 export interface GetInvoiceParams {
   payment_hash: PaymentHash;
 }
 
-export interface GetInvoiceResult extends InvoiceInfo {}
+export interface GetInvoiceResult {
+  invoice_address: string;
+  invoice: CkbInvoice;
+  status: CkbInvoiceStatus;
+}
 
 export interface CancelInvoiceParams {
   payment_hash: PaymentHash;
 }
 
+export interface CancelInvoiceResult {
+  invoice_address: string;
+  invoice: CkbInvoice;
+  status: CkbInvoiceStatus;
+}
+
 export interface SettleInvoiceParams {
   payment_hash: PaymentHash;
-  payment_preimage: HexString;
+  payment_preimage: Hash256;
 }
 
 // --- Router Module ---
 
-/** Hop info for building a custom route */
-export interface RouterHopInfo {
-  pubkey: HexString;
-  channel_outpoint: string;
+export interface HopRequire {
+  pubkey: Pubkey;
+  channel_outpoint?: OutPoint | null;
 }
 
 export interface BuildRouterParams {
-  /** Amount to route (hex-encoded shannons) */
-  amount: HexString;
-  /** Ordered list of hops defining the route */
-  hops_info: RouterHopInfo[];
+  amount?: HexString;
+  udt_type_script?: Script;
+  hops_info: HopRequire[];
+  final_tlc_expiry_delta?: HexString;
 }
 
-/** A single hop in a pre-built route */
 export interface RouterHop {
-  target: HexString;
-  channel_outpoint: string;
+  target: Pubkey;
+  channel_outpoint: OutPoint;
   amount_received: HexString;
-  fee: HexString;
+  incoming_tlc_expiry: HexString;
 }
 
 export interface BuildRouterResult {
@@ -427,34 +470,35 @@ export interface BuildRouterResult {
 }
 
 export interface SendPaymentWithRouterParams {
-  /** Pre-built route from build_router */
+  payment_hash?: PaymentHash;
   router: RouterHop[];
-  /** Use keysend (no invoice) */
+  invoice?: string;
+  custom_records?: PaymentCustomRecords;
   keysend?: boolean;
-  /** Allow circular payments back to self */
-  allow_self_payment?: boolean;
+  udt_type_script?: Script;
+  dry_run?: boolean;
 }
 
 // --- Graph Module ---
 
 export interface GraphNodesParams {
-  limit?: number;
+  limit?: HexString;
   after?: HexString;
 }
 
 export interface GraphNodesResult {
-  nodes: GraphNode[];
+  nodes: GraphNodeInfo[];
   last_cursor?: HexString;
 }
 
 export interface GraphChannelsParams {
-  limit?: number;
-  after?: string;
+  limit?: HexString;
+  after?: HexString;
 }
 
 export interface GraphChannelsResult {
-  channels: GraphChannel[];
-  last_cursor?: string;
+  channels: GraphChannelInfo[];
+  last_cursor?: HexString;
 }
 
 // --- Info Module ---

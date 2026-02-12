@@ -66,7 +66,7 @@ async function main() {
     description: 'Escrow: payment held until service delivered',
     expiry: toHex(7200), // 2 hours
     payment_hash: paymentHash, // Key difference: hash, not preimage!
-    hash_algorithm: 'sha256',
+    hash_algorithm: 'Sha256',
   });
 
   console.log(`✓ Hold invoice created`);
@@ -86,11 +86,11 @@ async function main() {
 
   // === RECEIVER SIDE (continued) ===
 
-  // 4. Wait for invoice to be "Accepted" (funds are held)
-  console.log('Waiting for payment to be held (Accepted status)...');
+  // 4. Wait for invoice to be "Received" (funds are held)
+  console.log('Waiting for payment to be held (Received status)...');
   const acceptedInvoice = await client.waitForInvoiceStatus(
     paymentHash,
-    'Accepted',
+    'Received',
     { timeout: 60000, interval: 2000 }
   );
 
@@ -114,7 +114,7 @@ async function main() {
 
     // 7. Verify final status
     const finalInvoice = await client.getInvoice({ payment_hash: paymentHash });
-    console.log(`Final invoice status: ${finalInvoice.status}`); // Should be "Settled"
+    console.log(`Final invoice status: ${finalInvoice.status}`); // Should be "Paid"
   } else {
     // If conditions not met, let the invoice expire
     // Funds return to payer automatically

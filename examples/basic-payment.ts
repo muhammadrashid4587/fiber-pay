@@ -31,7 +31,7 @@ async function main() {
   // 2. Get node info
   const info = await client.nodeInfo();
   console.log('Node Info:');
-  console.log(`  Peer ID:  ${info.peer_id}`);
+  console.log(`  Node ID:  ${info.node_id}`);
   console.log(`  Version:  ${info.version}`);
   console.log(`  Channels: ${info.channel_count}`);
   console.log(`  Peers:    ${info.peers_count}\n`);
@@ -70,12 +70,12 @@ async function main() {
     description: 'Example payment',
     expiry: toHex(3600), // 1 hour
     payment_preimage: preimage,
-    hash_algorithm: 'sha256',
+    hash_algorithm: 'Sha256',
   });
 
   console.log(`✓ Invoice created`);
   console.log(`  Address:      ${invoice.invoice_address.slice(0, 40)}...`);
-  console.log(`  Payment hash: ${invoice.invoice.payment_hash}\n`);
+  console.log(`  Payment hash: ${invoice.invoice.data.payment_hash}\n`);
 
   // 5. Send payment (paying side — in a real scenario, this would be a different node)
   console.log('Sending payment...');

@@ -6,10 +6,10 @@ import type {
   SendPaymentWithRouterParams,
   SendPaymentParams,
   NewInvoiceParams,
-  TrampolineHop,
-  RouterHopInfo,
   RouterHop,
-  InvoiceStatus,
+  HopRequire,
+  HopHint,
+  CkbInvoiceStatus,
   HexString,
 } from '@fiber-pay/sdk';
 
@@ -43,6 +43,11 @@ function mockFetchSequence(results: unknown[]) {
 describe('FiberRpcClient - New Methods', () => {
   let client: FiberRpcClient;
   let originalFetch: typeof globalThis.fetch;
+
+  const outPoint = {
+    tx_hash: '0x1234' as HexString,
+    index: '0x0' as HexString,
+  };
 
   beforeEach(() => {
     client = new FiberRpcClient({ url: 'http://127.0.0.1:8227' });
@@ -88,9 +93,9 @@ describe('FiberRpcClient - New Methods', () => {
       const mockHops: RouterHop[] = [
         {
           target: '0xaabb' as HexString,
-          channel_outpoint: '0x1234:0',
+          channel_outpoint: outPoint,
           amount_received: '0x5f5e100' as HexString,
-          fee: '0x3e8' as HexString,
+          incoming_tlc_expiry: '0x3e8' as HexString,
         },
       ];
       const fetchMock = mockFetch({ router_hops: mockHops });
@@ -99,7 +104,7 @@ describe('FiberRpcClient - New Methods', () => {
       const params: BuildRouterParams = {
         amount: '0x5f5e100' as HexString,
         hops_info: [
-          { pubkey: '0xaabb' as HexString, channel_outpoint: '0x1234:0' },
+          { pubkey: '0xaabb' as HexString, channel_outpoint: outPoint },
         ],
       };
 
@@ -133,13 +138,12 @@ describe('FiberRpcClient - New Methods', () => {
         router: [
           {
             target: '0xaabb' as HexString,
-            channel_outpoint: '0x1234:0',
+            channel_outpoint: outPoint,
             amount_received: '0x5f5e100' as HexString,
-            fee: '0x3e8' as HexString,
+            incoming_tlc_expiry: '0x3e8' as HexString,
           },
         ],
         keysend: true,
-        allow_self_payment: true,
       };
 
       const result = await client.sendPaymentWithRouter(params);
@@ -178,7 +182,7 @@ describe('FiberRpcClient - New Methods', () => {
       expect(body.params[0].custom_records).toEqual({ '65536': '0x48656c6c6f' });
     });
 
-    it('should include trampoline_hops in RPC call', async () => {
+    it('should include hop_hints in RPC call', async () => {
       const fetchMock = mockFetch({
         payment_hash: '0x123' as HexString,
         status: 'Created',
@@ -188,17 +192,22 @@ describe('FiberRpcClient - New Methods', () => {
       });
       globalThis.fetch = fetchMock;
 
-      const hops: TrampolineHop[] = [
-        { pubkey: '0xaabb' as HexString, fee_rate: '0x3e8' as HexString },
+      const hints: HopHint[] = [
+        {
+          pubkey: '0xaabb' as HexString,
+          channel_outpoint: outPoint,
+          fee_rate: '0x3e8' as HexString,
+          tlc_expiry_delta: '0x10' as HexString,
+        },
       ];
 
       await client.sendPayment({
         invoice: 'fibt1test',
-        trampoline_hops: hops,
+        hop_hints: hints,
       });
 
       const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-      expect(body.params[0].trampoline_hops).toEqual(hops);
+      expect(body.params[0].hop_hints).toEqual(hints);
     });
 
     it('should accept max_parts as HexString', async () => {
@@ -230,11 +239,13 @@ describe('FiberRpcClient - New Methods', () => {
       const fetchMock = mockFetch({
         invoice_address: 'fibt1testinvoice',
         invoice: {
-          payment_hash: '0xdeadbeef' as HexString,
-          status: 'Open',
-          created_at: '0x0' as HexString,
-          invoice_address: 'fibt1testinvoice',
           currency: 'Fibt',
+          amount: '0x5f5e100' as HexString,
+          data: {
+            timestamp: '0x0' as HexString,
+            payment_hash: '0xdeadbeef' as HexString,
+            attrs: [],
+          },
         },
       });
       globalThis.fetch = fetchMock;
@@ -345,14 +356,21 @@ describe('FiberRpcClient - Polling Helpers', () => {
             {
               channel_id: '0xch1',
               peer_id: 'QmTest',
-              state: { state_name: 'AWAITING_CHANNEL_READY', state_flags: [] },
+              is_public: true,
+              channel_outpoint: null,
+              funding_udt_type_script: null,
+              state: { state_name: 'AwaitingChannelReady', state_flags: [] },
               local_balance: '0x0',
               remote_balance: '0x0',
               offered_tlc_balance: '0x0',
               received_tlc_balance: '0x0',
+              pending_tlcs: [],
+              latest_commitment_transaction_hash: null,
               created_at: '0x0',
-              is_public: true,
-              local_is_tlc_fee_payer: true,
+              enabled: true,
+              tlc_expiry_delta: '0x0',
+              tlc_fee_proportional_millionths: '0x0',
+              shutdown_transaction_hash: null,
             },
           ],
         },
@@ -362,14 +380,21 @@ describe('FiberRpcClient - Polling Helpers', () => {
             {
               channel_id: '0xch1',
               peer_id: 'QmTest',
-              state: { state_name: 'CHANNEL_READY', state_flags: [] },
+              is_public: true,
+              channel_outpoint: null,
+              funding_udt_type_script: null,
+              state: { state_name: 'ChannelReady', state_flags: [] },
               local_balance: '0x5f5e100',
               remote_balance: '0x0',
               offered_tlc_balance: '0x0',
               received_tlc_balance: '0x0',
+              pending_tlcs: [],
+              latest_commitment_transaction_hash: null,
               created_at: '0x0',
-              is_public: true,
-              local_is_tlc_fee_payer: true,
+              enabled: true,
+              tlc_expiry_delta: '0x0',
+              tlc_fee_proportional_millionths: '0x0',
+              shutdown_transaction_hash: null,
             },
           ],
         },
@@ -381,7 +406,7 @@ describe('FiberRpcClient - Polling Helpers', () => {
         interval: 10,
       });
 
-      expect(result.state.state_name).toBe('CHANNEL_READY');
+      expect(result.state.state_name).toBe('ChannelReady');
       expect(result.local_balance).toBe('0x5f5e100');
     });
 
@@ -391,14 +416,21 @@ describe('FiberRpcClient - Polling Helpers', () => {
           {
             channel_id: '0xch1',
             peer_id: 'QmTest',
-            state: { state_name: 'CLOSED', state_flags: [] },
+            is_public: true,
+            channel_outpoint: null,
+            funding_udt_type_script: null,
+            state: { state_name: 'Closed', state_flags: [] },
             local_balance: '0x0',
             remote_balance: '0x0',
             offered_tlc_balance: '0x0',
             received_tlc_balance: '0x0',
+            pending_tlcs: [],
+            latest_commitment_transaction_hash: null,
             created_at: '0x0',
-            is_public: true,
-            local_is_tlc_fee_payer: true,
+            enabled: true,
+            tlc_expiry_delta: '0x0',
+            tlc_fee_proportional_millionths: '0x0',
+            shutdown_transaction_hash: null,
           },
         ],
       });
@@ -411,47 +443,63 @@ describe('FiberRpcClient - Polling Helpers', () => {
   });
 
   describe('waitForInvoiceStatus', () => {
-    it('should resolve when invoice reaches Accepted', async () => {
+    it('should resolve when invoice reaches Received', async () => {
       const fetchMock = mockFetchSequence([
         // First: Open
-        { payment_hash: '0xh1', status: 'Open', created_at: '0x0', invoice_address: 'fibt1', currency: 'Fibt' },
-        // Second: Accepted
-        { payment_hash: '0xh1', status: 'Accepted', created_at: '0x0', invoice_address: 'fibt1', currency: 'Fibt' },
+        {
+          invoice_address: 'fibt1',
+          invoice: { currency: 'Fibt', data: { timestamp: '0x0', payment_hash: '0xh1', attrs: [] } },
+          status: 'Open',
+        },
+        // Second: Received
+        {
+          invoice_address: 'fibt1',
+          invoice: { currency: 'Fibt', data: { timestamp: '0x0', payment_hash: '0xh1', attrs: [] } },
+          status: 'Received',
+        },
       ]);
       globalThis.fetch = fetchMock;
 
       const result = await client.waitForInvoiceStatus(
         '0xh1' as HexString,
-        'Accepted',
+        'Received',
         { timeout: 10000, interval: 10 }
       );
 
-      expect(result.status).toBe('Accepted');
+      expect(result.status).toBe('Received');
     });
 
     it('should accept array of target statuses', async () => {
       const fetchMock = mockFetch(
-        { payment_hash: '0xh1', status: 'Settled', created_at: '0x0', invoice_address: 'fibt1', currency: 'Fibt' }
+        {
+          invoice_address: 'fibt1',
+          invoice: { currency: 'Fibt', data: { timestamp: '0x0', payment_hash: '0xh1', attrs: [] } },
+          status: 'Paid',
+        }
       );
       globalThis.fetch = fetchMock;
 
       const result = await client.waitForInvoiceStatus(
         '0xh1' as HexString,
-        ['Accepted', 'Settled'],
+        ['Received', 'Paid'],
         { timeout: 10000, interval: 10 }
       );
 
-      expect(result.status).toBe('Settled');
+      expect(result.status).toBe('Paid');
     });
 
     it('should throw if invoice is Cancelled', async () => {
       const fetchMock = mockFetch(
-        { payment_hash: '0xh1', status: 'Cancelled', created_at: '0x0', invoice_address: 'fibt1', currency: 'Fibt' }
+        {
+          invoice_address: 'fibt1',
+          invoice: { currency: 'Fibt', data: { timestamp: '0x0', payment_hash: '0xh1', attrs: [] } },
+          status: 'Cancelled',
+        }
       );
       globalThis.fetch = fetchMock;
 
       await expect(
-        client.waitForInvoiceStatus('0xh1' as HexString, 'Accepted', { timeout: 1000, interval: 10 })
+        client.waitForInvoiceStatus('0xh1' as HexString, 'Received', { timeout: 1000, interval: 10 })
       ).rejects.toThrow('was cancelled');
     });
   });
@@ -462,36 +510,27 @@ describe('FiberRpcClient - Polling Helpers', () => {
 // =============================================================================
 
 describe('Type Correctness', () => {
-  it('InvoiceStatus should include Accepted and Settled', () => {
-    const statuses: InvoiceStatus[] = ['Open', 'Accepted', 'Settled', 'Cancelled'];
-    expect(statuses).toHaveLength(4);
+  it('CkbInvoiceStatus should include v0.6.1 variants', () => {
+    const statuses: CkbInvoiceStatus[] = ['Open', 'Cancelled', 'Expired', 'Received', 'Paid'];
+    expect(statuses).toHaveLength(5);
   });
 
-  it('TrampolineHop should have correct shape', () => {
-    const hop: TrampolineHop = {
+  it('HopRequire should have correct shape', () => {
+    const hop: HopRequire = {
       pubkey: '0xaabb' as HexString,
-      fee_rate: '0x3e8' as HexString,
+      channel_outpoint: { tx_hash: '0x1234' as HexString, index: '0x0' as HexString },
     };
     expect(hop.pubkey).toBe('0xaabb');
-    expect(hop.fee_rate).toBe('0x3e8');
-  });
-
-  it('RouterHopInfo should have correct shape', () => {
-    const info: RouterHopInfo = {
-      pubkey: '0xaabb' as HexString,
-      channel_outpoint: '0x1234:0',
-    };
-    expect(info.pubkey).toBe('0xaabb');
   });
 
   it('RouterHop should have correct shape', () => {
     const hop: RouterHop = {
       target: '0xaabb' as HexString,
-      channel_outpoint: '0x1234:0',
+      channel_outpoint: { tx_hash: '0x1234' as HexString, index: '0x0' as HexString },
       amount_received: '0x5f5e100' as HexString,
-      fee: '0x3e8' as HexString,
+      incoming_tlc_expiry: '0x3e8' as HexString,
     };
     expect(hop.target).toBe('0xaabb');
-    expect(hop.fee).toBe('0x3e8');
+    expect(hop.incoming_tlc_expiry).toBe('0x3e8');
   });
 });

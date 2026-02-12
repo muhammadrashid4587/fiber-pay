@@ -6,7 +6,7 @@
  * payments on the CKB Lightning Network (Fiber Network).
  */
 
-import { FiberRpcClient, ckbToShannons, shannonsToCkb, randomBytes32, toHex, fromHex } from '@fiber-pay/sdk';
+import { FiberRpcClient, ckbToShannons, shannonsToCkb, randomBytes32, toHex, fromHex, ChannelState } from '@fiber-pay/sdk';
 import { PolicyEngine } from '@fiber-pay/sdk';
 import { KeyManager, createKeyManager } from '@fiber-pay/sdk';
 import { ProcessManager } from '@fiber-pay/node';
@@ -19,16 +19,17 @@ import type {
   DEFAULT_SECURITY_POLICY,
   PolicyCheckResult,
   HexString,
-  ChannelInfo,
+  Channel,
   PaymentInfo,
-  InvoiceInfo,
   NodeInfo,
   InvoiceVerificationResult,
   PaymentProof,
   PaymentProofSummary,
   LiquidityReport,
-  TrampolineHop,
   PaymentHash,
+  CkbInvoice,
+  CkbInvoiceStatus,
+  Attribute,
 } from '@fiber-pay/sdk';
 import type { DownloadProgress, FiberNodeConfig } from '@fiber-pay/node';
 
@@ -401,8 +402,6 @@ export class FiberPay {
     maxFeeCkb?: number;
     /** Custom TLV records to attach (up to 2KB) */
     customRecords?: Record<string, HexString>;
-    /** Trampoline hops for delegated routing */
-    trampolineHops?: TrampolineHop[];
     /** Maximum number of MPP parts (e.g. 4) */
     maxParts?: number;
   }): Promise<AgentResult<PaymentResult>> {
@@ -457,7 +456,6 @@ export class FiberPay {
         keysend: params.recipientNodeId ? true : undefined,
         max_fee_amount: params.maxFeeCkb ? ckbToShannons(params.maxFeeCkb) : undefined,
         custom_records: params.customRecords,
-        trampoline_hops: params.trampolineHops,
         max_parts: params.maxParts ? toHex(params.maxParts) : undefined,
       });
 
@@ -554,7 +552,7 @@ export class FiberPay {
 
       const invoiceResult: InvoiceResult = {
         invoice: result.invoice_address,
-        paymentHash: result.invoice.payment_hash,
+        paymentHash: result.invoice.data.payment_hash,
         amountCkb: params.amountCkb,
         expiresAt,
         status: 'open',
@@ -586,7 +584,7 @@ export class FiberPay {
       let activeChannels = 0;
 
       for (const channel of channels.channels) {
-        if (channel.state.state_name === 'CHANNEL_READY') {
+        if (channel.state.state_name === ChannelState.ChannelReady) {
           totalLocal += fromHex(channel.local_balance);
           totalRemote += fromHex(channel.remote_balance);
           activeChannels++;
@@ -645,13 +643,16 @@ export class FiberPay {
     try {
       const result = await this.rpc!.getInvoice({ payment_hash: paymentHash as HexString });
 
+      const amountCkb = result.invoice.amount ? shannonsToCkb(result.invoice.amount) : 0;
+      const expiresAt = this.getInvoiceExpiryIso(result.invoice);
+
       return {
         success: true,
         data: {
           invoice: result.invoice_address,
-          paymentHash: result.payment_hash,
-          amountCkb: result.amount ? shannonsToCkb(result.amount) : 0,
-          expiresAt: result.expiry ? new Date(Number(fromHex(result.created_at)) + Number(fromHex(result.expiry)) * 1000).toISOString() : '',
+          paymentHash: result.invoice.data.payment_hash,
+          amountCkb,
+          expiresAt,
           status: this.mapInvoiceStatus(result.status),
         },
         metadata: { timestamp: Date.now() },
@@ -1030,7 +1031,7 @@ export class FiberPay {
 
       const invoiceResult: HoldInvoiceResult = {
         invoice: result.invoice_address,
-        paymentHash: result.invoice.payment_hash,
+        paymentHash: result.invoice.data.payment_hash,
         amountCkb: params.amountCkb,
         expiresAt,
         status: 'open',
@@ -1261,16 +1262,42 @@ export class FiberPay {
   }
 
   /**
-   * Map RPC InvoiceStatus to agent-level status string
+    * Map RPC CkbInvoiceStatus to agent-level status string
    */
-  private mapInvoiceStatus(status: string): 'open' | 'accepted' | 'settled' | 'cancelled' {
+  private mapInvoiceStatus(status: CkbInvoiceStatus): 'open' | 'accepted' | 'settled' | 'cancelled' {
     switch (status) {
-      case 'Open': return 'open';
-      case 'Accepted': return 'accepted';
-      case 'Settled': return 'settled';
-      case 'Cancelled': return 'cancelled';
-      default: return 'open';
+      case 'Open':
+        return 'open';
+      case 'Received':
+        return 'accepted';
+      case 'Paid':
+        return 'settled';
+      case 'Cancelled':
+      case 'Expired':
+        return 'cancelled';
+      default:
+        return 'open';
     }
+  }
+
+  private getInvoiceExpiryIso(invoice: CkbInvoice): string {
+    // Spec: InvoiceData.timestamp is seconds since UNIX epoch, ExpiryTime attribute is seconds duration.
+    try {
+      const createdSeconds = fromHex(invoice.data.timestamp as HexString);
+      const expiryDeltaSeconds = this.getAttributeU64(invoice.data.attrs, 'ExpiryTime') ?? BigInt(60 * 60);
+      return new Date(Number(createdSeconds + expiryDeltaSeconds) * 1000).toISOString();
+    } catch {
+      return '';
+    }
+  }
+
+  private getAttributeU64(attrs: Attribute[], key: 'ExpiryTime' | 'FinalHtlcTimeout' | 'FinalHtlcMinimumExpiryDelta'): bigint | undefined {
+    for (const attr of attrs) {
+      if (key in attr) {
+        return fromHex((attr as Record<string, HexString>)[key] as HexString);
+      }
+    }
+    return undefined;
   }
 
   private errorResult<T>(

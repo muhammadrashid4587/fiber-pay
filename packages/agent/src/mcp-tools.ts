@@ -483,7 +483,7 @@ Returns channel info once ready.`,
 export type McpToolName = keyof typeof MCP_TOOLS;
 
 export type McpToolInput<T extends McpToolName> = T extends 'fiber_pay'
-  ? { invoice?: string; recipientNodeId?: string; amountCkb?: number; maxFeeCkb?: number; customRecords?: Record<string, string>; trampolineHops?: Array<{ pubkey: string; fee_rate: string }>; maxParts?: number }
+  ? { invoice?: string; recipientNodeId?: string; amountCkb?: number; maxFeeCkb?: number; customRecords?: Record<string, string>; maxParts?: number }
   : T extends 'fiber_create_invoice'
   ? { amountCkb: number; description?: string; expiryMinutes?: number }
   : T extends 'fiber_get_balance'
