@@ -1,0 +1,34 @@
+{
+  "name": "@fiber-pay/cli",
+  "version": "0.1.0",
+  "description": "Command-line tool for managing Fiber Network nodes",
+  "type": "module",
+  "bin": {
+    "fiber-pay": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ckb",
+    "lightning",
+    "fiber",
+    "cli",
+    "nervos"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "commander": "^13.1.0",
+    "@fiber-pay/sdk": "workspace:*",
+    "@fiber-pay/node": "workspace:*"
+  }
+}

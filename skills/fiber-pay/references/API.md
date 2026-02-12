@@ -718,6 +718,102 @@ Download the Fiber Network Node binary.
 
 **CLI Equivalent**: `fiber-pay download`
 
+### Tool 12: `fiber_create_hold_invoice`
+
+Create a hold invoice for escrow / conditional payments.
+
+**Input Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "amountCkb": {
+      "type": "number",
+      "description": "Amount to receive in CKB"
+    },
+    "paymentHash": {
+      "type": "string",
+      "description": "SHA-256 hash of your secret preimage (0x-prefixed hex)"
+    },
+    "description": {
+      "type": "string",
+      "description": "Description for the payer"
+    },
+    "expiryMinutes": {
+      "type": "number",
+      "description": "Invoice expiry time in minutes (default: 60)"
+    }
+  },
+  "required": ["amountCkb", "paymentHash"]
+}
+```
+
+### Tool 13: `fiber_settle_invoice`
+
+Settle a hold invoice by revealing the preimage to release held funds.
+
+**Input Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "paymentHash": {
+      "type": "string",
+      "description": "Payment hash of the hold invoice"
+    },
+    "preimage": {
+      "type": "string",
+      "description": "Secret preimage (0x-prefixed hex, 32 bytes)"
+    }
+  },
+  "required": ["paymentHash", "preimage"]
+}
+```
+
+### Tool 14: `fiber_wait_for_payment`
+
+Wait for a payment to complete (Success or Failed).
+
+**Input Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "paymentHash": {
+      "type": "string",
+      "description": "Payment hash to wait for"
+    },
+    "timeoutMs": {
+      "type": "number",
+      "description": "Timeout in milliseconds (default: 120000)"
+    }
+  },
+  "required": ["paymentHash"]
+}
+```
+
+### Tool 15: `fiber_wait_for_channel_ready`
+
+Wait for a channel to reach ChannelReady state after opening.
+
+**Input Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "channelId": {
+      "type": "string",
+      "description": "Channel ID to wait for"
+    },
+    "timeoutMs": {
+      "type": "number",
+      "description": "Timeout in milliseconds (default: 300000)"
+    }
+  },
+  "required": ["channelId"]
+}
+```
+
 ---
 
 ## TypeScript API
@@ -727,7 +823,7 @@ Use fiber-pay programmatically in your TypeScript/JavaScript code.
 ### Creating a FiberPay Instance
 
 ```typescript
-import { createFiberPay } from 'fiber-pay';
+import { createFiberPay } from '@fiber-pay/agent';
 
 const fiber = await createFiberPay({
   dataDir: '~/.fiber-pay',
@@ -878,6 +974,73 @@ const result = await fiber.closeChannel({
 
 if (result.success) {
   console.log('Channel closing:', result.data);
+}
+```
+
+#### `fiber.createHoldInvoice(params)`
+
+Create a hold invoice for escrow / conditional payments.
+
+```typescript
+// Generate a preimage and its hash
+import { createHash, randomBytes } from 'node:crypto';
+const preimage = `0x${randomBytes(32).toString('hex')}`;
+const hash = `0x${createHash('sha256').update(Buffer.from(preimage.slice(2), 'hex')).digest('hex')}`;
+
+const result = await fiber.createHoldInvoice({
+  amountCkb: 10,
+  paymentHash: hash,
+  description: 'Escrow for service delivery',
+  expiryMinutes: 120,
+});
+
+if (result.success) {
+  console.log('Hold invoice:', result.data.invoice);
+  // Share with payer — funds will be held when they pay
+}
+```
+
+#### `fiber.settleInvoice(params)`
+
+Settle a hold invoice by revealing the preimage to release funds.
+
+```typescript
+const result = await fiber.settleInvoice({
+  paymentHash: hash,
+  preimage: preimage,
+});
+
+if (result.success) {
+  console.log('Invoice settled — funds released!');
+}
+```
+
+#### `fiber.waitForPayment(paymentHash, options?)`
+
+Wait for a payment to reach a terminal state (Success or Failed).
+
+```typescript
+const result = await fiber.waitForPayment('0xdeadbeef...', {
+  timeoutMs: 60000, // 1 minute
+});
+
+if (result.success && result.data.status === 'success') {
+  console.log('Payment confirmed! Fee:', result.data.feeCkb, 'CKB');
+}
+```
+
+#### `fiber.waitForChannelReady(channelId, options?)`
+
+Wait for a channel to become ready after opening.
+
+```typescript
+const channel = await fiber.openChannel({ peer: '...', fundingCkb: 200 });
+const ready = await fiber.waitForChannelReady(channel.data.channelId, {
+  timeoutMs: 300000, // 5 minutes
+});
+
+if (ready.success) {
+  console.log('Channel ready! Balance:', ready.data.localBalanceCkb, 'CKB');
 }
 ```
 
@@ -1078,7 +1241,7 @@ type ChannelState =
 Lower-level RPC client for advanced usage:
 
 ```typescript
-import { FiberRpcClient } from 'fiber-pay';
+import { FiberRpcClient } from '@fiber-pay/sdk';
 
 const client = new FiberRpcClient('http://127.0.0.1:8227');
 
@@ -1086,8 +1249,68 @@ const client = new FiberRpcClient('http://127.0.0.1:8227');
 await client.sendPayment({
   invoice: 'fibt1...',
   max_fee_amount: '0x64',
-  timeout: 60,
+  max_parts: '0x4',        // MPP: split into up to 4 parts
+  custom_records: {          // Attach custom data (up to 2KB)
+    '65536': '0x48656c6c6f',
+  },
 });
+
+// Trampoline routing (delegate path-finding to intermediate node)
+await client.sendPayment({
+  invoice: 'fibt1...',
+  trampoline_hops: [
+    { pubkey: '0x...', fee_rate: '0x3e8' },
+  ],
+});
+
+// Settle a hold invoice
+await client.settleInvoice({
+  payment_hash: '0x...',
+  payment_preimage: '0x...',
+});
+
+// Build custom route (for rebalancing)
+const route = await client.buildRouter({
+  amount: '0x5f5e100',
+  hops_info: [
+    { pubkey: '0x...', channel_outpoint: '0x...:0' },
+  ],
+});
+
+// Send via custom route
+await client.sendPaymentWithRouter({
+  router: route.router_hops,
+  keysend: true,
+  allow_self_payment: true,
+});
+
+// Wait for payment completion
+const result = await client.waitForPayment('0xdeadbeef...', {
+  timeout: 60000,
+  interval: 2000,
+});
+
+// Wait for channel to be ready
+const channel = await client.waitForChannelReady('0xabc123...', {
+  timeout: 300000,
+  interval: 5000,
+});
+
+// Wait for hold invoice to be accepted
+const invoice = await client.waitForInvoiceStatus(
+  '0x...',
+  'Accepted',
+  { timeout: 60000 }
+);
+
+// Watch for incoming payments
+const controller = new AbortController();
+await client.watchIncomingPayments({
+  paymentHashes: ['0xhash1', '0xhash2'],
+  onPayment: (inv) => console.log('Received:', inv.status),
+  signal: controller.signal,
+});
+// Later: controller.abort();
 
 // Get channels
 const channels = await client.listChannels({});
@@ -1116,7 +1339,7 @@ For complete RPC method documentation, see the [Fiber Network API docs](https://
 ### Amount Conversion
 
 ```typescript
-import { ckbToShannons, shannonsToCkb } from 'fiber-pay';
+import { ckbToShannons, shannonsToCkb } from '@fiber-pay/sdk';
 
 // Convert CKB to Shannon (smallest unit)
 const shannons = ckbToShannons(100);  // 100 CKB → 10000000000n
@@ -1125,7 +1348,7 @@ const shannons = ckbToShannons(100);  // 100 CKB → 10000000000n
 const ckb = shannonsToCkb(10000000000n);  // 10000000000 → 100
 
 // Hex conversion
-import { toHex, fromHex } from 'fiber-pay';
+import { toHex, fromHex } from '@fiber-pay/sdk';
 
 const hex = toHex(100n);        // 100n → '0x64'
 const num = fromHex('0x64');    // '0x64' → 100n
@@ -1134,7 +1357,7 @@ const num = fromHex('0x64');    // '0x64' → 100n
 ### Random Hash Generation
 
 ```typescript
-import { randomBytes32 } from 'fiber-pay';
+import { randomBytes32 } from '@fiber-pay/sdk';
 
 const hash = randomBytes32();  // '0xabc123...' (64 hex chars)
 ```

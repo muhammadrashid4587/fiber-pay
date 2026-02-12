@@ -9,63 +9,87 @@ fiber-pay is a TypeScript SDK that enables AI agents to autonomously manage Ligh
 ## Quick Context
 
 - **Language**: TypeScript (ES2022, ESM modules)
-- **Runtime**: Node.js 18+
-- **Package Manager**: pnpm
-- **Build Tool**: tsup
+- **Runtime**: Node.js 20+
+- **Package Manager**: pnpm (workspaces monorepo)
+- **Build Tool**: tsup (per-package)
 - **Test Framework**: vitest
 - **Validation**: zod v4
 
 ## Directory Structure
 
+fiber-pay is a monorepo with four packages under `packages/`:
+
 ```
-src/
-├── agent/              # AI-facing interface (START HERE for agent features)
-│   ├── fiber-pay.ts    # Main FiberPay class - the primary API
-│   ├── mcp-tools.ts    # MCP tool definitions for Claude/OpenClaw
-│   └── index.ts
-├── binary/             # Binary download management
-│   ├── manager.ts      # BinaryManager - downloads fnn from GitHub
-│   └── index.ts
-├── process/            # Process lifecycle
-│   ├── manager.ts      # ProcessManager - starts/stops fnn binary
-│   ├── yaml.ts         # Config file generator
-│   └── index.ts
-├── rpc/                # JSON-RPC client
-│   ├── client.ts       # FiberRpcClient - all RPC methods
-│   └── index.ts
-├── security/           # Security components
-│   ├── policy-engine.ts # Spending limits, rate limiting
-│   ├── key-manager.ts   # Key generation (fiber node handles encryption)
-│   └── index.ts
-├── verification/       # Payment verification systems
-│   ├── invoice-verifier.ts  # Cryptographic invoice validation
-│   ├── payment-proof.ts     # Payment proof tracking & audit
-│   └── index.ts
-├── funds/              # Fund management & liquidity
-│   ├── liquidity-analyzer.ts # Channel health & rebalancing
-│   └── index.ts
-├── types/              # Type definitions
-│   ├── rpc.ts          # All RPC request/response types
-│   ├── policy.ts       # Policy schemas (zod)
-│   └── index.ts
-├── cli.ts              # Command-line interface
-└── index.ts            # Public exports
+packages/
+├── sdk/                    # @fiber-pay/sdk — Core SDK
+│   ├── src/
+│   │   ├── rpc/
+│   │   │   └── client.ts   # FiberRpcClient — type-safe JSON-RPC
+│   │   ├── types/
+│   │   │   ├── rpc.ts      # All RPC request/response types
+│   │   │   ├── policy.ts   # Policy schemas (zod)
+│   │   │   └── index.ts
+│   │   ├── security/
+│   │   │   ├── policy-engine.ts  # Spending limits, rate limiting
+│   │   │   └── key-manager.ts    # Key generation
+│   │   ├── verification/
+│   │   │   ├── invoice-verifier.ts  # Cryptographic invoice validation
+│   │   │   └── payment-proof.ts     # Payment proof tracking & audit
+│   │   ├── funds/
+│   │   │   └── liquidity-analyzer.ts # Channel health & rebalancing
+│   │   ├── proxy/
+│   │   │   └── cors-proxy.ts
+│   │   ├── utils.ts        # Hex/shannon conversion helpers
+│   │   ├── address.ts      # Bech32m address encoding
+│   │   └── index.ts        # Public exports
+│   └── tests/              # Unit tests
+│       ├── policy-engine.test.ts
+│       ├── rpc-utils.test.ts
+│       └── invoice-verifier.test.ts
+├── node/                   # @fiber-pay/node — Node management
+│   └── src/
+│       ├── binary/
+│       │   └── manager.ts  # BinaryManager — downloads fnn from GitHub
+│       ├── process/
+│       │   ├── manager.ts  # ProcessManager — starts/stops fnn binary
+│       │   └── yaml.ts     # Config file generator
+│       └── index.ts
+├── agent/                  # @fiber-pay/agent — AI agent interface
+│   └── src/
+│       ├── fiber-pay.ts    # Main FiberPay class — the primary API
+│       ├── mcp-tools.ts    # MCP tool definitions for Claude/OpenClaw
+│       └── index.ts
+└── cli/                    # @fiber-pay/cli — Command-line tool
+  ├── llm.txt             # CLI source-of-truth usage & maintenance guide
+  └── src/
+    ├── index.ts        # CLI entry point / root command wiring
+    ├── commands/       # Command groups (node/channel/invoice/payment/...)
+    └── lib/            # Shared CLI helpers (config/rpc/format/pid/bootnode)
 
 skills/
-└── fiber-pay/          # Agent Skills integration (agentskills.io)
-    ├── SKILL.md        # Main skill definition for AI agents
-    ├── references/     # Detailed documentation
-    │   ├── API.md      # Complete API reference (11 MCP tools)
-    │   ├── SECURITY.md # Policy engine documentation
+└── fiber-pay/              # Agent Skills integration (agentskills.io)
+    ├── SKILL.md
+    ├── references/
+    │   ├── API.md
+    │   ├── SECURITY.md
     │   └── TROUBLESHOOTING.md
-    └── assets/         # Configuration templates
+    └── assets/
         ├── policy-example.json
         └── config-example.yml
 ```
 
+### Package Dependencies
+
+```
+@fiber-pay/agent  →  @fiber-pay/sdk + @fiber-pay/node
+@fiber-pay/cli    →  @fiber-pay/sdk + @fiber-pay/node
+@fiber-pay/sdk    →  zod (only external dep)
+@fiber-pay/node   →  (no dependencies)
+```
+
 ## Key Files to Understand
 
-### 1. `src/agent/fiber-pay.ts` - Main Interface
+### 1. `packages/agent/src/fiber-pay.ts` - Main Interface
 The `FiberPay` class is the primary API. All methods return `AgentResult<T>`:
 
 ```typescript
@@ -84,47 +108,50 @@ interface AgentResult<T> {
 - Verification: `validateInvoice()`, `getPaymentProof()`
 - Liquidity: `analyzeLiquidity()`, `canSend()`
 
-### 2. `src/rpc/client.ts` - RPC Client
+### 2. `packages/sdk/src/rpc/client.ts` - RPC Client
 Type-safe JSON-RPC client for all Fiber Network API methods. Uses hex encoding for amounts (shannons).
 
 **Important**: 1 CKB = 100,000,000 shannons (10^8)
 
-### 3. `src/security/policy-engine.ts` - Security Sandbox
+### 3. `packages/sdk/src/security/policy-engine.ts` - Security Sandbox
 Enforces spending limits outside LLM control. Cannot be bypassed via prompts.
 
-### 4. `src/binary/manager.ts` - Binary Download
+### 4. `packages/node/src/binary/manager.ts` - Binary Download
 Auto-downloads `fnn` binary from GitHub releases. Handles platform detection and Rosetta 2 fallback.
 
-### 5. `src/types/rpc.ts` - Type Definitions
+### 5. `packages/sdk/src/types/rpc.ts` - Type Definitions
 All JSON-RPC types. Reference when adding new RPC methods.
 
-### 6. `src/verification/invoice-verifier.ts` - Invoice Validation
+### 6. `packages/sdk/src/verification/invoice-verifier.ts` - Invoice Validation
 Cryptographically validates invoices before payment. Checks format, expiry, amount, preimage, and peer connectivity. Returns detailed verification results with trust scores and recommendations.
 
-### 7. `src/verification/payment-proof.ts` - Payment Proof Tracking
+### 7. `packages/sdk/src/verification/payment-proof.ts` - Payment Proof Tracking
 Records and stores payment proofs for audit trail. Validates preimage hashes, maintains payment history, and exports audit reports. Proofs stored in JSON at `<dataDir>/payment-proofs.json`.
 
-### 8. `src/funds/liquidity-analyzer.ts` - Liquidity Management
+### 8. `packages/sdk/src/funds/liquidity-analyzer.ts` - Liquidity Management
 Analyzes channel health, identifies liquidity gaps, generates rebalancing recommendations. Calculates health scores, detects imbalances, and estimates funding needs.
+
+### 9. `packages/cli/llm.txt` - CLI Canonical Guide
+Authoritative guide for CLI runtime behavior, command surface, output conventions, troubleshooting flow, and maintenance workflow.
 
 ## Common Tasks
 
 ### Adding a New RPC Method
 
-1. Add types to `src/types/rpc.ts`:
+1. Add types to `packages/sdk/src/types/rpc.ts`:
 ```typescript
 export interface NewMethodParams { ... }
 export interface NewMethodResult { ... }
 ```
 
-2. Add method to `src/rpc/client.ts`:
+2. Add method to `packages/sdk/src/rpc/client.ts`:
 ```typescript
 async newMethod(params: NewMethodParams): Promise<NewMethodResult> {
   return this.call('new_method', params);
 }
 ```
 
-3. Add wrapper to `src/agent/fiber-pay.ts`:
+3. Add wrapper to `packages/agent/src/fiber-pay.ts`:
 ```typescript
 async newMethod(params): Promise<AgentResult<T>> {
   // Add policy check if needed
@@ -133,65 +160,73 @@ async newMethod(params): Promise<AgentResult<T>> {
 }
 ```
 
-4. Add MCP tool to `src/agent/mcp-tools.ts` if agent-facing.
+4. Add MCP tool to `packages/agent/src/mcp-tools.ts` if agent-facing.
 
 ### Adding a CLI Command
 
-Edit `src/cli.ts`:
+Read this file first:
 
-1. **For RPC commands** (info, balance, pay, invoice, channels, etc.):
-   - Add to `handleRpcCommand()` function
-   - Add command name to `rpcOnlyCommands` array in `main()`
-   - These commands connect to a running node via RPC
+- `packages/cli/llm.txt`
 
-2. **For standalone commands** (download, binary-info, etc.):
-   - Add to `handleStandaloneCommand()` function
-   - Add command name to `standaloneCommands` array in `main()`
-   - These don't need a running node
+`packages/cli/llm.txt` is the canonical CLI operations guide. It defines:
+- runtime behavior (node start, bootnode auto-connect, optional CORS proxy)
+- command groups
+- output decisions (`human-readable` vs `--json`)
+- troubleshooting checklist for agents/operators
 
-3. **For node management commands** (start, stop, status):
-   - Handle directly in `main()` function
+CLI command maintenance follows modular architecture:
 
-4. Update `printHelp()` with the new command
+1. Add or update command logic in `packages/cli/src/commands/<group>.ts`
+2. Reuse shared helpers in `packages/cli/src/lib/*`
+3. Wire grouped commands in `packages/cli/src/index.ts`
+4. Keep output policy consistent:
+  - human-readable default
+  - `--json` machine output
+5. Update `packages/cli/llm.txt` when command behavior, guidance, or command surface changes
 
-**Note:** Most commands should go into `handleRpcCommand()` since the node
-should be running separately via `fiber-pay start`.
+Validate:
+
+```bash
+pnpm --filter @fiber-pay/cli typecheck
+pnpm --filter @fiber-pay/cli build
+```
 
 ### Modifying Security Policy
 
-Edit `src/types/policy.ts` for schema changes.
-Edit `src/security/policy-engine.ts` for enforcement logic.
+Edit `packages/sdk/src/types/policy.ts` for schema changes.
+Edit `packages/sdk/src/security/policy-engine.ts` for enforcement logic.
 
 ## Testing
 
 ```bash
-pnpm test        # Watch mode
-pnpm test:run    # Single run
+pnpm test                          # Run all tests
+pnpm --filter @fiber-pay/sdk test  # SDK tests only
 ```
 
-Tests are in `tests/` directory. Current tests:
+Tests are in `packages/sdk/tests/`. Current tests:
 - `policy-engine.test.ts` - Policy enforcement
 - `rpc-utils.test.ts` - Utility functions
+- `invoice-verifier.test.ts` - Invoice verification
 
 ## Building
 
 ```bash
-pnpm build       # Build to dist/
-pnpm typecheck   # Type check only
+pnpm build       # Build all packages (in dependency order)
+pnpm typecheck   # Type check all packages
+pnpm clean       # Remove all dist/ folders
 ```
 
-Output:
-- `dist/index.js` - Library entry
-- `dist/cli.js` - CLI entry (has shebang)
-- `dist/*.d.ts` - Type declarations
+Build order: sdk + node (parallel) → agent → cli
+
+Each package outputs to its own `dist/` directory.
 
 ## Important Patterns
 
 ### Hex Encoding for Amounts
 All amounts in RPC use hex-encoded shannons:
 ```typescript
-import { ckbToShannons, toHex } from './rpc/index.js';
-const hexAmount = toHex(ckbToShannons(10)); // "0x3b9aca00"
+import { ckbToShannons, toHex } from '@fiber-pay/sdk';
+const hexAmount = ckbToShannons(10); // "0x3b9aca00"
 ```
 
 ### Error Handling
@@ -323,77 +358,72 @@ When making changes to fiber-pay:
 
 To test the CLI locally without publishing to npm:
 
-### Method 1: Pack and Install (recommended for testing releases)
+### Method 1: pnpm link (recommended for active development)
 
 ```bash
-# Build and pack the project
-pnpm build && pnpm pack
+# Build all packages
+pnpm build
 
-# Install globally from tarball (use absolute path)
-pnpm install -g /absolute/path/to/fiber-pay/fiber-pay-0.1.0.tgz
+# Link CLI globally
+cd packages/cli && pnpm link --global
 
-# Now use CLI globally
-fiber-pay --help
-fiber-pay download
-fiber-pay start
-```
-
-### Method 2: pnpm link (recommended for active development)
-
-```bash
-# Create global symlink to local project
-pnpm link --global
-
-# CLI now uses local dist/ directly
-# Changes reflected immediately after `pnpm build`
+# CLI now uses your local build
 fiber-pay --help
 
 # Unlink when done
 pnpm unlink --global
 ```
 
-### Method 3: Run directly from dist/
+### Method 2: Run directly from dist/
 
 ```bash
-# Run CLI directly without global install
-node dist/cli.js --help
-node dist/cli.js download
-node dist/cli.js start
+node packages/cli/dist/cli.js --help
+node packages/cli/dist/cli.js download
+node packages/cli/dist/cli.js start
 ```
 
 ## Useful Commands
 
 ```bash
-# Start node (runs in foreground)
-./dist/cli.js start
+# Build all packages
+pnpm build
+
+# Build a specific package
+pnpm --filter @fiber-pay/sdk build
+
+# Start node (after linking CLI globally)
+fiber-pay node start
 
 # In another terminal:
-./dist/cli.js status      # Check if running
-./dist/cli.js info        # Node info
-./dist/cli.js balance     # Balance
-./dist/cli.js channels    # List channels
+fiber-pay node status    # Check if running
+fiber-pay node info      # Node info
+fiber-pay balance        # Balance
+fiber-pay channel list   # List channels
 
 # Stop node
-./dist/cli.js stop
+fiber-pay node stop
 
 # Binary management
-./dist/cli.js download
-./dist/cli.js binary-info
+fiber-pay binary download
+fiber-pay binary info
 
 # Test fnn directly
 ~/.fiber-pay/bin/fnn --version
 
-# View all exports
-grep "^export" src/index.ts
+# View SDK exports
+grep "^export" packages/sdk/src/index.ts
 ```
 
 ## Code Quality Checklist
 
 Before committing changes:
+- [ ] `pnpm lint` passes
+- [ ] `pnpm format:check` passes
 - [ ] `pnpm typecheck` passes
-- [ ] `pnpm test:run` passes
+- [ ] `pnpm test` passes
 - [ ] `pnpm build` succeeds
 - [ ] New methods have proper TypeScript types
 - [ ] New agent methods return `AgentResult<T>`
 - [ ] Security-sensitive operations have policy checks
 - [ ] CLI help is updated if adding commands
+- [ ] Exports are added to the package's `index.ts` if public

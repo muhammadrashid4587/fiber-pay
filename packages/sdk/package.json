@@ -1,0 +1,43 @@
+{
+  "name": "@fiber-pay/sdk",
+  "version": "0.1.0",
+  "description": "Core SDK for building Fiber Network applications on CKB Lightning",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./browser": {
+      "import": "./dist/browser.js",
+      "types": "./dist/browser.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "ckb",
+    "lightning",
+    "fiber",
+    "payment",
+    "nervos",
+    "sdk"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  }
+}

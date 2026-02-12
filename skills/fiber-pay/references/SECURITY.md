@@ -528,7 +528,7 @@ fiber-pay start
 
 **Programmatic**:
 ```typescript
-import { KeyManager } from 'fiber-pay';
+import { KeyManager } from '@fiber-pay/sdk';
 
 const keyManager = new KeyManager({
   dataDir: '~/.fiber-pay',

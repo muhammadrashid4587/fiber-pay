@@ -24,6 +24,8 @@ fiber-pay is a TypeScript SDK and CLI tool that wraps the Fiber Network Node bin
 - **Own funds**: Generate and control cryptocurrency private keys
 - **Send payments**: Pay Lightning invoices or send directly to other nodes
 - **Receive payments**: Create invoices and track incoming payments
+- **Hold invoices**: Create escrow-style invoices that settle only when you release the preimage
+- **Watch payments**: Poll for payment completion, channel readiness, or invoice status changes
 - **Manage channels**: Open and close Lightning payment channels
 - **Stay secure**: Built-in spending limits, rate limiting, and audit logging
 
@@ -33,9 +35,10 @@ The Lightning Network enables instant, low-cost cryptocurrency payments by keepi
 
 Use fiber-pay when the user needs to:
 - Send or receive cryptocurrency payments
-- Create payment invoices
+- Create payment invoices (standard or hold/escrow invoices)
 - Check account balances
 - Manage Lightning Network payment channels
+- Wait for payment completion or channel readiness
 - Perform autonomous financial transactions
 - Process peer-to-peer payments without intermediaries
 
@@ -59,14 +62,14 @@ cd fiber-pay
 # Install dependencies
 pnpm install
 
-# Build the project
+# Build all packages
 pnpm build
 
 # Link the CLI globally
-pnpm link --global
+cd packages/cli && pnpm link --global
 ```
 
-**TODO**: Once published to npm, installation will be: `npm install -g fiber-pay`
+**TODO**: Once published to npm, installation will be: `npm install -g @fiber-pay/cli`
 
 After installation, verify the CLI is available:
 ```bash
@@ -419,6 +422,29 @@ fiber-pay channels list
 fiber-pay pay --to <node-id> --amount 10
 ```
 
+### Workflow 5: Hold Invoice (Escrow)
+```typescript
+// 1. Seller creates hold invoice (preimage stays secret until goods delivered)
+const hold = await fiber.createHoldInvoice({
+  amountCkb: 10,
+  description: 'Escrow for delivery',
+});
+// 2. Share hold.invoice with buyer — buyer pays it
+// 3. Invoice enters 'accepted' state (funds locked, not yet settled)
+const accepted = await fiber.waitForPayment(hold.paymentHash, { timeout: 120000 });
+// 4. Seller delivers goods, then settles the invoice
+const settled = await fiber.settleInvoice(hold.paymentHash, hold.preimage);
+```
+
+### Workflow 6: Wait for Payment Confirmation
+```typescript
+// After sending a payment, wait until it completes
+const result = await fiber.pay({ invoice: 'fibt1...' });
+if (result.success) {
+  const confirmed = await fiber.waitForPayment(result.data.paymentHash, { timeout: 60000 });
+}
+```
+
 ## Environment Variables
 
 Configure fiber-pay behavior with environment variables:
@@ -474,7 +500,7 @@ See [references/TROUBLESHOOTING.md](references/TROUBLESHOOTING.md) for detailed 
 Use fiber-pay as a TypeScript library instead of CLI:
 
 ```typescript
-import { createFiberPay } from 'fiber-pay';
+import { createFiberPay } from '@fiber-pay/agent';
 
 const fiber = await createFiberPay({
   dataDir: '~/.fiber-pay',
@@ -506,10 +532,10 @@ if (result.success) {
 ### Full API Reference
 
 See [references/API.md](references/API.md) for complete API documentation including:
-- All 11 MCP tools with schemas
+- All 15 MCP tools with schemas (including hold invoice, settle, wait-for-payment, wait-for-channel)
 - Input/output types
 - Code examples
-- RPC client methods
+- RPC client methods (including polling helpers and router APIs)
 
 ### Security Configuration
 
@@ -542,9 +568,11 @@ See [references/SECURITY.md](references/SECURITY.md) for:
 2. **Parse the `success` field** to determine if operation succeeded
 3. **Read `error.suggestion`** for recovery steps on failure
 4. **Monitor `remainingAllowanceCkb`** to avoid policy violations
-5. **Wait for `CHANNEL_READY` state** before sending through new channels
-6. **Use testnet for development** to avoid risking real funds
-7. **Check `policyCheck.violations`** to understand spending limits
+5. **Use `waitForChannelReady()`** instead of polling `channels list` manually
+6. **Use `waitForPayment()`** to confirm payment completion instead of manual polling
+7. **Use hold invoices** for escrow/conditional payment flows
+8. **Use testnet for development** to avoid risking real funds
+9. **Check `policyCheck.violations`** to understand spending limits
 
 ## Troubleshooting Quick Ref
 

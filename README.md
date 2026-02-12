@@ -78,12 +78,21 @@ fiber-pay is a TypeScript SDK that wraps the [Fiber Network Node](https://github
 
 ## Installation
 
-```bash
-# Install the SDK
-pnpm add fiber-pay
+fiber-pay is organized as a monorepo with four packages:
 
-# Or with npm
-npm install fiber-pay
+| Package | Description |
+|---------|-------------|
+| `@fiber-pay/sdk` | Core SDK — RPC client, types, security, verification, liquidity |
+| `@fiber-pay/node` | Node management — binary download, process lifecycle |
+| `@fiber-pay/agent` | AI agent interface — FiberPay class, MCP tool definitions |
+| `@fiber-pay/cli` | Command-line interface |
+
+```bash
+# Install individual packages
+pnpm add @fiber-pay/sdk           # Core SDK only
+pnpm add @fiber-pay/node          # Node management
+pnpm add @fiber-pay/agent         # Agent interface (includes sdk + node)
+pnpm add @fiber-pay/cli            # CLI tool
 ```
 
 ### Binary Installation
@@ -92,19 +101,19 @@ The Fiber Network Node binary is **automatically downloaded** when needed. You c
 
 ```bash
 # Using the CLI
-npx fiber-pay download
+npx @fiber-pay/cli binary download
 
 # Download specific version
-npx fiber-pay download --version v0.6.0
+npx @fiber-pay/cli binary download --version v0.6.0
 
 # Check binary status
-npx fiber-pay binary-info
+npx @fiber-pay/cli binary info
 ```
 
 Or programmatically:
 
 ```typescript
-import { downloadFiberBinary, ensureFiberBinary } from 'fiber-pay';
+import { downloadFiberBinary, ensureFiberBinary } from '@fiber-pay/node';
 
 // Download explicitly
 await downloadFiberBinary({
@@ -126,7 +135,7 @@ The binary will be installed to `~/.fiber-pay/bin/fnn` by default.
 ## Quick Start
 
 ```typescript
-import { createFiberPay } from 'fiber-pay';
+import { createFiberPay } from '@fiber-pay/agent';
 
 // Create instance (binary auto-downloads if not found)
 const fiber = createFiberPay({
@@ -159,87 +168,62 @@ await fiber.shutdown();
 
 ## CLI Usage
 
-### Node Lifecycle
+The CLI is organized as grouped commands and is designed for both operators and agents. For complete and up-to-date guidance, use:
 
-The recommended way to use the CLI is to start the node once and run commands against it:
+- `packages/cli/llm.txt`
 
-```bash
-# Terminal 1: Start node (runs in foreground)
-fiber-pay start
+That file is the authoritative CLI guide for:
+- command groups
+- runtime behavior (node start, bootnode auto-connect, optional CORS proxy)
+- output policy (`human-readable` by default, `--json` for automation)
+- environment variables
+- troubleshooting and maintenance notes
 
-# Terminal 2: Run commands against the running node
-fiber-pay status    # Check if node is running
-fiber-pay info      # Get node information
-fiber-pay balance   # Get current balance
-fiber-pay channels  # List channels
-fiber-pay peers     # List connected peers
+### Runtime Notes
 
-# Stop the node
-fiber-pay stop
-```
+- `fiber-pay node start` runs the node in foreground and auto-connects bootnodes from config after RPC is ready.
+- CORS proxy is opt-in: use `--cors-proxy` (default port `28227`) or `--cors-proxy <port>`.
+- For agent pipelines and machine parsing, prefer `--json`.
 
-### Binary Management
+### Quick Examples
 
 ```bash
-# Download binary (auto-detects platform)
-fiber-pay download
-fiber-pay download --version v0.6.0  # Specific version
-fiber-pay download --force           # Re-download
+# Start/stop node
+fiber-pay node start
+fiber-pay node status
+fiber-pay node stop
 
-# Check binary status
-fiber-pay binary-info
+# Channel/Invoice/Payment status workflows
+fiber-pay channel list
+fiber-pay channel get <channelId>
+fiber-pay invoice get <paymentHash>
+fiber-pay payment get <paymentHash>
+fiber-pay payment watch <paymentHash>
+
+# Typical receive flow (operator perspective)
+fiber-pay invoice create --amount 10 --description "service"
+fiber-pay invoice get <paymentHash>
+
+# Typical send flow (operator perspective)
+fiber-pay payment send <invoice>
+fiber-pay payment watch <paymentHash>
+
+# Machine-readable output for automation
+fiber-pay channel list --json
+fiber-pay invoice get <paymentHash> --json
 ```
 
-### Payments & Invoices
+### Binary Notes
 
-```bash
-# Pay an invoice
-fiber-pay pay fibt1qp...
-fiber-pay pay --invoice <invoice>
-fiber-pay pay --to <nodeId> --amount 10
-
-# Create invoice for 10 CKB
-fiber-pay invoice 10 --description "For services"
-```
-
-### Channel Management
-
-```bash
-# Open a channel with 100 CKB
-fiber-pay open-channel --peer /ip4/x.x.x.x/tcp/8228/p2p/QmXXX --funding 100
-
-# Close a channel
-fiber-pay close-channel <channelId>
-fiber-pay close-channel <channelId> --force
-```
-
-### Other Commands
-
-```bash
-# View audit log
-fiber-pay audit --limit 20
-
-# Get spending allowance
-fiber-pay allowance
-
-# Get help
-fiber-pay help
-```
-
-### Command Categories
-
-| Category | Commands | Behavior |
-|----------|----------|----------|
-| **Node Management** | `start`, `stop`, `status` | Control node lifecycle |
-| **RPC Operations** | `info`, `balance`, `channels`, `peers`, `pay`, `invoice`, `open-channel`, `close-channel` | Connect to running node via RPC |
-| **Standalone** | `download`, `binary-info`, `allowance`, `audit` | No running node required |
+- Binary download is managed by `@fiber-pay/node`.
+- On Apple Silicon, download prefers native ARM64 and falls back to x86_64 with Rosetta 2 when necessary.
 
 ## MCP Integration
 
 fiber-pay provides MCP (Model Context Protocol) tool definitions for direct integration with Claude, OpenClaw, and other compatible agents:
 
 ```typescript
-import { MCP_TOOLS } from 'fiber-pay';
+import { MCP_TOOLS } from '@fiber-pay/agent/mcp';
 
 // Register tools with your MCP server
 for (const tool of Object.values(MCP_TOOLS)) {
@@ -283,6 +267,8 @@ interface AgentResult<T> {
 The SDK enforces spending limits that **cannot be bypassed via prompts**:
 
 ```typescript
+import { createFiberPay } from '@fiber-pay/agent';
+
 const fiber = createFiberPay({
   policy: {
     maxPerTransaction: 100,      // Max 100 CKB per payment
@@ -328,6 +314,8 @@ const log = fiber.getAuditLog({ limit: 100 });
 ### Programmatic Configuration
 
 ```typescript
+import { createFiberPay } from '@fiber-pay/agent';
+
 const fiber = createFiberPay({
   binaryPath: '/path/to/fnn',     // Optional - auto-downloads if not set
   dataDir: '/path/to/data',
@@ -371,30 +359,41 @@ const fiber = createFiberPay({
 
 ## Project Structure
 
+fiber-pay is a monorepo managed with pnpm workspaces:
+
 ```
 fiber-pay/
-├── src/
-│   ├── agent/           # AI-friendly interface
-│   │   ├── fiber-pay.ts # Main FiberPay class
-│   │   └── mcp-tools.ts # MCP tool definitions
-│   ├── binary/          # Binary download manager
-│   │   └── manager.ts   # BinaryManager class
-│   ├── process/         # fnn process lifecycle
-│   │   ├── manager.ts   # ProcessManager class
-│   │   └── yaml.ts      # Config file generation
-│   ├── rpc/             # JSON-RPC client
-│   │   └── client.ts    # FiberRpcClient class
-│   ├── security/        # Security components
-│   │   ├── policy-engine.ts  # Spending limits
-│   │   └── key-manager.ts    # Key encryption
-│   ├── types/           # TypeScript type definitions
-│   │   ├── rpc.ts       # RPC types
-│   │   └── policy.ts    # Policy schemas
-│   ├── cli.ts           # Command-line interface
-│   └── index.ts         # Public exports
-├── tests/               # Unit tests
-├── dist/                # Built output
-└── package.json
+├── packages/
+│   ├── sdk/                 # @fiber-pay/sdk — Core SDK
+│   │   ├── src/
+│   │   │   ├── rpc/         # FiberRpcClient — type-safe JSON-RPC
+│   │   │   ├── types/       # All RPC & policy type definitions
+│   │   │   ├── security/    # PolicyEngine, KeyManager
+│   │   │   ├── verification/# InvoiceVerifier, PaymentProofManager
+│   │   │   ├── funds/       # LiquidityAnalyzer
+│   │   │   ├── proxy/       # CorsProxy
+│   │   │   ├── utils.ts     # Hex/shannon conversion helpers
+│   │   │   ├── address.ts   # Bech32m address encoding
+│   │   │   └── index.ts     # Public exports
+│   │   └── tests/           # Unit tests
+│   ├── node/                # @fiber-pay/node — Node management
+│   │   └── src/
+│   │       ├── binary/      # BinaryManager — download fnn from GitHub
+│   │       ├── process/     # ProcessManager — start/stop fnn
+│   │       └── index.ts
+│   ├── agent/               # @fiber-pay/agent — AI agent interface
+│   │   └── src/
+│   │       ├── fiber-pay.ts # FiberPay class (main API)
+│   │       ├── mcp-tools.ts # MCP tool definitions
+│   │       └── index.ts
+│   └── cli/                 # @fiber-pay/cli — Command-line tool
+│       └── src/
+│           └── cli.ts
+├── skills/                  # Agent Skills integration
+│   └── fiber-pay/
+├── pnpm-workspace.yaml
+├── tsconfig.base.json       # Shared TypeScript config
+└── package.json             # Workspace root
 ```
 
 ## Testnet Verification
@@ -416,7 +415,7 @@ This SDK has been tested on CKB testnet with real funds:
 
 ### Prerequisites
 
-- Node.js >= 18
+- Node.js >= 20
 - pnpm (recommended) or npm
 
 ### Setup
@@ -429,7 +428,7 @@ cd fiber-pay
 # Install dependencies
 pnpm install
 
-# Build the project
+# Build all packages (in dependency order)
 pnpm build
 
 # Run tests
@@ -438,49 +437,43 @@ pnpm test
 
 ### Local CLI Testing
 
-To test the CLI locally without publishing to npm, you can pack and install the package globally:
+To test the CLI locally:
 
 ```bash
-# Build and pack the project
-pnpm build && pnpm pack
+# Build and link the CLI package globally
+pnpm build
+cd packages/cli && pnpm link --global
 
-# Install globally from the tarball (use absolute path)
-pnpm install -g /path/to/fiber-pay/fiber-pay-0.1.0.tgz
-
-# Now you can use the CLI globally
+# Now use the CLI globally
 fiber-pay --help
 fiber-pay download
 fiber-pay start
-```
 
-**Alternative: Using `pnpm link`** (recommended for active development)
-
-```bash
-# Create a global symlink to your local project
-pnpm link --global
-
-# Now fiber-pay CLI uses your local dist/ directly
-# Changes are reflected immediately after running `pnpm build`
-fiber-pay --help
-```
-
-To unlink when done:
-
-```bash
+# Unlink when done
 pnpm unlink --global
 ```
 
 ### Development Workflow
 
 ```bash
-# Watch mode - rebuilds on file changes
+# Watch mode - rebuilds all packages on file changes
 pnpm dev
 
-# Type checking
+# Type checking across all packages
 pnpm typecheck
 
-# Run specific test file
-pnpm test policy-engine
+# Lint and format checks
+pnpm lint
+pnpm format:check
+
+# Run tests (SDK package)
+pnpm --filter @fiber-pay/sdk test
+
+# Build a specific package
+pnpm --filter @fiber-pay/sdk build
+
+# Clean all build outputs
+pnpm clean
 ```
 
 ## Agent Skills Integration
@@ -517,7 +510,7 @@ fiber-pay --help
 
 #### Quick Start for Agents
 
-1. **Installation**: Clone repo, run `pnpm install && pnpm build && pnpm link --global`
+1. **Installation**: Clone repo, run `pnpm install && pnpm build`, then `cd packages/cli && pnpm link --global`
 2. **Binary Setup**: `fiber-pay download`
 3. **Start Node**: `fiber-pay start`
 4. **Check Balance**: `fiber-pay balance`

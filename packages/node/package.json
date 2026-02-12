@@ -1,0 +1,36 @@
+{
+  "name": "@fiber-pay/node",
+  "version": "0.1.0",
+  "description": "Fiber Network node binary management and process lifecycle",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --config vitest.config.ts",
+    "test:run": "vitest run --config vitest.config.ts"
+  },
+  "keywords": [
+    "ckb",
+    "lightning",
+    "fiber",
+    "node-management",
+    "nervos"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  }
+}
