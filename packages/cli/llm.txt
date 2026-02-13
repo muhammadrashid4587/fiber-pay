@@ -17,7 +17,7 @@ Installation (from source, current)
 
 From a clean machine:
 ```bash
-git clone https://github.com/nervosnetwork/fiber-pay.git
+git clone https://github.com/RetricSu/fiber-pay.git
 cd fiber-pay
 pnpm install
 pnpm build
