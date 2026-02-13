@@ -11,6 +11,43 @@ Purpose
 This file is the source-of-truth for how `@fiber-pay/cli` works and how an agent should use it.
 Use this document for runtime behavior, command selection, output conventions, and troubleshooting.
 
+Installation (from source, current)
+-----------------------------------
+`@fiber-pay/cli` is not published to npm yet. Install from repository source.
+
+From a clean machine:
+```bash
+git clone https://github.com/nervosnetwork/fiber-pay.git
+cd fiber-pay
+pnpm install
+pnpm build
+cd packages/cli
+pnpm link --global
+```
+
+If already inside the repository:
+```bash
+pnpm install
+pnpm build
+cd packages/cli
+pnpm link --global
+```
+
+Verify CLI is available:
+```bash
+fiber-pay --help
+```
+
+Uninstall / relink CLI globally:
+```bash
+# from anywhere
+pnpm unlink --global @fiber-pay/cli
+
+# relink from repository
+cd /path/to/fiber-pay/packages/cli
+pnpm link --global
+```
+
 CLI Mental Model
 ----------------
 `fiber-pay` has grouped commands:
