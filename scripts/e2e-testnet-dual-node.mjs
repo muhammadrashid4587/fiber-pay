@@ -4,7 +4,7 @@
  *
  * Lifecycle:
  *   1. (optional) pnpm build
- *   2. config init + port-patch for Node A & B
+ *   2. config init (with per-node rpc/p2p ports)
  *   3. binary download (or skip)
  *   4. start both nodes, wait for RPC ready
  *   5. (optional) faucet claim + CKB deposit
@@ -27,7 +27,7 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, createWriteStream, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, copyFileSync, createWriteStream, rmSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { platform } from 'node:os';
@@ -256,9 +256,13 @@ function spawnDetached(cmd, args, opts = {}) {
 function fiberPayEnv(nodeName) {
   const dir = nodeName === 'A' ? NODE_A_DIR : NODE_B_DIR;
   const rpc = nodeName === 'A' ? NODE_A_RPC_URL : NODE_B_RPC_URL;
+  const rpcPort = nodeName === 'A' ? NODE_A_RPC_PORT : NODE_B_RPC_PORT;
+  const p2pPort = nodeName === 'A' ? NODE_A_P2P_PORT : NODE_B_P2P_PORT;
   return {
     FIBER_DATA_DIR: dir,
     FIBER_RPC_URL: rpc,
+    FIBER_RPC_PORT: String(rpcPort),
+    FIBER_P2P_PORT: String(p2pPort),
     FIBER_NETWORK: NETWORK,
     FIBER_KEY_PASSWORD: KEY_PASSWORD,
   };
@@ -387,32 +391,6 @@ function hexPubkeyToPeerId(hexPubkey) {
   const sha = createHash('sha256').update(raw).digest();
   const mh = Buffer.concat([Buffer.from([0x12, 0x20]), sha]);
   return base58btcEncode(mh);
-}
-
-// ---------------------------------------------------------------------------
-// Config port patching (replaces the Python helper)
-// ---------------------------------------------------------------------------
-
-function patchNodeConfigPorts(configPath, rpcPort, p2pPort) {
-  let content = readFileSync(configPath, 'utf-8');
-  const lines = content.split('\n');
-  let section = null;
-
-  for (let i = 0; i < lines.length; i++) {
-    const sectionMatch = lines[i].match(/^([a-zA-Z_]+):\s*$/);
-    if (sectionMatch) {
-      section = sectionMatch[1];
-      continue;
-    }
-
-    if (section === 'fiber' && /^\s*listening_addr:\s*/.test(lines[i])) {
-      lines[i] = `  listening_addr: "/ip4/127.0.0.1/tcp/${p2pPort}"`;
-    } else if (section === 'rpc' && /^\s*listening_addr:\s*/.test(lines[i])) {
-      lines[i] = `  listening_addr: "127.0.0.1:${rpcPort}"`;
-    }
-  }
-
-  writeFileSync(configPath, lines.join('\n'), 'utf-8');
 }
 
 // ---------------------------------------------------------------------------
@@ -730,14 +708,26 @@ async function main() {
 
   // ---- Config init ----
   log('Initializing configs');
-  const configInitA = fiberPay('A', 'config', 'init', '--network', NETWORK, '--force', '--json');
+  const configInitA = fiberPay(
+    'A',
+    'config',
+    'init',
+    '--network',
+    NETWORK,
+    '--force',
+    '--json',
+  );
   writeArtifact('node-a.config-init.json', configInitA);
-  const configInitB = fiberPay('B', 'config', 'init', '--network', NETWORK, '--force', '--json');
+  const configInitB = fiberPay(
+    'B',
+    'config',
+    'init',
+    '--network',
+    NETWORK,
+    '--force',
+    '--json',
+  );
   writeArtifact('node-b.config-init.json', configInitB);
-
-  // ---- Patch ports ----
-  patchNodeConfigPorts(join(NODE_A_DIR, 'config.yml'), NODE_A_RPC_PORT, NODE_A_P2P_PORT);
-  patchNodeConfigPorts(join(NODE_B_DIR, 'config.yml'), NODE_B_RPC_PORT, NODE_B_P2P_PORT);
 
   // ---- Binary download ----
   if (!SKIP_BINARY_DOWNLOAD) {

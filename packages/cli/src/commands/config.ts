@@ -15,28 +15,70 @@ function parseNetworkInput(input: string | undefined): FiberNetwork {
   throw new Error(`Invalid network: ${input}. Expected one of: testnet, mainnet`);
 }
 
+function parsePortInput(
+  input: string | undefined,
+  label: 'rpc-port' | 'p2p-port',
+): number | undefined {
+  if (input === undefined) return undefined;
+  const parsed = Number.parseInt(input, 10);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+    throw new Error(`Invalid ${label}: ${input}. Expected integer in range 1-65535.`);
+  }
+  return parsed;
+}
+
+function resolvePort(
+  optionValue: string | undefined,
+  envValue: string | undefined,
+  label: 'rpc-port' | 'p2p-port',
+): { value: number | undefined; source: 'option' | 'env' | 'unset' } {
+  if (optionValue !== undefined) {
+    return { value: parsePortInput(optionValue, label), source: 'option' };
+  }
+  if (envValue !== undefined) {
+    return { value: parsePortInput(envValue, label), source: 'env' };
+  }
+  return { value: undefined, source: 'unset' };
+}
+
 export function createConfigCommand(_config: CliConfig): Command {
   const config = new Command('config').description('Single source configuration management');
 
   config
     .command('init')
+    .option(
+      '--data-dir <path>',
+      'Target data directory (overrides FIBER_DATA_DIR for this command)',
+    )
     .option('--network <network>', 'testnet | mainnet')
+    .option('--rpc-port <port>', 'Override rpc.listening_addr port in generated config')
+    .option('--p2p-port <port>', 'Override fiber.listening_addr port in generated config')
     .option('--force', 'Overwrite existing config file')
     .option('--json')
     .action(async (options) => {
       const effective = getEffectiveConfig();
+      const dataDir = options.dataDir ?? effective.config.dataDir;
       const selectedNetwork = options.network
         ? parseNetworkInput(options.network)
         : effective.config.network;
-      const result = writeNetworkConfigFile(effective.config.dataDir, selectedNetwork, {
+      const rpcPort = resolvePort(options.rpcPort, process.env.FIBER_RPC_PORT, 'rpc-port');
+      const p2pPort = resolvePort(options.p2pPort, process.env.FIBER_P2P_PORT, 'p2p-port');
+      const result = writeNetworkConfigFile(dataDir, selectedNetwork, {
         force: Boolean(options.force),
+        rpcPort: rpcPort.value,
+        p2pPort: p2pPort.value,
       });
 
       const payload = {
         success: true,
         data: {
           configPath: result.path,
+          dataDir,
           network: selectedNetwork,
+          rpcPort: rpcPort.value,
+          rpcPortSource: rpcPort.source,
+          p2pPort: p2pPort.value,
+          p2pPortSource: p2pPort.source,
           created: result.created,
           overwritten: result.overwritten,
           skipped: !result.created && !result.overwritten,
@@ -54,7 +96,16 @@ export function createConfigCommand(_config: CliConfig): Command {
           console.log(`ℹ️  Config already exists: ${result.path}`);
           console.log('   Use --force to overwrite.');
         }
+        if (options.dataDir !== undefined) {
+          console.log(`   Data Dir: ${dataDir} (option)`);
+        } else {
+          console.log(`   Data Dir: ${dataDir} (${effective.sources.dataDir})`);
+        }
         console.log(`   Network: ${selectedNetwork}`);
+        if (rpcPort.value !== undefined)
+          console.log(`   RPC Port: ${rpcPort.value} (${rpcPort.source})`);
+        if (p2pPort.value !== undefined)
+          console.log(`   P2P Port: ${p2pPort.value} (${p2pPort.source})`);
       }
     });
 

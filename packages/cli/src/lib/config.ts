@@ -58,7 +58,7 @@ export function parseRpcUrlFromConfig(configContent: string): string | undefined
 export function writeNetworkConfigFile(
   dataDir: string,
   network: FiberNetwork,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; rpcPort?: number; p2pPort?: number } = {},
 ): { path: string; created: boolean; overwritten: boolean } {
   const configPath = getConfigPath(dataDir);
   const alreadyExists = existsSync(configPath);
@@ -71,7 +71,38 @@ export function writeNetworkConfigFile(
     mkdirSync(dataDir, { recursive: true });
   }
 
-  writeFileSync(configPath, getConfigTemplate(network), 'utf-8');
+  let content = getConfigTemplate(network);
+
+  if (options.rpcPort !== undefined || options.p2pPort !== undefined) {
+    const lines = content.split('\n');
+    let section: string | null = null;
+
+    for (let i = 0; i < lines.length; i++) {
+      const sectionMatch = lines[i].match(/^([a-zA-Z_]+):\s*$/);
+      if (sectionMatch) {
+        section = sectionMatch[1];
+        continue;
+      }
+
+      if (
+        section === 'fiber' &&
+        options.p2pPort !== undefined &&
+        /^\s*listening_addr:\s*/.test(lines[i])
+      ) {
+        lines[i] = `  listening_addr: "/ip4/127.0.0.1/tcp/${options.p2pPort}"`;
+      } else if (
+        section === 'rpc' &&
+        options.rpcPort !== undefined &&
+        /^\s*listening_addr:\s*/.test(lines[i])
+      ) {
+        lines[i] = `  listening_addr: "127.0.0.1:${options.rpcPort}"`;
+      }
+    }
+
+    content = lines.join('\n');
+  }
+
+  writeFileSync(configPath, content, 'utf-8');
   return { path: configPath, created: !alreadyExists, overwritten: alreadyExists };
 }
 

@@ -147,6 +147,11 @@ Useful env overrides:
 - `CHANNEL_FUNDING_CKB`, `INVOICE_AMOUNT_CKB`, `DEPOSIT_AMOUNT_CKB`
 - `NODE_A_RPC_PORT`, `NODE_A_P2P_PORT`, `NODE_B_RPC_PORT`, `NODE_B_P2P_PORT`
 
+Notes:
+
+- The script now passes those port values through `fiber-pay config init --rpc-port/--p2p-port`.
+- No manual `config.yml` port patching is required.
+
 ## Roadmap direction
 
 Near-term focus:
