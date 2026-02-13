@@ -186,6 +186,7 @@ export class BinaryManager {
   buildAssetCandidates(tag: string): AssetCandidate[] {
     const { platform, arch } = this.getPlatformInfo();
     const extensions = platform === 'win32' ? ['zip', 'tar.gz'] : ['tar.gz'];
+    const variants = platform === 'win32' ? ['', '-portable'] : ['-portable', ''];
     const patterns: Array<{ pattern: string; usesRosetta: boolean }> = [
       { pattern: BINARY_PATTERNS[platform][arch], usesRosetta: false },
     ];
@@ -196,10 +197,12 @@ export class BinaryManager {
 
     const candidates: AssetCandidate[] = [];
     for (const { pattern, usesRosetta } of patterns) {
-      for (const ext of extensions) {
-        const name = `fnn_${tag}-${pattern}.${ext}`;
-        const url = `${GITHUB_RELEASES_URL}/download/${tag}/${name}`;
-        candidates.push({ name, url, usesRosetta });
+      for (const variant of variants) {
+        for (const ext of extensions) {
+          const name = `fnn_${tag}-${pattern}${variant}.${ext}`;
+          const url = `${GITHUB_RELEASES_URL}/download/${tag}/${name}`;
+          candidates.push({ name, url, usesRosetta });
+        }
       }
     }
 

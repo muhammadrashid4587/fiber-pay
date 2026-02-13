@@ -1,7 +1,7 @@
 fiber-pay CLI Guide (for Agents)
 ================================
 
-Last updated: 2026-02-12
+Last updated: 2026-02-13
 Fiber node target: v0.6.1
 Primary RPC reference:
 https://github.com/nervosnetwork/fiber/blob/v0.6.1/crates/fiber-lib/src/rpc/README.md
@@ -78,6 +78,10 @@ Core Workflows
 
 Command Surface (Reference)
 ---------------------------
+Config:
+- fiber-pay config init [--data-dir <path>] [--network <testnet|mainnet>] [--rpc-port <port>] [--p2p-port <port>] [--force] [--json]
+- fiber-pay config show [--effective] [--json]
+
 Node:
 - fiber-pay node start [--cors-proxy [port]]
 - fiber-pay node stop
@@ -129,7 +133,66 @@ Environment Variables
 - FIBER_DATA_DIR
 - FIBER_NETWORK (`testnet` | `mainnet`)
 - FIBER_RPC_URL
+- FIBER_RPC_PORT (used by `config init` when `--rpc-port` is not provided)
+- FIBER_P2P_PORT (used by `config init` when `--p2p-port` is not provided)
 - FIBER_KEY_PASSWORD
+
+Config init precedence:
+- `--data-dir` > `FIBER_DATA_DIR` > default (`$HOME/.fiber-pay`)
+- `--network` > `FIBER_NETWORK` > config/default
+- `--rpc-port` > `FIBER_RPC_PORT` > template default
+- `--p2p-port` > `FIBER_P2P_PORT` > template default
+
+Running Multiple Local Nodes (Recommended Pattern)
+--------------------------------------------------
+Use one env file per node and run each node in its own terminal.
+
+1) Create env files
+
+Node A (`.env.node-a`):
+```
+export FIBER_DATA_DIR="$PWD/.tmp/node-a"
+export FIBER_RPC_URL="http://127.0.0.1:8227"
+export FIBER_RPC_PORT="8227"
+export FIBER_P2P_PORT="8228"
+export FIBER_NETWORK="testnet"
+export FIBER_KEY_PASSWORD="fiber-pay-e2e-key"
+```
+
+Node B (`.env.node-b`):
+```
+export FIBER_DATA_DIR="$PWD/.tmp/node-b"
+export FIBER_RPC_URL="http://127.0.0.1:8327"
+export FIBER_RPC_PORT="8327"
+export FIBER_P2P_PORT="8328"
+export FIBER_NETWORK="testnet"
+export FIBER_KEY_PASSWORD="fiber-pay-e2e-key"
+```
+
+2) Initialize each data dir once (ports come from env and must differ)
+```
+source .env.node-a && fiber-pay config init --force --json
+source .env.node-b && fiber-pay config init --force --json
+```
+This writes unique `rpc.listening_addr` and `fiber.listening_addr` values from `FIBER_RPC_PORT`/`FIBER_P2P_PORT`.
+
+3) Start in two separate terminals
+```
+# terminal 1
+source .env.node-a
+fiber-pay node start
+
+# terminal 2
+source .env.node-b
+fiber-pay node start
+```
+
+4) Run commands against a specific node
+Always `source` the target env file in that terminal before running `peer/channel/payment/invoice` commands.
+
+Agent tip:
+- Prefer env files over long inline env prefixes for repeatability.
+- Keep each node in a dedicated terminal session to avoid cross-node env leakage.
 
 Troubleshooting (Agent Checklist)
 ---------------------------------

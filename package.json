@@ -15,6 +15,7 @@
     "lint:fix": "biome check --write packages/sdk/src packages/cli/src packages/node/src packages/agent/src",
     "format": "biome format --write packages/sdk/src packages/cli/src packages/node/src packages/agent/src",
     "format:check": "biome format packages/sdk/src packages/cli/src packages/node/src packages/agent/src",
+    "e2e:testnet": "node scripts/e2e-testnet-dual-node.mjs",
     "prepare": "husky"
   },
   "keywords": [

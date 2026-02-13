@@ -106,14 +106,14 @@ export type CkbInvoiceStatus = 'Open' | 'Cancelled' | 'Expired' | 'Received' | '
 // =============================================================================
 
 export enum ChannelState {
-  NegotiatingFunding = 'NegotiatingFunding',
-  CollaboratingFundingTx = 'CollaboratingFundingTx',
-  SigningCommitment = 'SigningCommitment',
-  AwaitingTxSignatures = 'AwaitingTxSignatures',
-  AwaitingChannelReady = 'AwaitingChannelReady',
-  ChannelReady = 'ChannelReady',
-  ShuttingDown = 'ShuttingDown',
-  Closed = 'Closed',
+  NegotiatingFunding = 'NEGOTIATING_FUNDING',
+  CollaboratingFundingTx = 'COLLABORATING_FUNDING_TX',
+  SigningCommitment = 'SIGNING_COMMITMENT',
+  AwaitingTxSignatures = 'AWAITING_TX_SIGNATURES',
+  AwaitingChannelReady = 'AWAITING_CHANNEL_READY',
+  ChannelReady = 'CHANNEL_READY',
+  ShuttingDown = 'SHUTTING_DOWN',
+  Closed = 'CLOSED',
 }
 
 /** Channel state flags are serialized as flag names by upstream RPC and may evolve. */
