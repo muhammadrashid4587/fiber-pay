@@ -46,9 +46,15 @@ packages/
 ├── cli/      # grouped operator commands
 └── agent/    # LLM-facing orchestration API + MCP schemas
 
-skills/       # deferred for later refresh (after core docs/runtime alignment)
+skills/       # project skills (fiber-pay skill aligned to current CLI + SDK)
 docs/plans/   # architecture/doc intent and execution plans
 ```
+
+Current skill status:
+
+- `skills/fiber-pay` is refreshed and aligned to current CLI grouped commands.
+- CLI authority remains `packages/cli/llm.txt`.
+- Skill focus is CLI-first with SDK reference support.
 
 ## Runtime and UX invariants
 
@@ -143,11 +149,10 @@ pnpm --filter @fiber-pay/cli build
 4. Apple Silicon may use x86_64 binary fallback via Rosetta depending on release artifacts
 5. in async lifecycle code, re-check runtime state after awaits before acting
 
-## Deferred scope note
+## Scope note
 
 Priority decision:
 
 - MCP runtime support is deferred indefinitely.
-- Skill-facing usability/documentation has higher priority than MCP expansion.
 
 As agreed, `@fiber-pay/agent` refactor scope should avoid new MCP runtime commitments unless this decision is explicitly revisited.
