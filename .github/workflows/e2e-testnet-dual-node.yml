@@ -1,0 +1,50 @@
+name: E2E Testnet Dual Node
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_deposit:
+        description: Skip offckb deposit step (use pre-funded addresses)
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  e2e-testnet-dual-node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install offckb
+        if: ${{ !inputs.skip_deposit }}
+        run: npm install -g @offckb/cli 
+
+      - name: Run dual-node testnet E2E
+        env:
+          SKIP_DEPOSIT: ${{ inputs.skip_deposit && '1' || '0' }}
+          FIBER_KEY_PASSWORD: fiber-pay-e2e-key
+        run: node scripts/e2e-testnet-dual-node.mjs
+
+      - name: Upload E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-testnet-dual-node-artifacts
+          path: .artifacts/e2e-testnet-dual-node-*
+          if-no-files-found: ignore

@@ -364,6 +364,36 @@ describe('FiberRpcClient - Polling Helpers', () => {
   });
 
   describe('waitForChannelReady', () => {
+    it('should normalize legacy uppercase channel states from RPC', async () => {
+      const fetchMock = mockFetch({
+        channels: [
+          {
+            channel_id: '0xch-upper',
+            peer_id: 'QmTest',
+            is_public: true,
+            channel_outpoint: null,
+            funding_udt_type_script: null,
+            state: { state_name: 'CHANNEL_READY', state_flags: [] },
+            local_balance: '0x0',
+            remote_balance: '0x0',
+            offered_tlc_balance: '0x0',
+            received_tlc_balance: '0x0',
+            pending_tlcs: [],
+            latest_commitment_transaction_hash: null,
+            created_at: '0x0',
+            enabled: true,
+            tlc_expiry_delta: '0x0',
+            tlc_fee_proportional_millionths: '0x0',
+            shutdown_transaction_hash: null,
+          },
+        ],
+      });
+      globalThis.fetch = fetchMock;
+
+      const result = await client.listChannels({});
+      expect(result.channels[0].state.state_name).toBe('CHANNEL_READY');
+    });
+
     it('should resolve when channel reaches ChannelReady', async () => {
       const fetchMock = mockFetchSequence([
         // First poll: AwaitingChannelReady
@@ -375,7 +405,7 @@ describe('FiberRpcClient - Polling Helpers', () => {
               is_public: true,
               channel_outpoint: null,
               funding_udt_type_script: null,
-              state: { state_name: 'AwaitingChannelReady', state_flags: [] },
+              state: { state_name: 'AWAITING_CHANNEL_READY', state_flags: [] },
               local_balance: '0x0',
               remote_balance: '0x0',
               offered_tlc_balance: '0x0',
@@ -399,7 +429,7 @@ describe('FiberRpcClient - Polling Helpers', () => {
               is_public: true,
               channel_outpoint: null,
               funding_udt_type_script: null,
-              state: { state_name: 'ChannelReady', state_flags: [] },
+              state: { state_name: 'CHANNEL_READY', state_flags: [] },
               local_balance: '0x5f5e100',
               remote_balance: '0x0',
               offered_tlc_balance: '0x0',
@@ -422,7 +452,7 @@ describe('FiberRpcClient - Polling Helpers', () => {
         interval: 10,
       });
 
-      expect(result.state.state_name).toBe('ChannelReady');
+      expect(result.state.state_name).toBe('CHANNEL_READY');
       expect(result.local_balance).toBe('0x5f5e100');
     });
 

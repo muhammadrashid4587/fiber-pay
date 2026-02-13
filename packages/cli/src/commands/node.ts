@@ -5,7 +5,7 @@ import {
   getDefaultBinaryPath,
   ProcessManager,
 } from '@fiber-pay/node';
-import { CorsProxy, scriptToAddress } from '@fiber-pay/sdk';
+import { CorsProxy, createKeyManager, scriptToAddress } from '@fiber-pay/sdk';
 import { Command } from 'commander';
 import { autoConnectBootnodes, extractBootnodeAddrs } from '../lib/bootnode.js';
 import { type CliConfig, ensureNodeConfigFile } from '../lib/config.js';
@@ -42,9 +42,34 @@ export function createNodeCommand(config: CliConfig): Command {
         dataDir: config.dataDir,
         configFilePath,
         chain: config.network,
+        keyPassword: config.keyPassword,
       };
 
+      try {
+        const keyManager = createKeyManager(config.dataDir, {
+          encryptionPassword: config.keyPassword,
+          autoGenerate: true,
+        });
+        await keyManager.initialize();
+      } catch (error) {
+        console.error(
+          `❌ Failed to initialize node keys: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        process.exit(1);
+      }
+
       const processManager = new ProcessManager(nodeConfig);
+      let earlyStop: { code: number | null; signal: NodeJS.Signals | null } | null = null;
+      const formatStopDetails = (
+        stop: { code: number | null; signal: NodeJS.Signals | null } | null,
+      ): string => {
+        if (!stop) return '';
+        return ` (code: ${stop.code ?? 'null'}, signal: ${stop.signal ?? 'null'})`;
+      };
+      processManager.on('stopped', (code, signal) => {
+        earlyStop = { code, signal };
+        removePidFile(config.dataDir);
+      });
       await processManager.start();
       const processManagerState = processManager as unknown as {
         process?: { pid?: number };
@@ -72,10 +97,36 @@ export function createNodeCommand(config: CliConfig): Command {
       }
 
       const rpc = createRpcClient(config);
+      let rpcReady = true;
       try {
         await rpc.waitForReady({ timeout: 30000, interval: 500 });
       } catch {
-        console.error('⚠️  RPC did not become ready within 30s. Node may still be starting.');
+        rpcReady = false;
+      }
+
+      if (earlyStop || processManager.getState() === 'stopped') {
+        const details = formatStopDetails(earlyStop);
+        console.error(`❌ Fiber node exited during startup${details}`);
+        removePidFile(config.dataDir);
+        process.exit(1);
+      }
+
+      if (!rpcReady) {
+        console.error('❌ RPC did not become ready within 30s. Node startup failed.');
+        const stderrTail = processManager.getStderr(12).join('').trim();
+        const stdoutTail = processManager.getStdout(12).join('').trim();
+        if (stderrTail.length > 0) {
+          console.error('--- fnn stderr (tail) ---');
+          console.error(stderrTail);
+        }
+        if (stdoutTail.length > 0) {
+          console.error('--- fnn stdout (tail) ---');
+          console.error(stdoutTail);
+        }
+
+        removePidFile(config.dataDir);
+        await processManager.stop().catch(() => undefined);
+        process.exit(1);
       }
 
       const bootnodes = nodeConfig.configFilePath
@@ -85,6 +136,13 @@ export function createNodeCommand(config: CliConfig): Command {
         await autoConnectBootnodes(rpc, bootnodes);
       }
 
+      if (earlyStop || processManager.getState() === 'stopped') {
+        const details = formatStopDetails(earlyStop);
+        console.error(`❌ Fiber node exited during startup${details}`);
+        removePidFile(config.dataDir);
+        process.exit(1);
+      }
+
       console.log('✅ Fiber node started successfully!');
       console.log(`   RPC endpoint: ${config.rpcUrl}`);
       if (corsProxy) {
@@ -92,7 +150,10 @@ export function createNodeCommand(config: CliConfig): Command {
       }
       console.log('   Press Ctrl+C to stop.');
 
+      let shutdownRequested = false;
       const shutdown = async () => {
+        if (shutdownRequested) return;
+        shutdownRequested = true;
         console.log('\n🛑 Shutting down...');
         if (corsProxy) {
           await corsProxy.stop();
@@ -100,12 +161,41 @@ export function createNodeCommand(config: CliConfig): Command {
         removePidFile(config.dataDir);
         await processManager.stop();
         console.log('✅ Node stopped.');
-        process.exit(0);
       };
 
-      process.on('SIGINT', shutdown);
-      process.on('SIGTERM', shutdown);
-      await new Promise(() => {});
+      await new Promise<void>((resolve) => {
+        const keepAlive = setInterval(() => undefined, 60_000);
+
+        const cleanup = () => {
+          clearInterval(keepAlive);
+          process.off('SIGINT', onSigInt);
+          process.off('SIGTERM', onSigTerm);
+          processManager.off('stopped', onStopped);
+          resolve();
+        };
+
+        const onStopped = () => {
+          cleanup();
+        };
+
+        const onSigInt = () => {
+          shutdown().finally(cleanup);
+        };
+
+        const onSigTerm = () => {
+          shutdown().finally(cleanup);
+        };
+
+        process.on('SIGINT', onSigInt);
+        process.on('SIGTERM', onSigTerm);
+        processManager.on('stopped', onStopped);
+      });
+
+      if (!shutdownRequested) {
+        console.error('❌ Fiber node stopped unexpectedly.');
+        removePidFile(config.dataDir);
+        process.exit(1);
+      }
     });
 
   node.command('stop').action(async () => {

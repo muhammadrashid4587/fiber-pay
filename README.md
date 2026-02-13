@@ -116,6 +116,37 @@ pnpm --filter @fiber-pay/cli build
 pnpm --filter @fiber-pay/sdk test
 ```
 
+## Dual-node testnet E2E script (CI-ready)
+
+The repository includes an end-to-end script that runs two isolated local Fiber nodes (different `FIBER_DATA_DIR` + different ports), then executes:
+
+- peer connect
+- channel open
+- invoice create
+- payment send
+- channel close
+
+Script:
+
+```bash
+node scripts/e2e-testnet-dual-node.mjs
+```
+
+Notes:
+
+- Uses static port split by default: node A (`8227/8228`), node B (`8327/8328`)
+- Uses `offckb deposit --network testnet <address> <amount>` unless `SKIP_DEPOSIT=1`
+- Stores logs and JSON outputs under `.artifacts/e2e-testnet-dual-node-*`
+
+Useful env overrides:
+
+- `SKIP_BUILD=1` (skip `pnpm build` inside script)
+- `SKIP_DEPOSIT=1` (for pre-funded addresses)
+- `SKIP_BINARY_DOWNLOAD=1` (reuse existing binary in each data dir)
+- `FIBER_BINARY_VERSION=v0.6.1` (pin download version)
+- `CHANNEL_FUNDING_CKB`, `INVOICE_AMOUNT_CKB`, `DEPOSIT_AMOUNT_CKB`
+- `NODE_A_RPC_PORT`, `NODE_A_P2P_PORT`, `NODE_B_RPC_PORT`, `NODE_B_P2P_PORT`
+
 ## Roadmap direction
 
 Near-term focus:

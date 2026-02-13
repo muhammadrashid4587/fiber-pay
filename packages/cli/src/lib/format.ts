@@ -71,6 +71,7 @@ export function parseChannelState(input: string | undefined): ChannelState | und
   if (!input) return undefined;
   const trimmed = input.trim();
   const legacy = trimmed.toUpperCase();
+  const normalizedInput = trimmed.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
   const legacyMap: Record<string, ChannelState> = {
     NEGOTIATING_FUNDING: ChannelState.NegotiatingFunding,
@@ -86,7 +87,8 @@ export function parseChannelState(input: string | undefined): ChannelState | und
   if (legacy in legacyMap) return legacyMap[legacy];
 
   for (const value of Object.values(ChannelState)) {
-    if (value.toLowerCase() === trimmed.toLowerCase()) return value;
+    const normalizedValue = value.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    if (normalizedValue === normalizedInput) return value;
   }
 
   return undefined;
