@@ -39,6 +39,8 @@ import { platform } from 'node:os';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT_DIR = resolve(__dirname, '..');
+const CLI_DIR = join(ROOT_DIR, 'packages', 'cli');
+const CLI_ENTRY = join(CLI_DIR, 'dist', 'cli.js');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -269,19 +271,19 @@ function fiberPayEnv(nodeName) {
 }
 
 function fiberPay(nodeName, ...args) {
-  return run('pnpm', ['--filter', '@fiber-pay/cli', 'exec', 'fiber-pay', ...args], {
+  return run('pnpm', ['--filter', '@fiber-pay/cli', 'exec', 'node', CLI_ENTRY, ...args], {
     envOverrides: fiberPayEnv(nodeName),
   });
 }
 
 function fiberPaySafe(nodeName, ...args) {
-  return runSafe('pnpm', ['--filter', '@fiber-pay/cli', 'exec', 'fiber-pay', ...args], {
+  return runSafe('pnpm', ['--filter', '@fiber-pay/cli', 'exec', 'node', CLI_ENTRY, ...args], {
     envOverrides: fiberPayEnv(nodeName),
   });
 }
 
 function fiberPaySpawn(nodeName, args, logPath) {
-  return spawnDetached('pnpm', ['--filter', '@fiber-pay/cli', 'exec', 'fiber-pay', ...args], {
+  return spawnDetached('pnpm', ['--filter', '@fiber-pay/cli', 'exec', 'node', CLI_ENTRY, ...args], {
     envOverrides: fiberPayEnv(nodeName),
     logPath,
   });
