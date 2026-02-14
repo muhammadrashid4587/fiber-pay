@@ -116,3 +116,11 @@ Useful env overrides:
 - `FIBER_BINARY_VERSION=v0.6.1`
 - `CHANNEL_FUNDING_CKB`, `INVOICE_AMOUNT_CKB`, `DEPOSIT_AMOUNT_CKB`
 - `NODE_A_RPC_PORT`, `NODE_A_P2P_PORT`, `NODE_B_RPC_PORT`, `NODE_B_P2P_PORT`
+
+## TODO
+
+- [ ] alert new channel to accept and add funding
+- [ ] alert new invoice comming
+- [ ] alert new payment comming
+- [ ] channel status snapshot check
+- [ ] alert channel closed

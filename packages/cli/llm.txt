@@ -1,354 +1,114 @@
 fiber-pay CLI Guide (for Agents)
 ================================
 
-Last updated: 2026-02-14
+Last updated: 2026-02-13
 Fiber node target: v0.6.1
 Primary RPC reference:
 https://github.com/nervosnetwork/fiber/blob/v0.6.1/crates/fiber-lib/src/rpc/README.md
 
 Purpose
 -------
-This file is the source-of-truth for how `@fiber-pay/cli` works and how an agent should execute tasks.
-Treat this document as an entry gateway: read it first, follow its defaults, then run commands.
+This file is the source-of-truth for how `@fiber-pay/cli` works. 
+You, the agent, should use it to equip yourself with a p2p payment system.
+Use this document for runtime behavior, command selection, output conventions, and troubleshooting.
 
-Agent Entry Protocol (Read This First)
---------------------------------------
-When an agent receives a Fiber task, execute this order:
-
-1) Check installation status first
-- Read "Installation (from source, current)" in this file.
-- Confirm CLI is available with `fiber-pay --help`.
-
-2) Read CLI authority (this file)
-- Read `packages/cli/llm.txt` before issuing CLI commands.
-- Do not invent command forms that are not documented here.
-
-3) Ask one initialization question to your user
-- Ask: "Do you want a custom `FIBER_KEY_PASSWORD`, or use the default password?"
-- If user does not care / no security constraint is stated, use default startup behavior.
-
-4) Pick startup mode
-- Single local node (most common): run `fiber-pay node start` directly.
-- Multi-node / custom ports / isolation: use env vars or env files (see "Running Multiple Local Nodes").
-
-Recommended default sequence:
-- install/link CLI (if needed) -> `fiber-pay --help` -> `fiber-pay binary download` -> `fiber-pay node start` -> `fiber-pay node status`
-
-Single-Node Quick Start (Default)
----------------------------------
-For normal local usage, do not require env vars.
-
-Minimal path:
-1) `fiber-pay binary download`
-2) `fiber-pay node start`
-3) `fiber-pay node status`
-
-Password behavior in default path:
-- If `FIBER_KEY_PASSWORD` is not set, `node start` uses fallback password `fiber-pay-default-key`.
-- Full default values are listed in "Environment Variables" below.
-
-Agent behavior rule:
-- Never force env setup for single-node quick start unless user explicitly requests custom data dir, ports, network, binary path, or password policy.
-
-Installation (from source, current)
------------------------------------
-`@fiber-pay/cli` is not published to npm yet. Install from repository source.
-
-From a clean machine:
+## 🛠️ Installation
+Source: `https://github.com/RetricSu/fiber-pay`
 ```bash
-git clone https://github.com/RetricSu/fiber-pay.git
-cd fiber-pay
-pnpm install
-pnpm build
-cd packages/cli
-pnpm link --global
-```
-
-If already inside the repository:
-```bash
-pnpm install
-pnpm build
-cd packages/cli
-pnpm link --global
-```
-
-Verify CLI is available:
-```bash
+# Install & Link
+git clone https://github.com/RetricSu/fiber-pay.git && cd fiber-pay
+pnpm install && pnpm build
+cd packages/cli && pnpm link --global
+# Verify
 fiber-pay --help
 ```
 
-Uninstall / relink CLI globally:
+## 🛡️ Agent Policy
+1. **Initialization**: Ask user: "Custom `FIBER_KEY_PASSWORD` or default?" before starting.
+2. **Format**: Always use `--json` for machine parsing; use human-readable for user troubleshooting.
+3. **Safety**: Do NOT invent undocumented commands. Do NOT force env setup for single-node quickstart unless requested.
+4. **Style**: Use explicit grouped commands (e.g., `fiber-pay node start`), never legacy aliases.
+
+## ⚙️ Configuration & Environment
+**Defaults**: Data Dir: `$HOME/.fiber-pay` | Network: `testnet` | RPC: `127.0.0.1:8227`
+**Priority**: CLI Flags > Env Vars > Config File > Defaults
+
+| Env Var | Description | Default |
+| :--- | :--- | :--- |
+| `FIBER_DATA_DIR` | Node data storage | `$HOME/.fiber-pay` |
+| `FIBER_RPC_URL` | Target Node RPC | `http://127.0.0.1:8227` |
+| `FIBER_RPC_PORT` | Port for `config init` | `8227` |
+| `FIBER_P2P_PORT` | Port for `config init` | `8228` |
+| `FIBER_KEY_PASSWORD`| Keystore password | `fiber-pay-default-key` |
+| `FIBER_NETWORK` | `mainnet` or `testnet` | `testnet` |
+
+**Multi-Node Pattern**:
+Create separate `.env` files (e.g., `.env.node-a`, `.env.node-b`) with unique `FIBER_DATA_DIR`, `FIBER_RPC_PORT`, `FIBER_P2P_PORT`.
+Usage: `source .env.node-a && fiber-pay node start`
+
+## 💻 Command Surface
+*Add `--json` to any command for structured output.*
+
+### Lifecycle (`node`)
+*   `start [--cors-proxy <port>]`: Start node (foreground).
+*   `stop`: Stop node.
+*   `status`: Check process status.
+*   `info`: Get node ID and version details.
+
+### Setup (`binary`, `config`)
+*   `binary download [--version v0.6.1] [--force]`: Fetch fiber node binary.
+*   `binary info`: Show binary path/version.
+*   `config init [--data-dir <path>] [--network <net>] [--rpc-port <port>] [--p2p-port <port>] [--force]`: Initialize config.
+*   `config show [--effective]`: Display current config.
+
+### Operations (`channel`, `invoice`, `payment`)
+*   **Channel**:
+    *   `list [--state <state>] [--peer <id>] [--include-closed]`: List channels.
+    *   `open --peer <multiaddr> --funding <CKB> [--private]`: Open channel.
+    *   `close <id> [--force]`: Close channel.
+    *   `update <id> [--enabled <bool>] ...`: Update TLC/fee settings.
+    *   `watch`: Monitor channel state changes.
+*   **Invoice**:
+    *   `create --amount <CKB> --description <txt> [--expiry <min>]`: Gen invoice.
+    *   `get <paymentHash>`: Query invoice status.
+    *   `cancel <paymentHash>`: Cancel invoice.
+    *   `settle <paymentHash> --preimage <hex>`: Manually settle.
+*   **Payment**:
+    *   `send <invoice> | --to <nodeId> --amount <CKB>`: Pay an invoice.
+    *   `get <paymentHash>`: Check payment status.
+    *   `watch <paymentHash>`: Monitor payment outcome.
+
+### Network & Info (`peer`, `balance`)
+*   `peer list`: Show connected peers.
+*   `peer connect <multiaddr>`: Connect to peer.
+*   `peer disconnect <peerId>`: Disconnect.
+*   `balance`: Show local CKB balance.
+
+## 🚀 Common Workflows
+
+**1. Quick Start (Single Node)**
 ```bash
-# from anywhere
-pnpm unlink --global @fiber-pay/cli
-
-# relink from repository
-cd /path/to/fiber-pay/packages/cli
-pnpm link --global
-```
-
-CLI Mental Model
-----------------
-`fiber-pay` has grouped commands:
-- `node`     lifecycle / process state
-- `channel`  channel lifecycle + status
-- `invoice`  invoice lifecycle + status
-- `payment`  payment lifecycle + status
-- `peer`     peer connectivity
-- `binary`   fnn binary download/info
-- `balance`  balance summary
-
-Most business commands are RPC-driven and require a running Fiber node.
-
-Runtime Behavior (Important Defaults)
--------------------------------------
-Node start behavior:
-- `fiber-pay node start` starts Fiber node in foreground.
-- Bootnode auto-connect is enabled: after RPC readiness, bootnodes from config are connected automatically.
-- CORS proxy is optional, not default:
-  - `fiber-pay node start --cors-proxy` => starts proxy on `28227`
-  - `fiber-pay node start --cors-proxy 3000` => starts proxy on custom port
-- On shutdown (`Ctrl+C`), node and optional CORS proxy are stopped.
-
-RPC readiness behavior:
-- RPC commands wait for node readiness via SDK client helper.
-- If node is not ready/running, command fails with an actionable error.
-
-Output Conventions
-------------------
-- Default output: human-readable (operator-friendly).
-- `--json`: machine-readable payload for automation.
-- Fatal path with `--json`: structured `{ success: false, error: ... }` output.
-
-Agent rule:
-- If output will be parsed downstream, always pass `--json`.
-- For interactive troubleshooting, prefer default human output.
-
-Core Workflows
---------------
-1) Bootstrap node
-- `fiber-pay binary download`
-- `fiber-pay node start`
-- `fiber-pay node status`
-- `fiber-pay node info --json`
-
-2) Receive payment (invoice flow)
-- `fiber-pay invoice create --amount 10 --description "service"`
-- `fiber-pay invoice get <paymentHash>`
-- Optional: `fiber-pay invoice cancel <paymentHash>`
-
-3) Send payment
-- `fiber-pay payment send <invoice>`
-- `fiber-pay payment get <paymentHash>`
-- `fiber-pay payment watch <paymentHash>`
-
-4) Channel operations
-- `fiber-pay channel list`
-- `fiber-pay channel get <channelId>`
-- `fiber-pay channel open --peer <peerIdOrMultiaddr> --funding <CKB>`
-- `fiber-pay channel close <channelId>`
-
-5) Connectivity + liquidity checks
-- `fiber-pay peer list`
-- `fiber-pay balance`
-
-Command Surface (Reference)
----------------------------
-Config:
-- fiber-pay config init [--data-dir <path>] [--network <testnet|mainnet>] [--rpc-port <port>] [--p2p-port <port>] [--force] [--json]
-- fiber-pay config show [--effective] [--json]
-
-Node:
-- fiber-pay node start [--cors-proxy [port]]
-- fiber-pay node stop
-- fiber-pay node status
-- fiber-pay node info [--json]
-
-Channel:
-- fiber-pay channel list [--state <state>] [--peer <peerId>] [--include-closed] [--raw] [--json]
-- fiber-pay channel get <channelId> [--raw] [--json]
-- fiber-pay channel watch [--interval <sec>] [--timeout <sec>] [--channel <id>] [--peer <id>] [--state <state>] [--until <state>] [--include-closed] [--no-clear] [--json]
-- fiber-pay channel open --peer <peerIdOrMultiaddr> --funding <CKB> [--private]
-- fiber-pay channel close <channelId> [--force]
-- fiber-pay channel abandon <channelId>
-- fiber-pay channel update <channelId> [--enabled <true|false>] [--tlc-expiry-delta <ms>] [--tlc-minimum-value <hex>] [--tlc-fee-proportional-millionths <value>]
-
-Invoice:
-- fiber-pay invoice create [amount] [--amount <CKB>] [--description <text>] [--expiry <minutes>]
-- fiber-pay invoice get <paymentHash> [--json]
-- fiber-pay invoice parse <invoiceString>
-- fiber-pay invoice cancel <paymentHash> [--json]
-- fiber-pay invoice settle <paymentHash> --preimage <0x...> [--json]
-
-Payment:
-- fiber-pay payment send [invoice] [--invoice <invoice>] [--to <nodeId>] [--amount <CKB>] [--max-fee <CKB>] [--json]
-- fiber-pay payment get <paymentHash> [--json]
-- fiber-pay payment watch <paymentHash> [--interval <sec>] [--timeout <sec>] [--json]
-
-Peer:
-- fiber-pay peer list [--json]
-- fiber-pay peer connect <multiaddr> [--json]
-- fiber-pay peer disconnect <peerId> [--json]
-
-Binary:
-- fiber-pay binary download [--version <vX.Y.Z>] [--force] [--json] (default version: v0.6.1)
-- fiber-pay binary info [--json]
-
-Convenience:
-- fiber-pay balance [--json]
-
-Command Style Policy
---------------------
-- Grouped commands are the only supported CLI style.
-- Legacy top-level aliases are intentionally removed to avoid ambiguous usage.
-- Use explicit grouped forms only (for example: `fiber-pay node start`, `fiber-pay binary info`).
-
-Environment Variables
----------------------
-- FIBER_BINARY_PATH (default: unset; runtime uses default install path under `$HOME/.fiber-pay/bin/fnn`)
-- FIBER_DATA_DIR (default: `$HOME/.fiber-pay`)
-- FIBER_NETWORK (`testnet` | `mainnet`) (default: value from `config.yml` if present, otherwise `testnet`)
-- FIBER_RPC_URL (default: value from `config.yml` if present, otherwise `http://127.0.0.1:8227`)
-- FIBER_RPC_PORT (used by `config init` when `--rpc-port` is not provided; default: unset env, template fallback `8227`)
-- FIBER_P2P_PORT (used by `config init` when `--p2p-port` is not provided; default: unset env, template fallback `8228`)
-- FIBER_KEY_PASSWORD (optional; default: unset env, `node start` fallback password is `fiber-pay-default-key`)
-- FIBER_CKB_RPC_URL (optional override for on-chain queries; default: unset, falls back to `ckb.rpc_url` in `config.yml`)
-
-Config init precedence:
-- `--data-dir` > `FIBER_DATA_DIR` > default (`$HOME/.fiber-pay`)
-- `--network` > `FIBER_NETWORK` > config/default
-- `--rpc-port` > `FIBER_RPC_PORT` > template default
-- `--p2p-port` > `FIBER_P2P_PORT` > template default
-
-Running Multiple Local Nodes (Recommended Pattern)
---------------------------------------------------
-Use one env file per node and run each node in its own terminal.
-
-1) Create env files
-
-Node A (`.env.node-a`):
-```
-export FIBER_DATA_DIR="$PWD/.tmp/node-a"
-export FIBER_RPC_URL="http://127.0.0.1:8227"
-export FIBER_RPC_PORT="8227"
-export FIBER_P2P_PORT="8228"
-export FIBER_NETWORK="testnet"
-export FIBER_KEY_PASSWORD="fiber-pay-e2e-key"
-```
-
-Node B (`.env.node-b`):
-```
-export FIBER_DATA_DIR="$PWD/.tmp/node-b"
-export FIBER_RPC_URL="http://127.0.0.1:8327"
-export FIBER_RPC_PORT="8327"
-export FIBER_P2P_PORT="8328"
-export FIBER_NETWORK="testnet"
-export FIBER_KEY_PASSWORD="fiber-pay-e2e-key"
-```
-
-2) Initialize each data dir once (ports come from env and must differ)
-```
-source .env.node-a && fiber-pay config init --force --json
-source .env.node-b && fiber-pay config init --force --json
-```
-This writes unique `rpc.listening_addr` and `fiber.listening_addr` values from `FIBER_RPC_PORT`/`FIBER_P2P_PORT`.
-
-3) Start in two separate terminals
-```
-# terminal 1
-source .env.node-a
+fiber-pay binary download
 fiber-pay node start
-
-# terminal 2
-source .env.node-b
-fiber-pay node start
+# In new terminal:
+fiber-pay node status
 ```
 
-4) Run commands against a specific node
-Always `source` the target env file in that terminal before running `peer/channel/payment/invoice` commands.
-
-Agent tip:
-- Prefer env files over long inline env prefixes for repeatability.
-- Keep each node in a dedicated terminal session to avoid cross-node env leakage.
-
-Persistent Background Run (Linux systemd)
------------------------------------------
-Use `systemd` when Fiber node should keep running in background and auto-restart.
-
-1) Create service file (`/etc/systemd/system/fiber-pay.service`)
-```ini
-[Unit]
-Description=Fiber Pay Node
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=<your-linux-user>
-WorkingDirectory=/path/to/fiber-pay
-Environment=FIBER_DATA_DIR=/home/<your-linux-user>/.fiber-pay
-Environment=FIBER_RPC_URL=http://127.0.0.1:8227
-Environment=FIBER_NETWORK=testnet
-Environment=FIBER_KEY_PASSWORD=fiber-pay-default-key
-ExecStart=/usr/local/bin/fiber-pay node start
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-```
-
-2) Enable and start
+**2. Receive Payment**
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable fiber-pay
-sudo systemctl start fiber-pay
+fiber-pay invoice create --amount 10 --description "Test"
+# Returns <invoice_string> and <payment_hash>
+fiber-pay invoice get <payment_hash>
 ```
 
-3) Operations
+**3. Send Payment**
 ```bash
-sudo systemctl status fiber-pay
-sudo systemctl restart fiber-pay
-sudo systemctl stop fiber-pay
-journalctl -u fiber-pay -f
+fiber-pay payment send <invoice_string>
+fiber-pay payment watch <payment_hash>
 ```
 
-Agent notes:
-- Keep `ExecStart` pointing to actual `fiber-pay` path on target machine (`which fiber-pay`).
-- If you require custom binary location, set `Environment=FIBER_BINARY_PATH=...` in the service.
-- Prefer non-default `FIBER_KEY_PASSWORD` for production.
-
-Troubleshooting (Agent Checklist)
----------------------------------
-1) "RPC not responding" or request timeout
-- Verify process: `fiber-pay node status`
-- Ensure endpoint: check `FIBER_RPC_URL`
-- Restart node if needed: `fiber-pay node stop && fiber-pay node start`
-
-2) Browser cannot call RPC
-- Start with proxy: `fiber-pay node start --cors-proxy`
-- Use proxy URL (`http://127.0.0.1:28227` by default)
-
-3) Binary missing or not executable
-- `fiber-pay binary info`
-- `fiber-pay binary download --force`
-
-4) Apple Silicon download fallback issues
-- If x86_64 fallback is selected, Rosetta 2 is required:
-  `softwareupdate --install-rosetta --agree-to-license`
-
-Maintenance Notes (for CLI contributors)
-----------------------------------------
-Relevant code layout:
-- src/index.ts (root command/error handling)
-- src/commands/* (command groups)
-- src/lib/* (shared config/rpc/format/pid/bootnode)
-
-When changing CLI behavior:
-1) Keep grouped command semantics stable.
-2) Keep output convention stable (human default + `--json`).
-3) Do not add legacy-style top-level aliases.
-4) Validate:
-   - pnpm --filter @fiber-pay/cli typecheck
-   - pnpm --filter @fiber-pay/cli build
-5) Update this file when command behavior or guidance changes.
+## 🔧 Troubleshooting
+*   **RPC Error**: Check `fiber-pay node status`. Verify `FIBER_RPC_URL` matches the running node.
+*   **Browser Access**: Must run with `fiber-pay node start --cors-proxy`.
+*   **Apple Silicon**: If x86_64 fallback used, run `softwareupdate --install-rosetta`.
+```
