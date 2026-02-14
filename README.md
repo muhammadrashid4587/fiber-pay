@@ -57,23 +57,7 @@ Use `--json` when command output will be consumed by scripts or agents.
 Use this prompt in Cursor/Claude/Copilot/other agents:
 
 ```text
-Use this Fiber CLI source-of-truth document:
-https://raw.githubusercontent.com/RetricSu/fiber-pay/master/packages/cli/llm.txt
-
-Before running any Fiber command, read that URL completely and treat it as the CLI source of truth.
-
-Then equip yourself with fiber-pay operational behavior:
-- Follow the Agent Entry Protocol in llm.txt.
-- Prefer grouped commands only: node/channel/invoice/payment/peer/binary/balance.
-- For automation, always use --json outputs.
-- Default to single-node quick start unless I explicitly ask for multi-node/custom ports.
-
-After reading the llm.txt document, summarize:
-1) startup defaults,
-2) required env vars (if any),
-3) exact commands you plan to run.
-
-Then execute the task.
+Follow this document https://raw.githubusercontent.com/RetricSu/fiber-pay/master/packages/cli/llm.txt to equip yourself with a p2p payment system.
 ```
 
 ## Source of truth
