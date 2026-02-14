@@ -12,6 +12,7 @@ describe('@fiber-pay/sdk/browser entry', () => {
     expect(typeof browserSdk.nodeIdToPeerId).toBe('function');
     expect(typeof browserSdk.buildMultiaddr).toBe('function');
     expect(typeof browserSdk.buildMultiaddrFromNodeId).toBe('function');
+    expect(typeof browserSdk.buildMultiaddrFromRpcUrl).toBe('function');
     expect(typeof browserSdk.randomBytes32).toBe('function');
     expect(typeof browserSdk.scriptToAddress).toBe('function');
   });

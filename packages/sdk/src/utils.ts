@@ -129,3 +129,45 @@ export async function buildMultiaddrFromNodeId(address: string, nodeId: string):
   const peerId = await nodeIdToPeerId(nodeId);
   return buildMultiaddr(address, peerId);
 }
+
+/**
+ * Build a best-effort local multiaddr from an RPC URL and peer id.
+ * Uses rpcPort + 1 as inferred P2P port when advertised addresses are unavailable.
+ */
+export function buildMultiaddrFromRpcUrl(rpcUrl: string, peerId: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(rpcUrl);
+  } catch {
+    throw new Error(`Invalid RPC URL: ${rpcUrl}`);
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`Unsupported RPC protocol: ${parsed.protocol}`);
+  }
+
+  const port = parsed.port
+    ? Number.parseInt(parsed.port, 10)
+    : parsed.protocol === 'https:'
+      ? 443
+      : 80;
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    throw new Error(`Invalid RPC port in URL: ${rpcUrl}`);
+  }
+
+  const p2pPort = port + 1;
+  if (p2pPort > 65535) {
+    throw new Error(`Cannot infer P2P port from RPC port ${port}`);
+  }
+
+  const host = parsed.hostname;
+  const isIpv4 = /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host);
+  const isIpv6 = host.includes(':');
+  const base = isIpv4
+    ? `/ip4/${host}/tcp/${p2pPort}`
+    : isIpv6
+      ? `/ip6/${host}/tcp/${p2pPort}`
+      : `/dns/${host}/tcp/${p2pPort}`;
+
+  return buildMultiaddr(base, peerId);
+}

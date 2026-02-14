@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildMultiaddr,
   buildMultiaddrFromNodeId,
+  buildMultiaddrFromRpcUrl,
   toHex,
   fromHex,
   ckbToShannons,
@@ -106,6 +107,12 @@ describe('RPC Utilities', () => {
       const multiaddr = await buildMultiaddrFromNodeId(addr, nodeId);
 
       expect(multiaddr).toMatch(/^\/ip4\/127\.0\.0\.1\/tcp\/8228\/p2p\/Qm[1-9A-HJ-NP-Za-km-z]{44}$/);
+    });
+
+    it('should infer multiaddr from rpc url + peer id', () => {
+      const peerId = 'QmNT9LSP5TBkD7Zbazg3gHby495awqeMeEqUgvdz4tNU9M';
+      const multiaddr = buildMultiaddrFromRpcUrl('http://127.0.0.1:8227', peerId);
+      expect(multiaddr).toBe('/ip4/127.0.0.1/tcp/8228/p2p/QmNT9LSP5TBkD7Zbazg3gHby495awqeMeEqUgvdz4tNU9M');
     });
   });
 });

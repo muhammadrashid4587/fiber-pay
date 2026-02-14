@@ -17,6 +17,7 @@ export type * from './types/index.js';
 export {
   buildMultiaddr,
   buildMultiaddrFromNodeId,
+  buildMultiaddrFromRpcUrl,
   ckbToShannons,
   fromHex,
   nodeIdToPeerId,

@@ -7,6 +7,7 @@ import {
 } from '@fiber-pay/node';
 import {
   buildMultiaddrFromNodeId,
+  buildMultiaddrFromRpcUrl,
   CorsProxy,
   createKeyManager,
   nodeIdToPeerId,
@@ -262,7 +263,17 @@ export function createNodeCommand(config: CliConfig): Command {
             console.log(`   Multiaddr: unavailable (${reason})`);
           }
         } else if (peerId) {
-          console.log('   Multiaddr: unavailable (no advertised addresses)');
+          try {
+            const inferredMultiaddr = buildMultiaddrFromRpcUrl(config.rpcUrl, peerId);
+            console.log(
+              `   Multiaddr: ${inferredMultiaddr} (inferred from RPC + peerId; no advertised addresses)`,
+            );
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            console.log(
+              `   Multiaddr: unavailable (no advertised addresses; infer failed: ${reason})`,
+            );
+          }
         } else {
           console.log('   Multiaddr: unavailable');
         }
