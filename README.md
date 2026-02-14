@@ -1,33 +1,27 @@
 # fiber-pay
 
-AI payment layer for CKB Lightning (Fiber Network), anchored to Fiber `v0.6.1`.
+AI-friendly SDK + CLI for CKB Lightning on Fiber Network.
 
-## Project intent
+Fiber target: `v0.6.1`
 
-fiber-pay is built as an **AI payment layer** first.
+## Positioning
 
-`@fiber-pay/sdk`, `@fiber-pay/node`, and `@fiber-pay/cli` are exposed as foundational layers so this payment layer is practical to build, run, and debug.
+`fiber-pay` is built to make Fiber programmable for both humans and AI agents:
 
-In short:
+- `@fiber-pay/sdk`: typed building blocks for Fiber RPC, verification, and policy logic
+- `@fiber-pay/cli`: stable operator + automation interface with machine-readable output
+- `@fiber-pay/node`: local runtime substrate for managing the `fnn` binary lifecycle
 
-- Product center: AI-facing payment orchestration
-- Support layers: SDK + Node + CLI
-- Protocol anchor: Fiber `v0.6.1`
+This repository currently emphasizes SDK + CLI quality and agent usability through clear command contracts.
 
-## Current status
+## Why this repo is AI-friendly
 
-`@fiber-pay/agent` is functional, but **not fully aligned** with its target role yet (orchestration runtime with stronger flow/state/governance boundaries). A focused refactor is planned after docs alignment.
+- Canonical CLI guide for agents: `packages/cli/llm.txt`
+- Predictable grouped commands (`node/channel/invoice/payment/peer/binary/balance`)
+- `--json` output for reliable parsing and tool chaining
+- Explicit defaults for startup, ports, binary path, and key password behavior
 
-## Package roles
-
-| Package | Role |
-|---|---|
-| `@fiber-pay/sdk` | Protocol/domain primitives (RPC client, types, verification, policy/lifecycle helpers) |
-| `@fiber-pay/node` | Binary + process lifecycle substrate for local `fnn` runtime |
-| `@fiber-pay/cli` | Operator surface for lifecycle/status workflows |
-| `@fiber-pay/agent` | LLM-facing orchestration surface and MCP tool schemas |
-
-## Quick start (operator path)
+## Quick start
 
 Prerequisites:
 
@@ -41,64 +35,52 @@ cd packages/cli && pnpm link --global
 ```
 
 ```bash
-# Bootstrap runtime
+fiber-pay --help
 fiber-pay binary download
 fiber-pay node start
 fiber-pay node status
+```
 
-# Basic workflows
+Common workflows:
+
+```bash
 fiber-pay balance
 fiber-pay channel list
 fiber-pay invoice create --amount 10 --description "service"
 fiber-pay payment send <invoice>
 ```
 
-Use `--json` for machine parsing.
+Use `--json` when command output will be consumed by scripts or agents.
 
-## Quick start (agent API path)
+## Copy-paste prompt for your coding agent
 
-```ts
-import { createFiberPay } from '@fiber-pay/agent';
+Use this prompt in Cursor/Claude/Copilot/other agents:
 
-const fiber = createFiberPay({
-  dataDir: `${process.env.HOME}/.fiber-pay`,
-  network: 'testnet',
-});
+```text
+Use this Fiber CLI source-of-truth document:
+https://raw.githubusercontent.com/RetricSu/fiber-pay/main/packages/cli/llm.txt
 
-const init = await fiber.initialize();
-if (!init.success) throw new Error(init.error?.message ?? 'init failed');
+Before running any Fiber command, read that URL completely and treat it as the CLI source of truth.
 
-const balance = await fiber.getBalance();
-console.log(balance.data);
+Then equip yourself with fiber-pay operational behavior:
+- Follow the Agent Entry Protocol in llm.txt.
+- Prefer grouped commands only: node/channel/invoice/payment/peer/binary/balance.
+- For automation, always use --json outputs.
+- Default to single-node quick start unless I explicitly ask for multi-node/custom ports.
 
-await fiber.shutdown();
+After reading the llm.txt document, summarize:
+1) startup defaults,
+2) required env vars (if any),
+3) exact commands you plan to run.
+
+Then execute the task.
 ```
 
-## CLI source of truth
+## Source of truth
 
-CLI runtime behavior, command surface, and output conventions are maintained in:
-
-- `packages/cli/llm.txt`
-
-Design policy:
-
-- grouped commands only (`node/channel/invoice/payment/peer/binary/balance`)
-- human-readable output by default
-- `--json` for automation and downstream parsing
-
-## MCP note
-
-`@fiber-pay/agent/mcp` exports MCP tool definitions (schemas and types).
-
-Host-side MCP runtime execution wiring is still required in your integration layer.
-
-## Documentation map
-
-- Project intent baseline: `docs/plans/ai-payment-layer-intent.md`
-- Docs rewrite plan: `docs/plans/docs-rewrite.md`
-- Agent package doc: `packages/agent/README.md`
-- CLI canonical guide: `packages/cli/llm.txt`
-- Maintainer guide: `AGENT.md`
+- CLI behavior + command reference: `packages/cli/llm.txt`
+- Maintainer alignment notes: `AGENT.md`
+- Intent docs: `docs/plans/ai-payment-layer-intent.md`
 
 ## Development
 
@@ -108,54 +90,29 @@ pnpm test
 pnpm build
 ```
 
-Useful package-scoped checks:
+Package-scoped checks:
 
 ```bash
+pnpm --filter @fiber-pay/sdk test
 pnpm --filter @fiber-pay/cli typecheck
 pnpm --filter @fiber-pay/cli build
-pnpm --filter @fiber-pay/sdk test
 ```
 
-## Dual-node testnet E2E script (CI-ready)
+## E2E dual-node script
 
-The repository includes an end-to-end script that runs two isolated local Fiber nodes (different `FIBER_DATA_DIR` + different ports), then executes:
-
-- peer connect
-- channel open
-- invoice create
-- payment send
-- channel close
-
-Script:
+Run:
 
 ```bash
 node scripts/e2e-testnet-dual-node.mjs
 ```
 
-Notes:
-
-- Uses static port split by default: node A (`8227/8228`), node B (`8327/8328`)
-- Uses `offckb deposit --network testnet <address> <amount>` unless `SKIP_DEPOSIT=1`
-- Stores logs and JSON outputs under `.artifacts/e2e-testnet-dual-node-*`
+The script drives: peer connect → channel open → invoice create → payment send → channel close.
 
 Useful env overrides:
 
-- `SKIP_BUILD=1` (skip `pnpm build` inside script)
-- `SKIP_DEPOSIT=1` (for pre-funded addresses)
-- `SKIP_BINARY_DOWNLOAD=1` (reuse existing binary in each data dir)
-- `FIBER_BINARY_VERSION=v0.6.1` (pin download version)
+- `SKIP_BUILD=1`
+- `SKIP_DEPOSIT=1`
+- `SKIP_BINARY_DOWNLOAD=1`
+- `FIBER_BINARY_VERSION=v0.6.1`
 - `CHANNEL_FUNDING_CKB`, `INVOICE_AMOUNT_CKB`, `DEPOSIT_AMOUNT_CKB`
 - `NODE_A_RPC_PORT`, `NODE_A_P2P_PORT`, `NODE_B_RPC_PORT`, `NODE_B_P2P_PORT`
-
-Notes:
-
-- The script now passes those port values through `fiber-pay config init --rpc-port/--p2p-port`.
-- No manual `config.yml` port patching is required.
-
-## Roadmap direction
-
-Near-term focus:
-
-1. finish docs alignment to intent baseline
-2. refactor `@fiber-pay/agent` to target runtime role
-3. refresh `skills/fiber-pay/*` after architecture/docs settle

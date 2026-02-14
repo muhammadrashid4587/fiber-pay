@@ -1,130 +1,97 @@
-# AGENT.md - AI Maintainer Guide
+# AGENT.md
 
-This document helps maintainers and coding agents keep `fiber-pay` aligned with project intent.
+Maintainer and coding-agent operating guide for `fiber-pay`.
 
-## Project purpose (authoritative)
+## Project position (authoritative)
 
-fiber-pay is an **AI payment layer** on top of Fiber Network (`fnn`) for CKB Lightning workflows.
+`fiber-pay` is an AI-friendly SDK + CLI for CKB Lightning on Fiber Network (`fnn`).
 
-Repository layers exist to support that product goal:
+Protocol target: Fiber `v0.6.1`.
 
-- `@fiber-pay/sdk`: protocol/domain primitives
-- `@fiber-pay/node`: binary + process lifecycle substrate
-- `@fiber-pay/cli`: operator/troubleshooting surface
-- `@fiber-pay/agent`: LLM-facing orchestration surface
+Primary layers in active scope:
 
-Protocol compatibility target: Fiber `v0.6.1`.
+- `@fiber-pay/sdk`: typed Fiber RPC/domain layer
+- `@fiber-pay/cli`: operator and automation interface
+- `@fiber-pay/node`: local binary/process lifecycle support
 
-## Current alignment status
+## Source-of-truth order
 
-`@fiber-pay/agent` is currently usable, but not fully aligned with its target role yet.
+When executing real tasks, follow this order:
 
-Target role of `@fiber-pay/agent`:
+1. `packages/cli/llm.txt` (canonical CLI behavior and command contracts)
+2. code in `packages/cli/src/**` and `packages/sdk/src/**`
+3. intent docs in `docs/plans/**`
 
-1. intent-to-action orchestration (not only RPC passthrough)
-2. policy/safety guardrails in the decision path
-3. stateful execution for long-running payment/channel flows
-4. standardized `AgentResult` outcomes for tooling integration
-5. first-class observability and auditability
+If docs and code disagree, treat `packages/cli/llm.txt` + current code as authoritative.
 
-When docs or APIs are ambiguous, prefer this target model over legacy framing.
+## Operating rules for coding agents
 
-## Source of truth
+1. Read `packages/cli/llm.txt` before running any `fiber-pay` commands.
+2. Use grouped commands only: `node`, `channel`, `invoice`, `payment`, `peer`, `binary`, `balance`.
+3. Use `--json` whenever output is consumed by tools/scripts.
+4. Default to single-node startup unless multi-node/custom ports are explicitly requested.
+5. Do not invent undocumented flags, command aliases, or response schemas.
 
-- CLI behavior and command surface: `packages/cli/llm.txt`
-- Agent runtime API: `packages/agent/src/fiber-pay.ts`
-- MCP tool schemas: `packages/agent/src/mcp-tools.ts`
-- Intent baseline: `docs/plans/ai-payment-layer-intent.md`
-- Docs rewrite tracker: `docs/plans/docs-rewrite.md`
+## Copy-paste bootstrap prompt (for external agents)
 
-## Repository structure
+```text
+Use this Fiber CLI source-of-truth document:
+https://raw.githubusercontent.com/RetricSu/fiber-pay/main/packages/cli/llm.txt
 
-```
-packages/
-├── sdk/      # protocol/domain layer
-├── node/     # fnn binary + process lifecycle
-├── cli/      # grouped operator commands
-└── agent/    # LLM-facing orchestration API + MCP schemas
+Read that URL first and treat it as the command/runtime source of truth.
 
-skills/       # project skills (fiber-pay skill aligned to current CLI + SDK)
-docs/plans/   # architecture/doc intent and execution plans
-```
+Then equip yourself with fiber-pay behavior:
+- obey the Agent Entry Protocol in llm.txt,
+- use grouped commands only (node/channel/invoice/payment/peer/binary/balance),
+- prefer --json for automation,
+- use single-node quick start by default unless I ask otherwise.
 
-Current skill status:
+Before executing actions, summarize:
+1) startup defaults,
+2) required env vars (if any),
+3) exact commands you will run.
 
-- `skills/fiber-pay` is refreshed and aligned to current CLI grouped commands.
-- CLI authority remains `packages/cli/llm.txt`.
-- Skill focus is CLI-first with SDK reference support.
-
-## Runtime and UX invariants
-
-1. Fiber target stays explicit: `v0.6.1`
-2. CLI uses grouped commands only (`node/channel/invoice/payment/peer/binary/balance`)
-3. CLI output policy remains stable:
-   - default: human-readable
-   - `--json`: machine-readable
-4. Avoid over-promising unimplemented capabilities in docs
-5. Prefer shared helpers/modules over duplicated command logic
-
-## Agent result contract
-
-`@fiber-pay/agent` operations should use:
-
-```ts
-interface AgentResult<T> {
-  success: boolean;
-  data?: T;
-  error?: {
-    code: string;
-    message: string;
-    recoverable: boolean;
-    suggestion?: string;
-  };
-  metadata?: {
-    timestamp: number;
-    policyCheck?: PolicyCheckResult;
-  };
-}
+Then execute the requested task.
 ```
 
-Guideline:
+## Contribution focus
 
-- prefer returning `AgentResult` over throwing in business paths
-- reserve throws for truly unrecoverable internal faults
-- include recovery suggestions for common operator/agent errors
+Prioritize improvements that strengthen SDK + CLI reliability and AI usability:
 
-## Common maintenance tasks
+- stable command semantics
+- clear machine-readable outputs
+- explicit runtime defaults
+- minimal ambiguity in docs/examples
 
-### Add a new RPC capability
+Avoid adding new top-level abstractions unless they are required for SDK/CLI workflows.
 
-1. add request/response types in `packages/sdk/src/types/rpc.ts`
-2. add method in `packages/sdk/src/rpc/client.ts`
-3. expose via `packages/sdk/src/index.ts` if public
-4. add orchestration wrapper in `packages/agent/src/fiber-pay.ts` when agent-facing
-5. add/update CLI commands only if operator surface is required
+## Change checklist
 
-### Add/update CLI behavior
+For CLI changes:
 
-1. read `packages/cli/llm.txt` first
-2. update command module in `packages/cli/src/commands/<group>.ts`
-3. reuse shared helpers in `packages/cli/src/lib/*`
-4. preserve output policy (human default + `--json`)
-5. update `packages/cli/llm.txt` when behavior changes
-
-Validation:
+1. update command implementation in `packages/cli/src/commands/**`
+2. keep output policy consistent (human default + `--json`)
+3. update `packages/cli/llm.txt` for behavior/flag/output changes
+4. run:
 
 ```bash
 pnpm --filter @fiber-pay/cli typecheck
 pnpm --filter @fiber-pay/cli build
 ```
 
-### Modify policy/security behavior
+For SDK changes:
 
-- schemas: `packages/sdk/src/types/policy.ts`
-- enforcement: `packages/sdk/src/security/policy-engine.ts`
-- audit-sensitive changes should keep backward-compatible event semantics where practical
+1. update types in `packages/sdk/src/types/**` as needed
+2. update RPC client or helpers in `packages/sdk/src/**`
+3. keep exports consistent in `packages/sdk/src/index.ts`
+4. run:
 
-## Build/test commands
+```bash
+pnpm --filter @fiber-pay/sdk test
+pnpm --filter @fiber-pay/sdk typecheck
+```
+
+## Repository-wide validation
 
 ```bash
 pnpm typecheck
@@ -132,27 +99,9 @@ pnpm test
 pnpm build
 ```
 
-Focused checks:
+## Practical notes
 
-```bash
-pnpm --filter @fiber-pay/sdk test
-pnpm --filter @fiber-pay/agent typecheck
-pnpm --filter @fiber-pay/cli typecheck
-pnpm --filter @fiber-pay/cli build
-```
-
-## Practical gotchas
-
-1. ESM imports require `.js` extension in source imports
-2. Amounts are hex-encoded shannons at RPC boundary
-3. key file formats are strict (`fiber/sk` raw bytes, `ckb/key` hex string)
-4. Apple Silicon may use x86_64 binary fallback via Rosetta depending on release artifacts
-5. in async lifecycle code, re-check runtime state after awaits before acting
-
-## Scope note
-
-Priority decision:
-
-- MCP runtime support is deferred indefinitely.
-
-As agreed, `@fiber-pay/agent` refactor scope should avoid new MCP runtime commitments unless this decision is explicitly revisited.
+- ESM imports require `.js` extension in source imports.
+- Fiber RPC amounts are typically hex-encoded shannons at the boundary.
+- Apple Silicon may require x86_64 fallback binaries depending on upstream release artifacts.
+- In lifecycle code, re-check process/rpc readiness after awaited operations.
