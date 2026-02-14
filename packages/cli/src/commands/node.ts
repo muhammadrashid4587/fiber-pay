@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
   ensureFiberBinary,
@@ -19,6 +20,23 @@ import { type CliConfig, ensureNodeConfigFile } from '../lib/config.js';
 import { printJson, printNodeInfoHuman } from '../lib/format.js';
 import { isProcessRunning, readPidFile, removePidFile, writePidFile } from '../lib/pid.js';
 import { createReadyRpcClient, createRpcClient } from '../lib/rpc.js';
+
+function getBinaryVersion(binaryPath: string): string {
+  try {
+    const result = spawnSync(binaryPath, ['--version'], { encoding: 'utf-8' });
+    if (result.status !== 0) {
+      return 'unknown';
+    }
+    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
+    if (!output) {
+      return 'unknown';
+    }
+    const firstLine = output.split('\n').find((line) => line.trim().length > 0);
+    return firstLine?.trim() ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
 
 export function createNodeCommand(config: CliConfig): Command {
   const node = new Command('node').description('Node management');
@@ -42,7 +60,11 @@ export function createNodeCommand(config: CliConfig): Command {
 
       const binaryPath = config.binaryPath || getDefaultBinaryPath();
       await ensureFiberBinary();
+      const binaryVersion = getBinaryVersion(binaryPath);
       const configFilePath = ensureNodeConfigFile(config.dataDir, config.network);
+
+      console.log(`🧩 Binary: ${binaryPath}`);
+      console.log(`🧩 Version: ${binaryVersion}`);
 
       const nodeConfig: FiberNodeConfig = {
         binaryPath,
