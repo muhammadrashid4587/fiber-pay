@@ -58,7 +58,7 @@ Use this prompt in Cursor/Claude/Copilot/other agents:
 
 ```text
 Use this Fiber CLI source-of-truth document:
-https://raw.githubusercontent.com/RetricSu/fiber-pay/main/packages/cli/llm.txt
+https://raw.githubusercontent.com/RetricSu/fiber-pay/master/packages/cli/llm.txt
 
 Before running any Fiber command, read that URL completely and treat it as the CLI source of truth.
 
