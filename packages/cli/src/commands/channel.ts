@@ -58,6 +58,9 @@ export function createChannelCommand(config: CliConfig): Command {
           printJsonError({
             code: 'CHANNEL_NOT_FOUND',
             message: `Channel not found: ${channelId}`,
+            recoverable: true,
+            suggestion: 'List channels first and retry with a valid channel id.',
+            details: { channelId },
           });
         } else {
           console.error(`Error: Channel not found: ${channelId}`);
@@ -76,6 +79,7 @@ export function createChannelCommand(config: CliConfig): Command {
     .command('watch')
     .option('--interval <seconds>', 'Refresh interval', '5')
     .option('--timeout <seconds>')
+    .option('--on-timeout <behavior>', 'fail | success', 'fail')
     .option('--channel <channelId>')
     .option('--peer <peerId>')
     .option('--state <state>')
@@ -84,13 +88,32 @@ export function createChannelCommand(config: CliConfig): Command {
     .option('--no-clear')
     .option('--json')
     .action(async (options) => {
-      const rpc = await createReadyRpcClient(config);
       const intervalSeconds = parseInt(options.interval, 10);
       const timeoutSeconds = options.timeout ? parseInt(options.timeout, 10) : undefined;
+      const onTimeout = String(options.onTimeout ?? 'fail')
+        .trim()
+        .toLowerCase();
       const stateFilter = parseChannelState(options.state);
       const untilState = parseChannelState(options.until);
       const noClear = Boolean(options.noClear);
       const json = Boolean(options.json);
+      if (!['fail', 'success'].includes(onTimeout)) {
+        if (json) {
+          printJsonError({
+            code: 'CHANNEL_WATCH_INPUT_INVALID',
+            message: `Invalid --on-timeout value: ${options.onTimeout}. Expected fail or success`,
+            recoverable: true,
+            suggestion: 'Use `--on-timeout fail` or `--on-timeout success`.',
+            details: { provided: options.onTimeout, expected: ['fail', 'success'] },
+          });
+        } else {
+          console.error(
+            `Error: Invalid --on-timeout value: ${options.onTimeout}. Expected fail or success`,
+          );
+        }
+        process.exit(1);
+      }
+      const rpc = await createReadyRpcClient(config);
       const startedAt = Date.now();
       const previousStates = new Map<string, ChannelState>();
 
@@ -161,10 +184,25 @@ export function createChannelCommand(config: CliConfig): Command {
         }
 
         if (timeoutSeconds !== undefined && Date.now() - startedAt >= timeoutSeconds * 1000) {
+          if (onTimeout === 'success') {
+            if (json) {
+              printJsonEvent('terminal', {
+                reason: 'timeout',
+                timeoutSeconds,
+              });
+            } else {
+              console.log('\n⏰ Monitor timeout reached (treated as success).');
+            }
+            return;
+          }
+
           if (json) {
             printJsonError({
               code: 'CHANNEL_WATCH_TIMEOUT',
               message: `Channel monitor timed out after ${timeoutSeconds}s`,
+              recoverable: true,
+              suggestion: 'Increase timeout or continue monitoring with another watch run.',
+              details: { timeoutSeconds },
             });
             process.exit(1);
           }

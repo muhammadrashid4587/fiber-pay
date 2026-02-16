@@ -9,6 +9,7 @@ import {
 import {
   buildMultiaddrFromNodeId,
   buildMultiaddrFromRpcUrl,
+  ChannelState,
   CorsProxy,
   createKeyManager,
   nodeIdToPeerId,
@@ -49,15 +50,35 @@ export function createNodeCommand(config: CliConfig): Command {
   node
     .command('start')
     .option('--cors-proxy [port]')
+    .option('--event-stream <format>', 'Event stream format for --json mode (jsonl)', 'jsonl')
     .option('--json')
     .action(async (options) => {
       const json = Boolean(options.json);
+      const eventStream = String(options.eventStream ?? 'jsonl').toLowerCase();
+      const emitStage = (stage: string, status: 'ok' | 'error', data: Record<string, unknown>) => {
+        if (!json) return;
+        printJsonEvent('startup_stage', { stage, status, ...data });
+      };
+      if (json && eventStream !== 'jsonl') {
+        printJsonError({
+          code: 'NODE_EVENT_STREAM_INVALID',
+          message: `Unsupported --event-stream format: ${options.eventStream}. Expected: jsonl`,
+          recoverable: true,
+          suggestion: 'Use `--event-stream jsonl` when using --json.',
+          details: { provided: options.eventStream, expected: ['jsonl'] },
+        });
+        process.exit(1);
+      }
+      emitStage('init', 'ok', { rpcUrl: config.rpcUrl, dataDir: config.dataDir });
       const existingPid = readPidFile(config.dataDir);
       if (existingPid && isProcessRunning(existingPid)) {
         if (json) {
           printJsonError({
             code: 'NODE_ALREADY_RUNNING',
             message: `Node is already running (PID: ${existingPid})`,
+            recoverable: true,
+            suggestion: 'Skip start or run `fiber-pay node stop` before retrying.',
+            details: { pid: existingPid },
           });
         } else {
           console.log(`❌ Node is already running (PID: ${existingPid})`);
@@ -76,6 +97,11 @@ export function createNodeCommand(config: CliConfig): Command {
       await ensureFiberBinary();
       const binaryVersion = getBinaryVersion(binaryPath);
       const configFilePath = ensureNodeConfigFile(config.dataDir, config.network);
+      emitStage('binary_resolved', 'ok', {
+        binaryPath,
+        binaryVersion,
+        configFilePath,
+      });
 
       if (!json) {
         console.log(`🧩 Binary: ${binaryPath}`);
@@ -96,10 +122,18 @@ export function createNodeCommand(config: CliConfig): Command {
           autoGenerate: true,
         });
         await keyManager.initialize();
+        emitStage('key_initialized', 'ok', {});
       } catch (error) {
         const message = `Failed to initialize node keys: ${error instanceof Error ? error.message : String(error)}`;
+        emitStage('key_initialized', 'error', { code: 'NODE_KEY_INIT_FAILED', message });
         if (json) {
-          printJsonError({ code: 'NODE_KEY_INIT_FAILED', message });
+          printJsonError({
+            code: 'NODE_KEY_INIT_FAILED',
+            message,
+            recoverable: true,
+            suggestion: 'Verify key password and write permission for the data directory.',
+            details: { dataDir: config.dataDir },
+          });
         } else {
           console.error(`❌ ${message}`);
         }
@@ -126,6 +160,7 @@ export function createNodeCommand(config: CliConfig): Command {
       if (processId !== undefined) {
         writePidFile(config.dataDir, processId);
       }
+      emitStage('process_started', 'ok', { pid: processId ?? null });
 
       let corsProxy: CorsProxy | undefined;
       if (corsProxyPort) {
@@ -157,10 +192,17 @@ export function createNodeCommand(config: CliConfig): Command {
 
       if (earlyStop || processManager.getState() === 'stopped') {
         const details = formatStopDetails(earlyStop);
+        emitStage('process_started', 'error', {
+          code: 'NODE_STARTUP_EXITED',
+          details,
+        });
         if (json) {
           printJsonError({
             code: 'NODE_STARTUP_EXITED',
             message: `Fiber node exited during startup${details}`,
+            recoverable: true,
+            suggestion: 'Inspect fnn logs and verify config ports are free before retrying.',
+            details: earlyStop ?? undefined,
           });
         } else {
           console.error(`❌ Fiber node exited during startup${details}`);
@@ -170,10 +212,17 @@ export function createNodeCommand(config: CliConfig): Command {
       }
 
       if (!rpcReady) {
+        emitStage('rpc_ready', 'error', {
+          code: 'NODE_RPC_NOT_READY',
+          timeoutSeconds: 30,
+        });
         if (json) {
           printJsonError({
             code: 'NODE_RPC_NOT_READY',
             message: 'RPC did not become ready within 30s. Node startup failed.',
+            recoverable: true,
+            suggestion: 'Retry after a delay and verify RPC port + config consistency.',
+            details: { timeoutSeconds: 30, rpcUrl: config.rpcUrl },
           });
         } else {
           console.error('❌ RPC did not become ready within 30s. Node startup failed.');
@@ -193,6 +242,7 @@ export function createNodeCommand(config: CliConfig): Command {
         await processManager.stop().catch(() => undefined);
         process.exit(1);
       }
+      emitStage('rpc_ready', 'ok', { rpcUrl: config.rpcUrl });
 
       const bootnodes = nodeConfig.configFilePath
         ? extractBootnodeAddrs(nodeConfig.configFilePath)
@@ -200,13 +250,21 @@ export function createNodeCommand(config: CliConfig): Command {
       if (bootnodes.length > 0) {
         await autoConnectBootnodes(rpc, bootnodes);
       }
+      emitStage('bootnodes_connected', 'ok', { count: bootnodes.length });
 
       if (earlyStop || processManager.getState() === 'stopped') {
         const details = formatStopDetails(earlyStop);
+        emitStage('bootnodes_connected', 'error', {
+          code: 'NODE_STARTUP_EXITED',
+          details,
+        });
         if (json) {
           printJsonError({
             code: 'NODE_STARTUP_EXITED',
             message: `Fiber node exited during startup${details}`,
+            recoverable: true,
+            suggestion: 'Inspect fnn logs and verify config ports are free before retrying.',
+            details: earlyStop ?? undefined,
           });
         } else {
           console.error(`❌ Fiber node exited during startup${details}`);
@@ -216,6 +274,10 @@ export function createNodeCommand(config: CliConfig): Command {
       }
 
       if (json) {
+        emitStage('startup_complete', 'ok', {
+          pid: processId ?? null,
+          rpcUrl: config.rpcUrl,
+        });
         printJsonEvent('node_started', {
           rpcUrl: config.rpcUrl,
           binaryPath,
@@ -284,6 +346,8 @@ export function createNodeCommand(config: CliConfig): Command {
           printJsonError({
             code: 'NODE_STOPPED_UNEXPECTEDLY',
             message: 'Fiber node stopped unexpectedly.',
+            recoverable: true,
+            suggestion: 'Check process logs and restart the node when configuration is healthy.',
           });
         } else {
           console.error('❌ Fiber node stopped unexpectedly.');
@@ -304,6 +368,8 @@ export function createNodeCommand(config: CliConfig): Command {
           printJsonError({
             code: 'NODE_NOT_RUNNING',
             message: 'No PID file found. Node may not be running.',
+            recoverable: true,
+            suggestion: 'Run `fiber-pay node start` first if you intend to stop a node.',
           });
         } else {
           console.log('❌ No PID file found. Node may not be running.');
@@ -316,6 +382,9 @@ export function createNodeCommand(config: CliConfig): Command {
           printJsonError({
             code: 'NODE_NOT_RUNNING',
             message: `Process ${pid} is not running. Cleaning up PID file.`,
+            recoverable: true,
+            suggestion: 'Start the node again if needed; stale PID has been cleaned.',
+            details: { pid, stalePidFileCleaned: true },
           });
         } else {
           console.log(`❌ Process ${pid} is not running. Cleaning up PID file.`);
@@ -442,6 +511,99 @@ export function createNodeCommand(config: CliConfig): Command {
         console.log(`❌ Node is not running (stale PID file: ${output.pid})`);
       } else {
         console.log('❌ Node is not running');
+      }
+    });
+
+  node
+    .command('ready')
+    .description('Agent-oriented readiness summary for automation')
+    .option('--json')
+    .action(async (options) => {
+      const json = Boolean(options.json);
+      const pid = readPidFile(config.dataDir);
+      const output: Record<string, unknown> = {
+        nodeRunning: false,
+        rpcReachable: false,
+        channelsTotal: 0,
+        channelsReady: 0,
+        canSend: false,
+        canReceive: false,
+        recommendation: 'NODE_STOPPED',
+        reasons: ['Node process is not running.'],
+        pid: pid ?? null,
+        rpcUrl: config.rpcUrl,
+      };
+
+      if (pid && isProcessRunning(pid)) {
+        output.nodeRunning = true;
+        output.reasons = [];
+
+        try {
+          const rpc = await createReadyRpcClient(config);
+          output.rpcReachable = true;
+          const channels = await rpc.listChannels({ include_closed: false });
+          output.channelsTotal = channels.channels.length;
+
+          const readyChannels = channels.channels.filter(
+            (channel) => channel.state?.state_name === ChannelState.ChannelReady,
+          );
+          output.channelsReady = readyChannels.length;
+
+          const canSend = readyChannels.some((channel) => BigInt(channel.local_balance) > 0n);
+          const canReceive = readyChannels.some((channel) => BigInt(channel.remote_balance) > 0n);
+          output.canSend = canSend;
+          output.canReceive = canReceive;
+
+          if (readyChannels.length === 0) {
+            output.recommendation = 'NEED_CHANNEL';
+            output.reasons = [
+              'No ChannelReady channel found. Open and wait for channel readiness.',
+            ];
+          } else if (canSend && canReceive) {
+            output.recommendation = 'READY';
+            output.reasons = ['Node is reachable and has send/receive liquidity.'];
+          } else if (canSend) {
+            output.recommendation = 'RECEIVE_CAPACITY_LOW';
+            output.reasons = ['Receive liquidity is low on all ChannelReady channels.'];
+          } else if (canReceive) {
+            output.recommendation = 'SEND_CAPACITY_LOW';
+            output.reasons = ['Send liquidity is low on all ChannelReady channels.'];
+          } else {
+            output.recommendation = 'NO_LIQUIDITY';
+            output.reasons = [
+              'ChannelReady channels exist but both local/remote liquidity are zero.',
+            ];
+          }
+        } catch {
+          output.rpcReachable = false;
+          output.recommendation = 'RPC_UNREACHABLE';
+          output.reasons = ['Node process is running but RPC is not reachable.'];
+        }
+      } else if (pid) {
+        output.recommendation = 'NODE_STOPPED';
+        output.reasons = ['Stale PID file detected and cleaned.'];
+        removePidFile(config.dataDir);
+      }
+
+      if (json) {
+        printJsonSuccess(output);
+      } else {
+        console.log('Node Readiness');
+        console.log(`  Node Running:   ${output.nodeRunning ? 'yes' : 'no'}`);
+        console.log(`  RPC Reachable:  ${output.rpcReachable ? 'yes' : 'no'}`);
+        console.log(
+          `  Channels:       ${output.channelsReady}/${output.channelsTotal} ready/total`,
+        );
+        console.log(`  Can Send:       ${output.canSend ? 'yes' : 'no'}`);
+        console.log(`  Can Receive:    ${output.canReceive ? 'yes' : 'no'}`);
+        console.log(`  Recommendation: ${String(output.recommendation)}`);
+        const reasons = Array.isArray(output.reasons) ? output.reasons : [];
+        if (reasons.length > 0) {
+          console.log('  Reasons:');
+          for (const reason of reasons) {
+            console.log(`    - ${String(reason)}`);
+          }
+        }
       }
     });
 

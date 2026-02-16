@@ -138,6 +138,9 @@ export function createConfigCommand(_config: CliConfig): Command {
           printJsonError({
             code: 'CONFIG_NOT_FOUND',
             message: `Config file not found: ${effective.config.configPath}`,
+            recoverable: true,
+            suggestion: 'Run `fiber-pay config init --network testnet` and retry.',
+            details: { configPath: effective.config.configPath },
           });
         } else {
           console.error(`Error: Config file not found: ${effective.config.configPath}`);

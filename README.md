@@ -37,9 +37,12 @@ cd packages/cli && pnpm link --global
 
 ```bash
 fiber-pay --help
-fiber-pay binary download
-fiber-pay node start
-fiber-pay node status
+fiber-pay --profile local-a binary download
+# foreground process (run in its own terminal)
+fiber-pay --profile local-a node start
+fiber-pay --profile local-a node status
+fiber-pay --profile local-a node ready --json
+fiber-pay --profile local-a agent check --json
 ```
 
 Common workflows:
@@ -53,6 +56,10 @@ fiber-pay payment send <invoice>
 
 Use `--json` when command output is consumed by scripts or agents.
 Non-stream commands emit a single envelope (`success + data|error`), while watch commands emit NDJSON events.
+JSON failures include stable fields (`error.code`, `error.message`) and may include `error.recoverable`, `error.suggestion`, `error.details`.
+`fiber-pay node start --json` emits staged NDJSON lifecycle events before `node_started` for deterministic automation.
+For automation, long-running watchers support timeout policies such as `--on-timeout success`.
+Machine-readable error code catalog is available at `packages/cli/error-codes.json`.
 
 ## Copy-paste prompt for your coding agent
 

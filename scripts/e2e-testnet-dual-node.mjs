@@ -415,59 +415,103 @@ async function waitForNodeReady(nodeName, timeoutSec) {
   }
 }
 
-async function waitForChannelReady(peerId, timeoutSec) {
+function matchChannelByPeer(channel, peerSelectors) {
+  if (!channel || typeof channel !== 'object') return false;
+  const peerId = channel.peer_id;
+  if (typeof peerId !== 'string') return false;
+  return peerSelectors.includes(peerId);
+}
+
+function findChannel(channels, peerSelectors, stateName) {
+  if (!Array.isArray(channels) || channels.length === 0) return undefined;
+
+  const matched = channels.find((ch) => {
+    if (stateName && ch?.state?.state_name !== stateName) return false;
+    return matchChannelByPeer(ch, peerSelectors);
+  });
+  if (matched) return matched;
+
+  if (channels.length === 1) {
+    const only = channels[0];
+    if (!stateName || only?.state?.state_name === stateName) {
+      return only;
+    }
+  }
+
+  return undefined;
+}
+
+async function waitForChannelReady(peerSelectors, timeoutSec) {
   const start = nowSec();
+  let lastRaw = '';
+  let lastParsed;
   while (true) {
     const { stdout } = fiberPaySafe(
       'A',
       'channel',
       'list',
-      '--peer',
-      peerId,
       '--state',
       'CHANNEL_READY',
       '--json',
     );
+    lastRaw = stdout;
     const parsed = jsonParse(stdout);
+    lastParsed = parsed;
     if (parsed) {
       const channels = jsonGet(parsed, 'data.channels');
-      if (Array.isArray(channels) && channels.length > 0) {
-        const readyChannel = channels[0];
-        if (readyChannel?.channel_id) {
-          return readyChannel.channel_id;
-        }
+      const readyChannel = findChannel(channels, peerSelectors, 'ChannelReady');
+      if (readyChannel?.channel_id) {
+        return readyChannel.channel_id;
       }
     }
     if (nowSec() - start >= timeoutSec) {
-      fail(`Channel did not reach ChannelReady within ${timeoutSec}s (peer=${peerId})`);
+      writeArtifact('wait-channel-ready.last.raw.txt', lastRaw);
+      writeArtifact('wait-channel-ready.last.parsed.json', {
+        peerSelectors,
+        timeoutSec,
+        parsed: lastParsed ?? null,
+      });
+      fail(
+        `Channel did not reach ChannelReady within ${timeoutSec}s (peer selectors=${peerSelectors.join(',')})`,
+      );
     }
     await sleep(POLL_INTERVAL_SEC * 1000);
   }
 }
 
-async function waitForChannelAppear(peerId, timeoutSec) {
+async function waitForChannelAppear(peerSelectors, timeoutSec) {
   const start = nowSec();
+  let lastRaw = '';
+  let lastParsed;
   while (true) {
     const { stdout } = fiberPaySafe(
       'A',
       'channel',
       'list',
-      '--peer',
-      peerId,
       '--include-closed',
       '--json',
     );
+    lastRaw = stdout;
     const parsed = jsonParse(stdout);
+    lastParsed = parsed;
     if (parsed) {
       const channels = jsonGet(parsed, 'data.channels');
-      if (Array.isArray(channels) && channels.length > 0) {
-        const channelId = channels[0]?.channel_id;
-        if (channelId) return channelId;
+      const appearedChannel = findChannel(channels, peerSelectors);
+      if (appearedChannel?.channel_id) {
+        return appearedChannel.channel_id;
       }
     }
 
     if (nowSec() - start >= timeoutSec) {
-      fail(`Channel did not appear after open within ${timeoutSec}s (peer=${peerId})`);
+      writeArtifact('wait-channel-appear.last.raw.txt', lastRaw);
+      writeArtifact('wait-channel-appear.last.parsed.json', {
+        peerSelectors,
+        timeoutSec,
+        parsed: lastParsed ?? null,
+      });
+      fail(
+        `Channel did not appear after open within ${timeoutSec}s (peer selectors=${peerSelectors.join(',')})`,
+      );
     }
     await sleep(POLL_INTERVAL_SEC * 1000);
   }
@@ -849,11 +893,12 @@ async function main() {
   const tempChannelId = jsonGet(openJson, 'data.temporaryChannelId');
   log(`Temporary channel id: ${tempChannelId}`);
 
-  const appearedChannelId = await waitForChannelAppear(nodeBPeerId, CHANNEL_APPEAR_TIMEOUT_SEC);
+  const peerSelectors = [nodeBHexId, nodeBPeerId];
+  const appearedChannelId = await waitForChannelAppear(peerSelectors, CHANNEL_APPEAR_TIMEOUT_SEC);
   log(`Channel appeared: ${appearedChannelId}`);
 
   // ---- Wait for channel ready ----
-  const channelId = await waitForChannelReady(nodeBPeerId, CHANNEL_READY_TIMEOUT_SEC);
+  const channelId = await waitForChannelReady(peerSelectors, CHANNEL_READY_TIMEOUT_SEC);
   log(`Channel ready: ${channelId}`);
   writeArtifact('channel-id.txt', channelId);
 

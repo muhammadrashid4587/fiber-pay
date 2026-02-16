@@ -35,6 +35,8 @@ export function createPaymentCommand(config: CliConfig): Command {
           printJsonError({
             code: 'PAYMENT_SEND_INPUT_INVALID',
             message: 'Either invoice or --to <nodeId> required',
+            recoverable: true,
+            suggestion: 'Provide a valid invoice, or provide both `--to` and `--amount`.',
           });
         } else {
           console.error('Error: Either invoice or --to <nodeId> required');
@@ -46,6 +48,8 @@ export function createPaymentCommand(config: CliConfig): Command {
           printJsonError({
             code: 'PAYMENT_SEND_INPUT_INVALID',
             message: '--amount required when using --to',
+            recoverable: true,
+            suggestion: 'Add `--amount <ckb>` when using keysend mode (`--to`).',
           });
         } else {
           console.error('Error: --amount required when using --to');
@@ -105,12 +109,52 @@ export function createPaymentCommand(config: CliConfig): Command {
     .argument('<paymentHash>')
     .option('--interval <seconds>', 'Polling interval', '2')
     .option('--timeout <seconds>', 'Timeout', '120')
+    .option('--until <target>', 'SUCCESS | FAILED | TERMINAL', 'TERMINAL')
+    .option('--on-timeout <behavior>', 'fail | success', 'fail')
     .option('--json')
     .action(async (paymentHash, options) => {
-      const rpc = await createReadyRpcClient(config);
       const json = Boolean(options.json);
       const intervalSeconds = parseInt(options.interval, 10);
       const timeoutSeconds = parseInt(options.timeout, 10);
+      const until = String(options.until ?? 'TERMINAL')
+        .trim()
+        .toUpperCase();
+      const onTimeout = String(options.onTimeout ?? 'fail')
+        .trim()
+        .toLowerCase();
+      if (!['SUCCESS', 'FAILED', 'TERMINAL'].includes(until)) {
+        if (json) {
+          printJsonError({
+            code: 'PAYMENT_WATCH_INPUT_INVALID',
+            message: `Invalid --until value: ${options.until}. Expected SUCCESS, FAILED, or TERMINAL`,
+            recoverable: true,
+            suggestion: 'Use one of: SUCCESS, FAILED, TERMINAL.',
+            details: { provided: options.until, expected: ['SUCCESS', 'FAILED', 'TERMINAL'] },
+          });
+        } else {
+          console.error(
+            `Error: Invalid --until value: ${options.until}. Expected SUCCESS, FAILED, or TERMINAL`,
+          );
+        }
+        process.exit(1);
+      }
+      if (!['fail', 'success'].includes(onTimeout)) {
+        if (json) {
+          printJsonError({
+            code: 'PAYMENT_WATCH_INPUT_INVALID',
+            message: `Invalid --on-timeout value: ${options.onTimeout}. Expected fail or success`,
+            recoverable: true,
+            suggestion: 'Use `--on-timeout fail` or `--on-timeout success`.',
+            details: { provided: options.onTimeout, expected: ['fail', 'success'] },
+          });
+        } else {
+          console.error(
+            `Error: Invalid --on-timeout value: ${options.onTimeout}. Expected fail or success`,
+          );
+        }
+        process.exit(1);
+      }
+      const rpc = await createReadyRpcClient(config);
       const startedAt = Date.now();
       let lastStatus: string | undefined;
 
@@ -134,23 +178,65 @@ export function createPaymentCommand(config: CliConfig): Command {
           lastStatus = paymentResult.status;
         }
 
-        if (paymentResult.status === 'Success' || paymentResult.status === 'Failed') {
+        const isSuccess = paymentResult.status === 'Success';
+        const isFailed = paymentResult.status === 'Failed';
+        const terminalReached =
+          until === 'TERMINAL' ? isSuccess || isFailed : until === 'SUCCESS' ? isSuccess : isFailed;
+
+        if (terminalReached) {
           if (json) {
             printJsonEvent('terminal', {
               paymentHash,
               terminalStatus: paymentResult.status,
+              until,
             });
           }
           return;
         }
 
+        if ((isSuccess || isFailed) && until !== 'TERMINAL') {
+          if (json) {
+            printJsonError({
+              code: 'PAYMENT_WATCH_UNEXPECTED_TERMINAL',
+              message: `Payment reached ${paymentResult.status} before requested --until ${until}`,
+              recoverable: true,
+              suggestion: 'Set `--until TERMINAL` or handle mismatched terminal state in caller.',
+              details: { terminalStatus: paymentResult.status, until },
+            });
+          } else {
+            console.error(
+              `Error: Payment reached ${paymentResult.status} before requested --until ${until}`,
+            );
+          }
+          process.exit(1);
+        }
+
         await sleep(intervalSeconds * 1000);
+      }
+
+      if (onTimeout === 'success') {
+        if (json) {
+          printJsonEvent('terminal', {
+            paymentHash,
+            terminalStatus: 'Timeout',
+            until,
+            timeoutSeconds,
+          });
+        } else {
+          console.log(
+            `Timeout reached (${timeoutSeconds}s) and treated as success by --on-timeout=success.`,
+          );
+        }
+        return;
       }
 
       if (json) {
         printJsonError({
           code: 'PAYMENT_WATCH_TIMEOUT',
           message: `Payment ${paymentHash} did not reach terminal state within ${timeoutSeconds}s`,
+          recoverable: true,
+          suggestion: 'Increase timeout, or continue polling using `payment get --json`.',
+          details: { paymentHash, timeoutSeconds },
         });
       } else {
         console.error(

@@ -33,6 +33,14 @@ fiber-pay --help
 **Defaults**: Data Dir: `$HOME/.fiber-pay` | Network: `testnet` | RPC: `127.0.0.1:8227`
 **Priority**: CLI Flags > Env Vars > Config File > Defaults
 
+### Global Flags (all commands)
+- `--profile <name>`: maps to data dir `~/.fiber-pay/profiles/<name>`
+- `--data-dir <path>`: override data directory
+- `--rpc-url <url>`: override RPC endpoint
+- `--network <testnet|mainnet>`: override network
+- `--key-password <password>`: override key password
+- `--binary-path <path>`: override fnn binary path
+
 | Env Var | Description | Default |
 | :--- | :--- | :--- |
 | `FIBER_DATA_DIR` | Node data storage | `$HOME/.fiber-pay` |
@@ -53,7 +61,11 @@ Usage: `source .env.node-a && fiber-pay node start`
 *   `start [--cors-proxy <port>] [--json]`: Start node (foreground).
 *   `stop [--json]`: Stop node.
 *   `status [--json]`: Check process status.
+*   `ready [--json]`: Aggregated automation readiness (node/rpc/channel/liquidity).
 *   `info [--json]`: Get node ID and version details.
+
+### Agent (`agent`)
+*   `check [--json]`: Run aggregated binary/config/node/rpc/channel checks with recommendation.
 
 ### Setup (`binary`, `config`)
 *   `binary download [--version v0.6.1] [--force] [--json]`: Fetch fiber node binary.
@@ -68,7 +80,7 @@ Usage: `source .env.node-a && fiber-pay node start`
     *   `close <id> [--force] [--json]`: Close channel.
     *   `abandon <id> [--json]`: Abandon channel.
     *   `update <id> [--enabled <bool>] ... [--json]`: Update TLC/fee settings.
-    *   `watch [--json]`: Monitor channel state changes.
+    *   `watch [--json] [--on-timeout fail|success]`: Monitor channel state changes.
 *   **Invoice**:
     *   `create --amount <CKB> --description <txt> [--expiry <min>] [--json]`: Gen invoice.
     *   `parse <invoiceString> [--json]`: Parse invoice.
@@ -78,7 +90,7 @@ Usage: `source .env.node-a && fiber-pay node start`
 *   **Payment**:
     *   `send <invoice> | --to <nodeId> --amount <CKB> [--json]`: Pay an invoice.
     *   `get <paymentHash> [--json]`: Check payment status.
-    *   `watch <paymentHash> [--json]`: Monitor payment outcome.
+    *   `watch <paymentHash> [--json] [--until SUCCESS|FAILED|TERMINAL] [--on-timeout fail|success]`: Monitor payment outcome.
 
 ### Network & Info (`peer`, `balance`)
 *   `peer list [--json]`: Show connected peers.
@@ -89,9 +101,16 @@ Usage: `source .env.node-a && fiber-pay node start`
 ## 📦 JSON Contract (vNext)
 - Non-stream commands in `--json` mode return one envelope:
     - success: `{"success":true,"data":{...}}`
-    - failure: `{"success":false,"error":{"code":"...","message":"..."}}`
+    - failure: `{"success":false,"error":{"code":"...","message":"...","recoverable":true|false?,"suggestion":"..."?,"details":{...}?}}`
 - `payment send` returns `success: true` when RPC accepted the request, with `data.status` in `success|pending|failed`.
 - In `--json` mode, command stdout is machine-only JSON (no progress bars, emoji, or human prose).
+
+### Error object fields
+- `code` (required): stable machine code
+- `message` (required): human-readable failure summary
+- `recoverable` (optional): whether agent can usually retry after correction
+- `suggestion` (optional): immediate remediation hint
+- `details` (optional): structured context (provided/expected/timeouts/etc)
 
 ## 🌊 Streaming Contract (`watch --json`)
 - Streaming commands emit NDJSON (one JSON object per line), not a single pretty JSON blob.
@@ -102,17 +121,51 @@ Usage: `source .env.node-a && fiber-pay node start`
 - `payment watch --json` events:
     - `status_transition`
     - `terminal`
-- Timeout/errors still use the standard failure envelope and exit non-zero.
+- `node start --json` lifecycle events:
+    - `startup_stage` with `data.stage` in `init|binary_resolved|key_initialized|process_started|rpc_ready|bootnodes_connected|startup_complete`
+    - `node_started`
+    - `node_stopped`
+- Timeout behavior is configurable via `--on-timeout fail|success`.
+- Timeout/errors use failure envelope only when timeout behavior is `fail`.
 
 ## 🚀 Common Workflows
 
 **1. Quick Start (Single Node)**
 ```bash
-fiber-pay binary download
-fiber-pay node start
+fiber-pay --profile local-a binary download
+# foreground process (keep this terminal open)
+fiber-pay --profile local-a node start
 # In new terminal:
-fiber-pay node status
+fiber-pay --profile local-a node status
 ```
+
+## ✅ Agent 快速验证（复制粘贴）
+```bash
+fiber-pay binary info --json
+fiber-pay node status --json
+fiber-pay node ready --json
+fiber-pay agent check --json
+fiber-pay channel list --include-closed --json
+fiber-pay balance --json
+```
+
+## ⚠️ 当前限制（Agent 须知）
+- 通道开户到可用需要时间；`open` 成功不代表立即 `ChannelReady`。
+- 长时命令（如 `node start`、`watch`）是阻塞式前台行为，自动化中需放在独立进程/终端。
+- `watch --json` 为 NDJSON 流式输出，不是单个 JSON 文档。
+
+## 🧭 错误码参考（节选）
+| Code | Meaning | Agent Action |
+| :--- | :--- | :--- |
+| `NODE_ALREADY_RUNNING` | 节点已在运行 | 跳过启动或先停止旧进程 |
+| `NODE_NOT_RUNNING` | 节点未运行/陈旧 PID | 先 `node start` 或清理运行态 |
+| `NODE_RPC_NOT_READY` | 启动后 RPC 未就绪 | 延迟重试并检查配置/端口 |
+| `CHANNEL_NOT_FOUND` | 指定通道不存在 | 先 `channel list --include-closed --json` 再操作 |
+| `PAYMENT_SEND_INPUT_INVALID` | 支付参数不合法 | 修正 `invoice` 或 `--to/--amount` |
+| `PAYMENT_WATCH_TIMEOUT` | 支付未在超时内终态 | 继续轮询 `payment get` 或延长超时 |
+| `CONFIG_NOT_FOUND` | 配置文件不存在 | 先 `config init --network testnet` |
+
+完整机器可读清单：`packages/cli/error-codes.json`
 
 **2. Receive Payment**
 ```bash

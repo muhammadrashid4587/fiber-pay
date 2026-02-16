@@ -203,6 +203,8 @@ export function printJson(payload: unknown): void {
 export interface CliErrorPayload {
   code: string;
   message: string;
+  recoverable?: boolean;
+  suggestion?: string;
   details?: unknown;
 }
 

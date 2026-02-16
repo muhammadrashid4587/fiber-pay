@@ -33,6 +33,8 @@ export function createInvoiceCommand(config: CliConfig): Command {
           printJsonError({
             code: 'INVOICE_CREATE_INPUT_INVALID',
             message: 'Amount required. Usage: invoice create --amount <CKB>',
+            recoverable: true,
+            suggestion: 'Provide a valid positive amount via `--amount <CKB>`.',
           });
         } else {
           console.error('Error: Amount required. Usage: invoice create --amount <CKB>');

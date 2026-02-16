@@ -1,0 +1,100 @@
+{
+  "version": "2026-02-16",
+  "errorObject": {
+    "required": ["code", "message"],
+    "optional": ["recoverable", "suggestion", "details"]
+  },
+  "streaming": {
+    "format": "ndjson",
+    "eventEnvelope": {
+      "required": ["event", "ts", "data"]
+    }
+  },
+  "codes": [
+    {
+      "code": "CLI_FATAL",
+      "meaning": "Unexpected top-level CLI failure",
+      "agentAction": "Inspect error message and command arguments; retry only after configuration correction"
+    },
+    {
+      "code": "CONFIG_NOT_FOUND",
+      "meaning": "Configuration file does not exist",
+      "agentAction": "Run `fiber-pay config init --network testnet --json`"
+    },
+    {
+      "code": "NODE_ALREADY_RUNNING",
+      "meaning": "Node process is already running",
+      "agentAction": "Skip start or stop existing process before retry"
+    },
+    {
+      "code": "NODE_NOT_RUNNING",
+      "meaning": "Node process is not running or PID is stale",
+      "agentAction": "Start node via `fiber-pay node start`"
+    },
+    {
+      "code": "NODE_KEY_INIT_FAILED",
+      "meaning": "Key manager initialization failed",
+      "agentAction": "Verify key password and data directory permissions"
+    },
+    {
+      "code": "NODE_RPC_NOT_READY",
+      "meaning": "Node process started but RPC did not become ready in time",
+      "agentAction": "Retry with delay and inspect node stderr/stdout logs"
+    },
+    {
+      "code": "NODE_EVENT_STREAM_INVALID",
+      "meaning": "Invalid event stream format was provided",
+      "agentAction": "Use `--event-stream jsonl` in JSON mode"
+    },
+    {
+      "code": "NODE_STARTUP_EXITED",
+      "meaning": "Underlying fnn process exited during startup",
+      "agentAction": "Inspect start logs and config ports; avoid immediate retry loops"
+    },
+    {
+      "code": "NODE_STOPPED_UNEXPECTEDLY",
+      "meaning": "Running node exited unexpectedly",
+      "agentAction": "Capture logs and restart after root-cause check"
+    },
+    {
+      "code": "CHANNEL_NOT_FOUND",
+      "meaning": "Requested channel id is unknown",
+      "agentAction": "Query `channel list --include-closed --json` and retry with valid channel id"
+    },
+    {
+      "code": "CHANNEL_WATCH_TIMEOUT",
+      "meaning": "Channel watch timed out before terminal condition",
+      "agentAction": "Continue polling or increase timeout"
+    },
+    {
+      "code": "PAYMENT_SEND_INPUT_INVALID",
+      "meaning": "Payment send arguments are incomplete or invalid",
+      "agentAction": "Provide invoice, or provide `--to` with `--amount`"
+    },
+    {
+      "code": "PAYMENT_WATCH_TIMEOUT",
+      "meaning": "Payment did not reach terminal state in timeout window",
+      "agentAction": "Use `payment get --json` for follow-up status checks and optionally extend watch timeout"
+    },
+    {
+      "code": "PAYMENT_WATCH_INPUT_INVALID",
+      "meaning": "Unsupported watch parameter value",
+      "agentAction": "Fix `--until` or `--on-timeout` values"
+    },
+    {
+      "code": "PAYMENT_WATCH_UNEXPECTED_TERMINAL",
+      "meaning": "Payment reached a terminal state different from requested --until target",
+      "agentAction": "Adjust `--until` target or handle terminal status in caller"
+    },
+    {
+      "code": "CHANNEL_WATCH_INPUT_INVALID",
+      "meaning": "Unsupported channel watch parameter value",
+      "agentAction": "Fix `--on-timeout` value to fail or success"
+    },
+    {
+      "code": "INVOICE_CREATE_INPUT_INVALID",
+      "meaning": "Invoice creation amount is missing or invalid",
+      "agentAction": "Provide valid numeric amount with `--amount`"
+    }
+  ]
+}
