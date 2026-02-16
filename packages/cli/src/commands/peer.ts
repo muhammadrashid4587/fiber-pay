@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
-import { printJson, printPeerListHuman } from '../lib/format.js';
+import { printJsonSuccess, printPeerListHuman } from '../lib/format.js';
 import { createReadyRpcClient } from '../lib/rpc.js';
 
 function extractPeerIdFromMultiaddr(address: string): string | undefined {
@@ -34,7 +34,7 @@ export function createPeerCommand(config: CliConfig): Command {
       const rpc = await createReadyRpcClient(config);
       const peers = await rpc.listPeers();
       if (options.json) {
-        printJson({ success: true, data: peers });
+        printJsonSuccess(peers);
       } else {
         printPeerListHuman(peers.peers);
       }
@@ -63,7 +63,7 @@ export function createPeerCommand(config: CliConfig): Command {
       }
 
       if (options.json) {
-        printJson({ success: true, data: { address, peerId, message: 'Connected' } });
+        printJsonSuccess({ address, peerId, message: 'Connected' });
       } else {
         console.log('✅ Connected to peer');
         console.log(`  Address: ${address}`);
@@ -80,7 +80,7 @@ export function createPeerCommand(config: CliConfig): Command {
       await rpc.disconnectPeer({ peer_id: peerId });
 
       if (options.json) {
-        printJson({ success: true, data: { peerId, message: 'Disconnected' } });
+        printJsonSuccess({ peerId, message: 'Disconnected' });
       } else {
         console.log('✅ Disconnected peer');
         console.log(`  Peer ID: ${peerId}`);

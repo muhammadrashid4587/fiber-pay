@@ -830,7 +830,17 @@ async function main() {
   // ---- Open channel (with retry — peer Init message may still be in flight) ----
   log(`Opening channel from A to B (funding=${CHANNEL_FUNDING_CKB} CKB)`);
   const openRaw = await retry(
-    () => fiberPay('A', 'channel', 'open', '--peer', nodeBPeerId, '--funding', String(CHANNEL_FUNDING_CKB)),
+    () =>
+      fiberPay(
+        'A',
+        'channel',
+        'open',
+        '--peer',
+        nodeBPeerId,
+        '--funding',
+        String(CHANNEL_FUNDING_CKB),
+        '--json',
+      ),
     { retries: 10, delaySec: 5, label: 'channel open' },
   );
   writeArtifact('channel-open.json', openRaw);
@@ -849,7 +859,16 @@ async function main() {
 
   // ---- Create invoice on Node B ----
   log(`Creating invoice on Node B (amount=${INVOICE_AMOUNT_CKB} CKB)`);
-  const invoiceRaw = fiberPay('B', 'invoice', 'create', '--amount', String(INVOICE_AMOUNT_CKB), '--description', 'ci-dual-node-e2e');
+  const invoiceRaw = fiberPay(
+    'B',
+    'invoice',
+    'create',
+    '--amount',
+    String(INVOICE_AMOUNT_CKB),
+    '--description',
+    'ci-dual-node-e2e',
+    '--json',
+  );
   writeArtifact('invoice-create.json', invoiceRaw);
 
   const invoiceJson = jsonParse(invoiceRaw);
@@ -872,7 +891,7 @@ async function main() {
 
   // ---- Close channel ----
   log('Closing channel');
-  const closeResult = fiberPay('A', 'channel', 'close', channelId);
+  const closeResult = fiberPay('A', 'channel', 'close', channelId, '--json');
   writeArtifact('channel-close.json', closeResult);
   log('Channel close command accepted; skipping close-state wait and continuing cleanup');
 

@@ -3,10 +3,10 @@ import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
 import {
   extractInvoiceMetadata,
-  hasJsonFlag,
   parseHexTimestampMs,
   printInvoiceDetailHuman,
-  printJson,
+  printJsonError,
+  printJsonSuccess,
 } from '../lib/format.js';
 import { createReadyRpcClient } from '../lib/rpc.js';
 
@@ -19,6 +19,7 @@ export function createInvoiceCommand(config: CliConfig): Command {
     .option('--amount <ckb>')
     .option('--description <text>')
     .option('--expiry <minutes>')
+    .option('--json')
     .action(async (amountArg, options) => {
       const rpc = await createReadyRpcClient(config);
 
@@ -28,7 +29,14 @@ export function createInvoiceCommand(config: CliConfig): Command {
           ? parseFloat(amountArg)
           : 0;
       if (!amountCkb) {
-        console.error('Error: Amount required. Usage: invoice create --amount <CKB>');
+        if (options.json) {
+          printJsonError({
+            code: 'INVOICE_CREATE_INPUT_INVALID',
+            message: 'Amount required. Usage: invoice create --amount <CKB>',
+          });
+        } else {
+          console.error('Error: Amount required. Usage: invoice create --amount <CKB>');
+        }
         process.exit(1);
       }
 
@@ -43,16 +51,23 @@ export function createInvoiceCommand(config: CliConfig): Command {
         payment_preimage: randomBytes32(),
       });
 
-      printJson({
-        success: true,
-        data: {
-          invoice: result.invoice_address,
-          paymentHash: result.invoice.data.payment_hash,
-          amountCkb,
-          expiresAt: new Date(Date.now() + expirySeconds * 1000).toISOString(),
-          status: 'open',
-        },
-      });
+      const payload = {
+        invoice: result.invoice_address,
+        paymentHash: result.invoice.data.payment_hash,
+        amountCkb,
+        expiresAt: new Date(Date.now() + expirySeconds * 1000).toISOString(),
+        status: 'open',
+      };
+
+      if (options.json) {
+        printJsonSuccess(payload);
+      } else {
+        console.log('Invoice created');
+        console.log(`  Payment Hash: ${payload.paymentHash}`);
+        console.log(`  Amount:       ${payload.amountCkb} CKB`);
+        console.log(`  Expires At:   ${payload.expiresAt}`);
+        console.log(`  Invoice:      ${payload.invoice}`);
+      }
     });
 
   invoice
@@ -78,8 +93,8 @@ export function createInvoiceCommand(config: CliConfig): Command {
         age: metadata.age,
       };
 
-      if (hasJsonFlag(options.json ? ['--json'] : [])) {
-        printJson({ success: true, data: output });
+      if (options.json) {
+        printJsonSuccess(output);
       } else {
         printInvoiceDetailHuman(output);
       }
@@ -88,10 +103,16 @@ export function createInvoiceCommand(config: CliConfig): Command {
   invoice
     .command('parse')
     .argument('<invoiceString>')
-    .action(async (invoiceString) => {
+    .option('--json')
+    .action(async (invoiceString, options) => {
       const rpc = await createReadyRpcClient(config);
       const result = await rpc.parseInvoice({ invoice: invoiceString });
-      printJson({ success: true, data: result });
+      if (options.json) {
+        printJsonSuccess(result);
+      } else {
+        console.log('Invoice parsed');
+        console.log(JSON.stringify(result, null, 2));
+      }
     });
 
   invoice
@@ -103,7 +124,7 @@ export function createInvoiceCommand(config: CliConfig): Command {
       const result = await rpc.cancelInvoice({ payment_hash: paymentHash as HexString });
       const output = { paymentHash, status: result.status, invoice: result.invoice_address };
       if (options.json) {
-        printJson({ success: true, data: output });
+        printJsonSuccess(output);
       } else {
         console.log('Invoice cancelled');
         console.log(`  Payment Hash:  ${output.paymentHash}`);
@@ -125,7 +146,7 @@ export function createInvoiceCommand(config: CliConfig): Command {
       });
 
       if (options.json) {
-        printJson({ success: true, data: { paymentHash, message: 'Invoice settled.' } });
+        printJsonSuccess({ paymentHash, message: 'Invoice settled.' });
       } else {
         console.log('Invoice settled');
         console.log(`  Payment Hash:  ${paymentHash}`);

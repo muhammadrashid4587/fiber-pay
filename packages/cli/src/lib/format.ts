@@ -200,6 +200,24 @@ export function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+export interface CliErrorPayload {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+export function printJsonSuccess(data: unknown): void {
+  printJson({ success: true, data });
+}
+
+export function printJsonError(error: CliErrorPayload): void {
+  printJson({ success: false, error });
+}
+
+export function printJsonEvent(event: string, data: unknown, ts = new Date().toISOString()): void {
+  process.stdout.write(`${JSON.stringify({ event, ts, data })}\n`);
+}
+
 export function printChannelDetailHuman(channel: Channel): void {
   const local = shannonsToCkb(channel.local_balance);
   const remote = shannonsToCkb(channel.remote_balance);

@@ -1,7 +1,7 @@
 import { type DownloadProgress, downloadFiberBinary, getFiberBinaryInfo } from '@fiber-pay/node';
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
-import { printJson } from '../lib/format.js';
+import { printJsonSuccess } from '../lib/format.js';
 
 function showProgress(progress: DownloadProgress): void {
   const percent = progress.percent !== undefined ? ` (${progress.percent}%)` : '';
@@ -24,11 +24,11 @@ export function createBinaryCommand(config: CliConfig): Command {
         installDir: `${config.dataDir}/bin`,
         version: options.version,
         force: Boolean(options.force),
-        onProgress: showProgress,
+        onProgress: options.json ? undefined : showProgress,
       });
 
       if (options.json) {
-        printJson({ success: true, data: info });
+        printJsonSuccess(info);
       } else {
         console.log('\n✅ Binary installed successfully!');
         console.log(`  Path:    ${info.path}`);
@@ -44,7 +44,7 @@ export function createBinaryCommand(config: CliConfig): Command {
       const info = await getFiberBinaryInfo(`${config.dataDir}/bin`);
 
       if (options.json) {
-        printJson({ success: true, data: info });
+        printJsonSuccess(info);
       } else {
         console.log(info.ready ? '✅ Binary is ready' : '❌ Binary not found or not executable');
         console.log(`  Path:    ${info.path}`);

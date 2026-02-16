@@ -7,7 +7,7 @@ import {
   writeNetworkConfigFile,
 } from '../lib/config.js';
 import type { FiberNetwork } from '../lib/config-templates.js';
-import { printJson } from '../lib/format.js';
+import { printJsonError, printJsonSuccess } from '../lib/format.js';
 
 function parseNetworkInput(input: string | undefined): FiberNetwork {
   if (!input) return 'testnet';
@@ -70,23 +70,20 @@ export function createConfigCommand(_config: CliConfig): Command {
       });
 
       const payload = {
-        success: true,
-        data: {
-          configPath: result.path,
-          dataDir,
-          network: selectedNetwork,
-          rpcPort: rpcPort.value,
-          rpcPortSource: rpcPort.source,
-          p2pPort: p2pPort.value,
-          p2pPortSource: p2pPort.source,
-          created: result.created,
-          overwritten: result.overwritten,
-          skipped: !result.created && !result.overwritten,
-        },
+        configPath: result.path,
+        dataDir,
+        network: selectedNetwork,
+        rpcPort: rpcPort.value,
+        rpcPortSource: rpcPort.source,
+        p2pPort: p2pPort.value,
+        p2pPortSource: p2pPort.source,
+        created: result.created,
+        overwritten: result.overwritten,
+        skipped: !result.created && !result.overwritten,
       };
 
       if (options.json) {
-        printJson(payload);
+        printJsonSuccess(payload);
       } else {
         if (result.created) {
           console.log(`✅ Config initialized: ${result.path}`);
@@ -118,16 +115,13 @@ export function createConfigCommand(_config: CliConfig): Command {
 
       if (options.effective) {
         const payload = {
-          success: true,
-          data: {
-            config: effective.config,
-            sources: effective.sources,
-            configExists: effective.configExists,
-          },
+          config: effective.config,
+          sources: effective.sources,
+          configExists: effective.configExists,
         };
 
         if (options.json) {
-          printJson(payload);
+          printJsonSuccess(payload);
         } else {
           console.log('Effective Config');
           console.log(`  Data Dir:    ${effective.config.dataDir} (${effective.sources.dataDir})`);
@@ -140,16 +134,11 @@ export function createConfigCommand(_config: CliConfig): Command {
       }
 
       if (!effective.configExists) {
-        const payload = {
-          success: false,
-          error: {
+        if (options.json) {
+          printJsonError({
             code: 'CONFIG_NOT_FOUND',
             message: `Config file not found: ${effective.config.configPath}`,
-          },
-        };
-
-        if (options.json) {
-          printJson(payload);
+          });
         } else {
           console.error(`Error: Config file not found: ${effective.config.configPath}`);
           console.error('Run: fiber-pay config init --network testnet');
@@ -161,13 +150,10 @@ export function createConfigCommand(_config: CliConfig): Command {
       const fileNetwork = parseNetworkFromConfig(content) || 'unknown';
 
       if (options.json) {
-        printJson({
-          success: true,
-          data: {
-            path: effective.config.configPath,
-            network: fileNetwork,
-            content,
-          },
+        printJsonSuccess({
+          path: effective.config.configPath,
+          network: fileNetwork,
+          content,
         });
       } else {
         console.log(`# ${effective.config.configPath} (${fileNetwork})`);

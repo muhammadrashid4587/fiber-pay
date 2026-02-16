@@ -8,6 +8,7 @@ import { createNodeCommand } from './commands/node.js';
 import { createPaymentCommand } from './commands/payment.js';
 import { createPeerCommand } from './commands/peer.js';
 import { getConfig } from './lib/config.js';
+import { printJsonError } from './lib/format.js';
 
 function shouldOutputJson(): boolean {
   return process.argv.includes('--json');
@@ -21,19 +22,10 @@ function printFatal(error: unknown): void {
       : undefined;
 
   if (shouldOutputJson()) {
-    console.log(
-      JSON.stringify(
-        {
-          success: false,
-          error: {
-            code: commanderCode ?? 'CLI_FATAL',
-            message,
-          },
-        },
-        null,
-        2,
-      ),
-    );
+    printJsonError({
+      code: commanderCode ?? 'CLI_FATAL',
+      message,
+    });
   } else {
     if (commanderCode?.startsWith('commander.')) {
       return;

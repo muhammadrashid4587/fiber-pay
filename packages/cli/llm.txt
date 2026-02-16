@@ -25,7 +25,7 @@ fiber-pay --help
 
 ## 🛡️ Agent Policy
 1. **Initialization**: Ask user: "Custom `FIBER_KEY_PASSWORD` or default?" before starting.
-2. **Format**: Always use `--json` for machine parsing; use human-readable for user troubleshooting.
+2. **Format**: Use `--json` for machine parsing; default output is human-readable.
 3. **Safety**: Do NOT invent undocumented commands. Do NOT force env setup for single-node quickstart unless requested.
 4. **Style**: Use explicit grouped commands (e.g., `fiber-pay node start`), never legacy aliases.
 
@@ -47,42 +47,62 @@ Create separate `.env` files (e.g., `.env.node-a`, `.env.node-b`) with unique `F
 Usage: `source .env.node-a && fiber-pay node start`
 
 ## 💻 Command Surface
-*Add `--json` to any command for structured output.*
+*All commands support `--json` for structured output.*
 
 ### Lifecycle (`node`)
-*   `start [--cors-proxy <port>]`: Start node (foreground).
-*   `stop`: Stop node.
-*   `status`: Check process status.
-*   `info`: Get node ID and version details.
+*   `start [--cors-proxy <port>] [--json]`: Start node (foreground).
+*   `stop [--json]`: Stop node.
+*   `status [--json]`: Check process status.
+*   `info [--json]`: Get node ID and version details.
 
 ### Setup (`binary`, `config`)
-*   `binary download [--version v0.6.1] [--force]`: Fetch fiber node binary.
-*   `binary info`: Show binary path/version.
-*   `config init [--data-dir <path>] [--network <net>] [--rpc-port <port>] [--p2p-port <port>] [--force]`: Initialize config.
-*   `config show [--effective]`: Display current config.
+*   `binary download [--version v0.6.1] [--force] [--json]`: Fetch fiber node binary.
+*   `binary info [--json]`: Show binary path/version.
+*   `config init [--data-dir <path>] [--network <net>] [--rpc-port <port>] [--p2p-port <port>] [--force] [--json]`: Initialize config.
+*   `config show [--effective] [--json]`: Display current config.
 
 ### Operations (`channel`, `invoice`, `payment`)
 *   **Channel**:
-    *   `list [--state <state>] [--peer <id>] [--include-closed]`: List channels.
-    *   `open --peer <multiaddr> --funding <CKB> [--private]`: Open channel.
-    *   `close <id> [--force]`: Close channel.
-    *   `update <id> [--enabled <bool>] ...`: Update TLC/fee settings.
-    *   `watch`: Monitor channel state changes.
+    *   `list [--state <state>] [--peer <id>] [--include-closed] [--json]`: List channels.
+    *   `open --peer <multiaddr> --funding <CKB> [--private] [--json]`: Open channel.
+    *   `close <id> [--force] [--json]`: Close channel.
+    *   `abandon <id> [--json]`: Abandon channel.
+    *   `update <id> [--enabled <bool>] ... [--json]`: Update TLC/fee settings.
+    *   `watch [--json]`: Monitor channel state changes.
 *   **Invoice**:
-    *   `create --amount <CKB> --description <txt> [--expiry <min>]`: Gen invoice.
-    *   `get <paymentHash>`: Query invoice status.
-    *   `cancel <paymentHash>`: Cancel invoice.
-    *   `settle <paymentHash> --preimage <hex>`: Manually settle.
+    *   `create --amount <CKB> --description <txt> [--expiry <min>] [--json]`: Gen invoice.
+    *   `parse <invoiceString> [--json]`: Parse invoice.
+    *   `get <paymentHash> [--json]`: Query invoice status.
+    *   `cancel <paymentHash> [--json]`: Cancel invoice.
+    *   `settle <paymentHash> --preimage <hex> [--json]`: Manually settle.
 *   **Payment**:
-    *   `send <invoice> | --to <nodeId> --amount <CKB>`: Pay an invoice.
-    *   `get <paymentHash>`: Check payment status.
-    *   `watch <paymentHash>`: Monitor payment outcome.
+    *   `send <invoice> | --to <nodeId> --amount <CKB> [--json]`: Pay an invoice.
+    *   `get <paymentHash> [--json]`: Check payment status.
+    *   `watch <paymentHash> [--json]`: Monitor payment outcome.
 
 ### Network & Info (`peer`, `balance`)
-*   `peer list`: Show connected peers.
-*   `peer connect <multiaddr>`: Connect to peer.
-*   `peer disconnect <peerId>`: Disconnect.
-*   `balance`: Show local CKB balance.
+*   `peer list [--json]`: Show connected peers.
+*   `peer connect <multiaddr> [--json]`: Connect to peer.
+*   `peer disconnect <peerId> [--json]`: Disconnect.
+*   `balance [--json]`: Show local CKB balance.
+
+## 📦 JSON Contract (vNext)
+- Non-stream commands in `--json` mode return one envelope:
+    - success: `{"success":true,"data":{...}}`
+    - failure: `{"success":false,"error":{"code":"...","message":"..."}}`
+- `payment send` returns `success: true` when RPC accepted the request, with `data.status` in `success|pending|failed`.
+- In `--json` mode, command stdout is machine-only JSON (no progress bars, emoji, or human prose).
+
+## 🌊 Streaming Contract (`watch --json`)
+- Streaming commands emit NDJSON (one JSON object per line), not a single pretty JSON blob.
+- `channel watch --json` events:
+    - `snapshot`: current channels + summary
+    - `state_change`: transition for one channel
+    - `terminal`: exit condition reached
+- `payment watch --json` events:
+    - `status_transition`
+    - `terminal`
+- Timeout/errors still use the standard failure envelope and exit non-zero.
 
 ## 🚀 Common Workflows
 

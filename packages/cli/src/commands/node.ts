@@ -17,7 +17,12 @@ import {
 import { Command } from 'commander';
 import { autoConnectBootnodes, extractBootnodeAddrs } from '../lib/bootnode.js';
 import { type CliConfig, ensureNodeConfigFile } from '../lib/config.js';
-import { printJson, printNodeInfoHuman } from '../lib/format.js';
+import {
+  printJsonError,
+  printJsonEvent,
+  printJsonSuccess,
+  printNodeInfoHuman,
+} from '../lib/format.js';
 import { isProcessRunning, readPidFile, removePidFile, writePidFile } from '../lib/pid.js';
 import { createReadyRpcClient, createRpcClient } from '../lib/rpc.js';
 
@@ -44,10 +49,19 @@ export function createNodeCommand(config: CliConfig): Command {
   node
     .command('start')
     .option('--cors-proxy [port]')
+    .option('--json')
     .action(async (options) => {
+      const json = Boolean(options.json);
       const existingPid = readPidFile(config.dataDir);
       if (existingPid && isProcessRunning(existingPid)) {
-        console.log(`❌ Node is already running (PID: ${existingPid})`);
+        if (json) {
+          printJsonError({
+            code: 'NODE_ALREADY_RUNNING',
+            message: `Node is already running (PID: ${existingPid})`,
+          });
+        } else {
+          console.log(`❌ Node is already running (PID: ${existingPid})`);
+        }
         process.exit(1);
       }
 
@@ -63,8 +77,10 @@ export function createNodeCommand(config: CliConfig): Command {
       const binaryVersion = getBinaryVersion(binaryPath);
       const configFilePath = ensureNodeConfigFile(config.dataDir, config.network);
 
-      console.log(`🧩 Binary: ${binaryPath}`);
-      console.log(`🧩 Version: ${binaryVersion}`);
+      if (!json) {
+        console.log(`🧩 Binary: ${binaryPath}`);
+        console.log(`🧩 Version: ${binaryVersion}`);
+      }
 
       const nodeConfig: FiberNodeConfig = {
         binaryPath,
@@ -81,9 +97,12 @@ export function createNodeCommand(config: CliConfig): Command {
         });
         await keyManager.initialize();
       } catch (error) {
-        console.error(
-          `❌ Failed to initialize node keys: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        const message = `Failed to initialize node keys: ${error instanceof Error ? error.message : String(error)}`;
+        if (json) {
+          printJsonError({ code: 'NODE_KEY_INIT_FAILED', message });
+        } else {
+          console.error(`❌ ${message}`);
+        }
         process.exit(1);
       }
 
@@ -117,11 +136,14 @@ export function createNodeCommand(config: CliConfig): Command {
 
         try {
           await corsProxy.start();
-          console.log(`🌐 CORS proxy started on http://127.0.0.1:${corsProxyPort}`);
+          if (!json) {
+            console.log(`🌐 CORS proxy started on http://127.0.0.1:${corsProxyPort}`);
+          }
         } catch (error) {
-          console.error(
-            `⚠️  Failed to start CORS proxy: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          const message = `Failed to start CORS proxy: ${error instanceof Error ? error.message : String(error)}`;
+          if (!json) {
+            console.error(`⚠️  ${message}`);
+          }
         }
       }
 
@@ -135,20 +157,34 @@ export function createNodeCommand(config: CliConfig): Command {
 
       if (earlyStop || processManager.getState() === 'stopped') {
         const details = formatStopDetails(earlyStop);
-        console.error(`❌ Fiber node exited during startup${details}`);
+        if (json) {
+          printJsonError({
+            code: 'NODE_STARTUP_EXITED',
+            message: `Fiber node exited during startup${details}`,
+          });
+        } else {
+          console.error(`❌ Fiber node exited during startup${details}`);
+        }
         removePidFile(config.dataDir);
         process.exit(1);
       }
 
       if (!rpcReady) {
-        console.error('❌ RPC did not become ready within 30s. Node startup failed.');
+        if (json) {
+          printJsonError({
+            code: 'NODE_RPC_NOT_READY',
+            message: 'RPC did not become ready within 30s. Node startup failed.',
+          });
+        } else {
+          console.error('❌ RPC did not become ready within 30s. Node startup failed.');
+        }
         const stderrTail = processManager.getStderr(12).join('').trim();
         const stdoutTail = processManager.getStdout(12).join('').trim();
-        if (stderrTail.length > 0) {
+        if (!json && stderrTail.length > 0) {
           console.error('--- fnn stderr (tail) ---');
           console.error(stderrTail);
         }
-        if (stdoutTail.length > 0) {
+        if (!json && stdoutTail.length > 0) {
           console.error('--- fnn stdout (tail) ---');
           console.error(stdoutTail);
         }
@@ -167,29 +203,52 @@ export function createNodeCommand(config: CliConfig): Command {
 
       if (earlyStop || processManager.getState() === 'stopped') {
         const details = formatStopDetails(earlyStop);
-        console.error(`❌ Fiber node exited during startup${details}`);
+        if (json) {
+          printJsonError({
+            code: 'NODE_STARTUP_EXITED',
+            message: `Fiber node exited during startup${details}`,
+          });
+        } else {
+          console.error(`❌ Fiber node exited during startup${details}`);
+        }
         removePidFile(config.dataDir);
         process.exit(1);
       }
 
-      console.log('✅ Fiber node started successfully!');
-      console.log(`   RPC endpoint: ${config.rpcUrl}`);
-      if (corsProxy) {
-        console.log(`   CORS proxy:   http://127.0.0.1:${corsProxyPort} (browser-safe endpoint)`);
+      if (json) {
+        printJsonEvent('node_started', {
+          rpcUrl: config.rpcUrl,
+          binaryPath,
+          binaryVersion,
+          pid: processId ?? null,
+          corsProxyUrl: corsProxy ? `http://127.0.0.1:${corsProxyPort}` : null,
+        });
+      } else {
+        console.log('✅ Fiber node started successfully!');
+        console.log(`   RPC endpoint: ${config.rpcUrl}`);
+        if (corsProxy) {
+          console.log(`   CORS proxy:   http://127.0.0.1:${corsProxyPort} (browser-safe endpoint)`);
+        }
+        console.log('   Press Ctrl+C to stop.');
       }
-      console.log('   Press Ctrl+C to stop.');
 
       let shutdownRequested = false;
       const shutdown = async () => {
         if (shutdownRequested) return;
         shutdownRequested = true;
-        console.log('\n🛑 Shutting down...');
+        if (!json) {
+          console.log('\n🛑 Shutting down...');
+        }
         if (corsProxy) {
           await corsProxy.stop();
         }
         removePidFile(config.dataDir);
         await processManager.stop();
-        console.log('✅ Node stopped.');
+        if (json) {
+          printJsonEvent('node_stopped', { reason: 'signal' });
+        } else {
+          console.log('✅ Node stopped.');
+        }
       };
 
       await new Promise<void>((resolve) => {
@@ -221,96 +280,170 @@ export function createNodeCommand(config: CliConfig): Command {
       });
 
       if (!shutdownRequested) {
-        console.error('❌ Fiber node stopped unexpectedly.');
+        if (json) {
+          printJsonError({
+            code: 'NODE_STOPPED_UNEXPECTEDLY',
+            message: 'Fiber node stopped unexpectedly.',
+          });
+        } else {
+          console.error('❌ Fiber node stopped unexpectedly.');
+        }
         removePidFile(config.dataDir);
         process.exit(1);
       }
     });
 
-  node.command('stop').action(async () => {
-    const pid = readPidFile(config.dataDir);
-    if (!pid) {
-      console.log('❌ No PID file found. Node may not be running.');
-      process.exit(1);
-    }
-
-    if (!isProcessRunning(pid)) {
-      console.log(`❌ Process ${pid} is not running. Cleaning up PID file.`);
-      removePidFile(config.dataDir);
-      process.exit(1);
-    }
-
-    console.log(`🛑 Stopping node (PID: ${pid})...`);
-    process.kill(pid, 'SIGTERM');
-
-    let attempts = 0;
-    while (isProcessRunning(pid) && attempts < 30) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      attempts++;
-    }
-
-    if (isProcessRunning(pid)) {
-      process.kill(pid, 'SIGKILL');
-    }
-
-    removePidFile(config.dataDir);
-    console.log('✅ Node stopped.');
-  });
-
-  node.command('status').action(async () => {
-    const pid = readPidFile(config.dataDir);
-    if (pid && isProcessRunning(pid)) {
-      console.log(`✅ Node is running (PID: ${pid})`);
-      try {
-        const rpc = await createReadyRpcClient(config);
-        const nodeInfo = await rpc.nodeInfo();
-        console.log(`   Node ID: ${nodeInfo.node_id}`);
-        let peerId: string | undefined;
-        try {
-          peerId = await nodeIdToPeerId(nodeInfo.node_id);
-          console.log(`   Peer ID: ${peerId}`);
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          console.log(`   Peer ID: unavailable (${reason})`);
+  node
+    .command('stop')
+    .option('--json')
+    .action(async (options) => {
+      const json = Boolean(options.json);
+      const pid = readPidFile(config.dataDir);
+      if (!pid) {
+        if (json) {
+          printJsonError({
+            code: 'NODE_NOT_RUNNING',
+            message: 'No PID file found. Node may not be running.',
+          });
+        } else {
+          console.log('❌ No PID file found. Node may not be running.');
         }
-        console.log(`   RPC: ${config.rpcUrl}`);
+        process.exit(1);
+      }
 
-        const baseAddress = nodeInfo.addresses[0];
-        if (baseAddress) {
+      if (!isProcessRunning(pid)) {
+        if (json) {
+          printJsonError({
+            code: 'NODE_NOT_RUNNING',
+            message: `Process ${pid} is not running. Cleaning up PID file.`,
+          });
+        } else {
+          console.log(`❌ Process ${pid} is not running. Cleaning up PID file.`);
+        }
+        removePidFile(config.dataDir);
+        process.exit(1);
+      }
+
+      if (!json) {
+        console.log(`🛑 Stopping node (PID: ${pid})...`);
+      }
+      process.kill(pid, 'SIGTERM');
+
+      let attempts = 0;
+      while (isProcessRunning(pid) && attempts < 30) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        attempts++;
+      }
+
+      if (isProcessRunning(pid)) {
+        process.kill(pid, 'SIGKILL');
+      }
+
+      removePidFile(config.dataDir);
+      if (json) {
+        printJsonSuccess({ pid, stopped: true });
+      } else {
+        console.log('✅ Node stopped.');
+      }
+    });
+
+  node
+    .command('status')
+    .option('--json')
+    .action(async (options) => {
+      const json = Boolean(options.json);
+      const pid = readPidFile(config.dataDir);
+      const output: Record<string, unknown> = {
+        running: false,
+        pid: pid ?? null,
+        rpcResponsive: false,
+      };
+
+      if (pid && isProcessRunning(pid)) {
+        output.running = true;
+        try {
+          const rpc = await createReadyRpcClient(config);
+          const nodeInfo = await rpc.nodeInfo();
+          output.rpcResponsive = true;
+          output.nodeId = nodeInfo.node_id;
+          output.rpcUrl = config.rpcUrl;
+          let peerId: string | undefined;
           try {
-            const multiaddr = await buildMultiaddrFromNodeId(baseAddress, nodeInfo.node_id);
-            console.log(`   Multiaddr: ${multiaddr}`);
+            peerId = await nodeIdToPeerId(nodeInfo.node_id);
+            output.peerId = peerId;
           } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
-            console.log(`   Multiaddr: unavailable (${reason})`);
+            output.peerId = null;
+            output.peerIdError = reason;
           }
-        } else if (peerId) {
-          try {
-            const inferredMultiaddr = buildMultiaddrFromRpcUrl(config.rpcUrl, peerId);
-            console.log(
-              `   Multiaddr: ${inferredMultiaddr} (inferred from RPC + peerId; no advertised addresses)`,
-            );
-          } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
-            console.log(
-              `   Multiaddr: unavailable (no advertised addresses; infer failed: ${reason})`,
-            );
+
+          const baseAddress = nodeInfo.addresses[0];
+          if (baseAddress) {
+            try {
+              const multiaddr = await buildMultiaddrFromNodeId(baseAddress, nodeInfo.node_id);
+              output.multiaddr = multiaddr;
+            } catch (error) {
+              const reason = error instanceof Error ? error.message : String(error);
+              output.multiaddr = null;
+              output.multiaddrError = reason;
+            }
+          } else if (peerId) {
+            try {
+              const inferredMultiaddr = buildMultiaddrFromRpcUrl(config.rpcUrl, peerId);
+              output.multiaddr = inferredMultiaddr;
+              output.multiaddrInferred = true;
+            } catch (error) {
+              const reason = error instanceof Error ? error.message : String(error);
+              output.multiaddr = null;
+              output.multiaddrError = `no advertised addresses; infer failed: ${reason}`;
+            }
+          } else {
+            output.multiaddr = null;
+          }
+        } catch {
+          output.rpcResponsive = false;
+        }
+      } else {
+        if (pid) {
+          output.stalePidFile = true;
+          removePidFile(config.dataDir);
+        }
+      }
+
+      if (json) {
+        printJsonSuccess(output);
+        return;
+      }
+
+      if (output.running) {
+        console.log(`✅ Node is running (PID: ${output.pid})`);
+        if (output.rpcResponsive) {
+          console.log(`   Node ID: ${String(output.nodeId)}`);
+          if (output.peerId) {
+            console.log(`   Peer ID: ${String(output.peerId)}`);
+          } else if (output.peerIdError) {
+            console.log(`   Peer ID: unavailable (${String(output.peerIdError)})`);
+          }
+          console.log(`   RPC: ${String(output.rpcUrl)}`);
+          if (output.multiaddr) {
+            const inferredSuffix = output.multiaddrInferred
+              ? ' (inferred from RPC + peerId; no advertised addresses)'
+              : '';
+            console.log(`   Multiaddr: ${String(output.multiaddr)}${inferredSuffix}`);
+          } else if (output.multiaddrError) {
+            console.log(`   Multiaddr: unavailable (${String(output.multiaddrError)})`);
+          } else {
+            console.log('   Multiaddr: unavailable');
           }
         } else {
-          console.log('   Multiaddr: unavailable');
+          console.log('   ⚠️  RPC not responding');
         }
-      } catch {
-        console.log('   ⚠️  RPC not responding');
-      }
-    } else {
-      if (pid) {
-        console.log(`❌ Node is not running (stale PID file: ${pid})`);
-        removePidFile(config.dataDir);
+      } else if (output.pid) {
+        console.log(`❌ Node is not running (stale PID file: ${output.pid})`);
       } else {
         console.log('❌ Node is not running');
       }
-    }
-  });
+    });
 
   node
     .command('info')
@@ -334,7 +467,7 @@ export function createNodeCommand(config: CliConfig): Command {
       };
 
       if (options.json) {
-        printJson({ success: true, data: output });
+        printJsonSuccess(output);
       } else {
         printNodeInfoHuman(output);
       }

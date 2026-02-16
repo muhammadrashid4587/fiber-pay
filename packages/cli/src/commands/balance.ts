@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { ChannelState, type Script, scriptToAddress } from '@fiber-pay/sdk';
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
-import { printBalanceHuman, printJson } from '../lib/format.js';
+import { printBalanceHuman, printJsonSuccess } from '../lib/format.js';
 import { createReadyRpcClient } from '../lib/rpc.js';
 
 const CELLS_PAGE_SIZE = 100;
@@ -147,7 +147,7 @@ export function createBalanceCommand(config: CliConfig): Command {
       };
 
       if (options.json) {
-        printJson({ success: true, data: output });
+        printJsonSuccess(output);
       } else {
         printBalanceHuman(output);
       }

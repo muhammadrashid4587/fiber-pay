@@ -1,7 +1,14 @@
 import { ckbToShannons, type HexString, shannonsToCkb } from '@fiber-pay/sdk';
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
-import { formatPaymentResult, printJson, printPaymentDetailHuman, sleep } from '../lib/format.js';
+import {
+  formatPaymentResult,
+  printJsonError,
+  printJsonEvent,
+  printJsonSuccess,
+  printPaymentDetailHuman,
+  sleep,
+} from '../lib/format.js';
 import { createReadyRpcClient } from '../lib/rpc.js';
 
 export function createPaymentCommand(config: CliConfig): Command {
@@ -17,17 +24,32 @@ export function createPaymentCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (invoiceArg, options) => {
       const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
       const invoice = options.invoice || invoiceArg;
       const recipientNodeId = options.to;
       const amountCkb = options.amount ? parseFloat(options.amount) : undefined;
       const maxFeeCkb = options.maxFee ? parseFloat(options.maxFee) : undefined;
 
       if (!invoice && !recipientNodeId) {
-        console.error('Error: Either invoice or --to <nodeId> required');
+        if (json) {
+          printJsonError({
+            code: 'PAYMENT_SEND_INPUT_INVALID',
+            message: 'Either invoice or --to <nodeId> required',
+          });
+        } else {
+          console.error('Error: Either invoice or --to <nodeId> required');
+        }
         process.exit(1);
       }
       if (recipientNodeId && !amountCkb) {
-        console.error('Error: --amount required when using --to');
+        if (json) {
+          printJsonError({
+            code: 'PAYMENT_SEND_INPUT_INVALID',
+            message: '--amount required when using --to',
+          });
+        } else {
+          console.error('Error: --amount required when using --to');
+        }
         process.exit(1);
       }
 
@@ -51,7 +73,17 @@ export function createPaymentCommand(config: CliConfig): Command {
         failureReason: result.failed_error,
       };
 
-      printJson({ success: result.status === 'Success', data: payload });
+      if (json) {
+        printJsonSuccess(payload);
+      } else {
+        console.log('Payment sent');
+        console.log(`  Hash:   ${payload.paymentHash}`);
+        console.log(`  Status: ${payload.status}`);
+        console.log(`  Fee:    ${payload.feeCkb} CKB`);
+        if (payload.failureReason) {
+          console.log(`  Error:  ${payload.failureReason}`);
+        }
+      }
     });
 
   payment
@@ -62,7 +94,7 @@ export function createPaymentCommand(config: CliConfig): Command {
       const rpc = await createReadyRpcClient(config);
       const result = await rpc.getPayment({ payment_hash: paymentHash as HexString });
       if (options.json) {
-        printJson({ success: true, data: formatPaymentResult(result) });
+        printJsonSuccess(formatPaymentResult(result));
       } else {
         printPaymentDetailHuman(result);
       }
@@ -76,6 +108,7 @@ export function createPaymentCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (paymentHash, options) => {
       const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
       const intervalSeconds = parseInt(options.interval, 10);
       const timeoutSeconds = parseInt(options.timeout, 10);
       const startedAt = Date.now();
@@ -85,17 +118,13 @@ export function createPaymentCommand(config: CliConfig): Command {
         const paymentResult = await rpc.getPayment({ payment_hash: paymentHash as HexString });
 
         if (paymentResult.status !== lastStatus) {
-          if (options.json) {
-            printJson({
-              success: true,
-              data: {
-                statusTransition: {
-                  from: lastStatus ?? null,
-                  to: paymentResult.status,
-                  at: new Date().toISOString(),
-                },
-                payment: formatPaymentResult(paymentResult),
+          if (json) {
+            printJsonEvent('status_transition', {
+              statusTransition: {
+                from: lastStatus ?? null,
+                to: paymentResult.status,
               },
+              payment: formatPaymentResult(paymentResult),
             });
           } else {
             console.log(`Status: ${lastStatus ?? '(initial)'} -> ${paymentResult.status}`);
@@ -106,19 +135,28 @@ export function createPaymentCommand(config: CliConfig): Command {
         }
 
         if (paymentResult.status === 'Success' || paymentResult.status === 'Failed') {
+          if (json) {
+            printJsonEvent('terminal', {
+              paymentHash,
+              terminalStatus: paymentResult.status,
+            });
+          }
           return;
         }
 
         await sleep(intervalSeconds * 1000);
       }
 
-      printJson({
-        success: false,
-        error: {
+      if (json) {
+        printJsonError({
           code: 'PAYMENT_WATCH_TIMEOUT',
           message: `Payment ${paymentHash} did not reach terminal state within ${timeoutSeconds}s`,
-        },
-      });
+        });
+      } else {
+        console.error(
+          `Error: Payment ${paymentHash} did not reach terminal state within ${timeoutSeconds}s`,
+        );
+      }
       process.exit(1);
     });
 

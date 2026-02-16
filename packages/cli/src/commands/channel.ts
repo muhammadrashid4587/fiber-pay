@@ -4,11 +4,12 @@ import type { CliConfig } from '../lib/config.js';
 import {
   formatChannel,
   getChannelSummary,
-  hasJsonFlag,
   parseChannelState,
   printChannelDetailHuman,
   printChannelListHuman,
-  printJson,
+  printJsonError,
+  printJsonEvent,
+  printJsonSuccess,
   sleep,
   truncateMiddle,
 } from '../lib/format.js';
@@ -37,7 +38,7 @@ export function createChannelCommand(config: CliConfig): Command {
         : response.channels;
 
       if (options.raw || options.json) {
-        printJson({ success: true, data: { channels, count: channels.length } });
+        printJsonSuccess({ channels, count: channels.length });
       } else {
         printChannelListHuman(channels);
       }
@@ -53,12 +54,19 @@ export function createChannelCommand(config: CliConfig): Command {
       const response = await rpc.listChannels({ include_closed: true });
       const found = response.channels.find((item) => item.channel_id === channelId);
       if (!found) {
-        console.error(`Error: Channel not found: ${channelId}`);
+        if (options.json) {
+          printJsonError({
+            code: 'CHANNEL_NOT_FOUND',
+            message: `Channel not found: ${channelId}`,
+          });
+        } else {
+          console.error(`Error: Channel not found: ${channelId}`);
+        }
         process.exit(1);
       }
 
       if (options.raw || options.json) {
-        printJson({ success: true, data: found });
+        printJsonSuccess(found);
       } else {
         printChannelDetailHuman(found);
       }
@@ -82,7 +90,7 @@ export function createChannelCommand(config: CliConfig): Command {
       const stateFilter = parseChannelState(options.state);
       const untilState = parseChannelState(options.until);
       const noClear = Boolean(options.noClear);
-      const json = hasJsonFlag(options.json ? ['--json'] : []);
+      const json = Boolean(options.json);
       const startedAt = Date.now();
       const previousStates = new Map<string, ChannelState>();
 
@@ -110,40 +118,56 @@ export function createChannelCommand(config: CliConfig): Command {
           previousStates.set(ch.channel_id, ch.state.state_name);
         }
 
-        if (!noClear) {
-          console.clear();
-        }
-
-        console.log(`⏱️  Channel monitor - ${new Date().toISOString()}`);
-        console.log(
-          `   Refresh: ${intervalSeconds}s${timeoutSeconds ? ` | Timeout: ${timeoutSeconds}s` : ''}${untilState ? ` | Until: ${untilState}` : ''}`,
-        );
-
-        if (stateChanges.length > 0) {
-          console.log('\n🔔 State changes:');
-          for (const change of stateChanges) {
-            console.log(`   ${truncateMiddle(change.channelId)}: ${change.from} -> ${change.to}`);
-          }
-        }
-
         if (json) {
-          printJson({
-            success: true,
-            data: {
-              channels: channels.map(formatChannel),
-              summary: getChannelSummary(channels),
-            },
+          printJsonEvent('snapshot', {
+            channels: channels.map(formatChannel),
+            summary: getChannelSummary(channels),
           });
+
+          for (const change of stateChanges) {
+            printJsonEvent('state_change', {
+              channelId: change.channelId,
+              from: change.from,
+              to: change.to,
+            });
+          }
         } else {
+          if (!noClear) {
+            console.clear();
+          }
+
+          console.log(`⏱️  Channel monitor - ${new Date().toISOString()}`);
+          console.log(
+            `   Refresh: ${intervalSeconds}s${timeoutSeconds ? ` | Timeout: ${timeoutSeconds}s` : ''}${untilState ? ` | Until: ${untilState}` : ''}`,
+          );
+
+          if (stateChanges.length > 0) {
+            console.log('\n🔔 State changes:');
+            for (const change of stateChanges) {
+              console.log(`   ${truncateMiddle(change.channelId)}: ${change.from} -> ${change.to}`);
+            }
+          }
+
           printChannelListHuman(channels);
         }
 
         if (untilState && channels.some((item) => item.state.state_name === untilState)) {
-          console.log(`\n✅ Target state reached: ${untilState}`);
+          if (json) {
+            printJsonEvent('terminal', { reason: 'target_state_reached', untilState });
+          } else {
+            console.log(`\n✅ Target state reached: ${untilState}`);
+          }
           return;
         }
 
         if (timeoutSeconds !== undefined && Date.now() - startedAt >= timeoutSeconds * 1000) {
+          if (json) {
+            printJsonError({
+              code: 'CHANNEL_WATCH_TIMEOUT',
+              message: `Channel monitor timed out after ${timeoutSeconds}s`,
+            });
+            process.exit(1);
+          }
           console.log('\n⏰ Monitor timeout reached.');
           return;
         }
@@ -157,6 +181,7 @@ export function createChannelCommand(config: CliConfig): Command {
     .requiredOption('--peer <peerIdOrMultiaddr>')
     .requiredOption('--funding <ckb>')
     .option('--private')
+    .option('--json')
     .action(async (options) => {
       const rpc = await createReadyRpcClient(config);
       const peerInput = options.peer as string;
@@ -175,39 +200,55 @@ export function createChannelCommand(config: CliConfig): Command {
         public: !options.private,
       });
 
-      printJson({
-        success: true,
-        data: { temporaryChannelId: result.temporary_channel_id, peer: peerId, fundingCkb },
-      });
+      const payload = { temporaryChannelId: result.temporary_channel_id, peer: peerId, fundingCkb };
+      if (options.json) {
+        printJsonSuccess(payload);
+      } else {
+        console.log('Channel open initiated');
+        console.log(`  Temporary Channel ID: ${payload.temporaryChannelId}`);
+        console.log(`  Peer:                 ${payload.peer}`);
+        console.log(`  Funding:              ${payload.fundingCkb} CKB`);
+      }
     });
 
   channel
     .command('close')
     .argument('<channelId>')
     .option('--force')
+    .option('--json')
     .action(async (channelId, options) => {
       const rpc = await createReadyRpcClient(config);
       await rpc.shutdownChannel({
         channel_id: channelId as HexString,
         force: Boolean(options.force),
       });
-      printJson({
-        success: true,
-        data: {
-          channelId,
-          force: Boolean(options.force),
-          message: options.force ? 'Channel force close initiated' : 'Channel close initiated',
-        },
-      });
+      const payload = {
+        channelId,
+        force: Boolean(options.force),
+        message: options.force ? 'Channel force close initiated' : 'Channel close initiated',
+      };
+      if (options.json) {
+        printJsonSuccess(payload);
+      } else {
+        console.log(payload.message);
+        console.log(`  Channel ID: ${payload.channelId}`);
+      }
     });
 
   channel
     .command('abandon')
     .argument('<channelId>')
-    .action(async (channelId) => {
+    .option('--json')
+    .action(async (channelId, options) => {
       const rpc = await createReadyRpcClient(config);
       await rpc.abandonChannel({ channel_id: channelId as HexString });
-      printJson({ success: true, data: { channelId, message: 'Channel abandoned.' } });
+      const payload = { channelId, message: 'Channel abandoned.' };
+      if (options.json) {
+        printJsonSuccess(payload);
+      } else {
+        console.log(payload.message);
+        console.log(`  Channel ID: ${payload.channelId}`);
+      }
     });
 
   channel
@@ -217,6 +258,7 @@ export function createChannelCommand(config: CliConfig): Command {
     .option('--tlc-expiry-delta <ms>')
     .option('--tlc-minimum-value <shannonsHex>')
     .option('--tlc-fee-proportional-millionths <value>')
+    .option('--json')
     .action(async (channelId, options) => {
       const rpc = await createReadyRpcClient(config);
       await rpc.updateChannel({
@@ -226,7 +268,13 @@ export function createChannelCommand(config: CliConfig): Command {
         tlc_minimum_value: options.tlcMinimumValue,
         tlc_fee_proportional_millionths: options.tlcFeeProportionalMillionths,
       });
-      printJson({ success: true, data: { channelId, message: 'Channel updated.' } });
+      const payload = { channelId, message: 'Channel updated.' };
+      if (options.json) {
+        printJsonSuccess(payload);
+      } else {
+        console.log(payload.message);
+        console.log(`  Channel ID: ${payload.channelId}`);
+      }
     });
 
   return channel;

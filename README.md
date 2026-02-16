@@ -18,7 +18,8 @@ This repository currently emphasizes SDK + CLI quality and agent usability throu
 
 - Canonical CLI guide for agents: `packages/cli/llm.txt`
 - Predictable grouped commands (`node/channel/invoice/payment/peer/binary/balance`)
-- `--json` output for reliable parsing and tool chaining
+- Uniform `--json` envelopes for reliable parsing and tool chaining
+- NDJSON stream events for `watch --json` commands
 - Explicit defaults for startup, ports, binary path, and key password behavior
 
 ## Quick start
@@ -50,7 +51,8 @@ fiber-pay invoice create --amount 10 --description "service"
 fiber-pay payment send <invoice>
 ```
 
-Use `--json` when command output will be consumed by scripts or agents.
+Use `--json` when command output is consumed by scripts or agents.
+Non-stream commands emit a single envelope (`success + data|error`), while watch commands emit NDJSON events.
 
 ## Copy-paste prompt for your coding agent
 
