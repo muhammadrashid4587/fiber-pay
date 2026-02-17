@@ -487,6 +487,7 @@ export async function getFiberBinaryInfo(installDir?: string): Promise<BinaryInf
 export async function ensureFiberBinary(options: DownloadOptions = {}): Promise<string> {
   const manager = new BinaryManager(options.installDir);
   const info = await manager.getBinaryInfo();
+  let downloadOptions = options;
 
   if (info.ready) {
     const wantedTag = manager.normalizeTag(options.version || DEFAULT_FIBER_VERSION);
@@ -494,10 +495,11 @@ export async function ensureFiberBinary(options: DownloadOptions = {}): Promise<
     if (info.version === wantedVersion) {
       return info.path;
     }
-    // Version mismatch — re-download
+    // Version mismatch — force re-download.
+    downloadOptions = { ...options, force: true };
   }
 
-  const downloaded = await manager.download(options);
+  const downloaded = await manager.download(downloadOptions);
   return downloaded.path;
 }
 
