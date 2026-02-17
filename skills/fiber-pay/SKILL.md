@@ -108,6 +108,11 @@ For full SDK method/type coverage, read:
 
 - `skills/fiber-pay/references/SDK.md`
 
+For full fnn config key reference and generalized config CLI usage, read:
+
+- `docs/configuration.md`
+- `configs/fnn.reference.yml`
+
 ## Amount and encoding conventions
 
 At RPC boundary, numeric values are typically hex-encoded shannons (`0x...`).

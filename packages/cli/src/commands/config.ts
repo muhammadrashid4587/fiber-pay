@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { Command } from 'commander';
+import { parseDocument, stringify as yamlStringify } from 'yaml';
 import {
   type CliConfig,
   getEffectiveConfig,
@@ -42,6 +43,137 @@ function resolvePort(
     return { value: parsePortInput(envValue, label), source: 'env' };
   }
   return { value: undefined, source: 'unset' };
+}
+
+type ConfigValueType = 'auto' | 'string' | 'number' | 'boolean' | 'null' | 'json';
+type ConfigPathSegment = string | number;
+
+const LEGACY_PATH_ALIASES: Record<string, string> = {
+  chain: 'fiber.chain',
+};
+
+function resolveConfigPathAlias(path: string): string {
+  return LEGACY_PATH_ALIASES[path] ?? path;
+}
+
+function parseConfigPath(path: string): ConfigPathSegment[] {
+  const normalized = resolveConfigPathAlias(path).trim();
+  if (!normalized) {
+    throw new Error('Config path cannot be empty.');
+  }
+
+  const segments: ConfigPathSegment[] = [];
+  const re = /([^.[\]]+)|\[(\d+)\]/g;
+  for (const match of normalized.matchAll(re)) {
+    if (match[1]) {
+      segments.push(match[1]);
+    } else if (match[2]) {
+      segments.push(Number.parseInt(match[2], 10));
+    }
+  }
+
+  if (segments.length === 0) {
+    throw new Error(`Invalid config path: ${path}`);
+  }
+
+  return segments;
+}
+
+function parseTypedValue(raw: string, valueType: ConfigValueType): unknown {
+  if (valueType === 'string') return raw;
+  if (valueType === 'null') return null;
+
+  if (valueType === 'number') {
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) {
+      throw new Error(`Invalid number value: ${raw}`);
+    }
+    return parsed;
+  }
+
+  if (valueType === 'boolean') {
+    const lowered = raw.toLowerCase();
+    if (lowered === 'true') return true;
+    if (lowered === 'false') return false;
+    throw new Error(`Invalid boolean value: ${raw}. Expected true or false.`);
+  }
+
+  if (valueType === 'json') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Error(`Invalid JSON value: ${raw}`);
+    }
+  }
+
+  const lowered = raw.toLowerCase();
+  if (lowered === 'true') return true;
+  if (lowered === 'false') return false;
+  if (lowered === 'null') return null;
+
+  if (/^-?\d+(\.\d+)?$/.test(raw)) {
+    return Number(raw);
+  }
+
+  if ((raw.startsWith('{') && raw.endsWith('}')) || (raw.startsWith('[') && raw.endsWith(']'))) {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return raw;
+    }
+  }
+
+  return raw;
+}
+
+function ensureConfigFileOrExit(configPath: string, json: boolean): void {
+  if (!existsSync(configPath)) {
+    const msg = `Config file not found: ${configPath}. Run \`fiber-pay config init\` first.`;
+    if (json) {
+      printJsonError({
+        code: 'CONFIG_NOT_FOUND',
+        message: msg,
+        recoverable: true,
+        suggestion: 'Run `fiber-pay config init --network testnet` and retry.',
+      });
+    } else {
+      console.error(`Error: ${msg}`);
+    }
+    process.exit(1);
+  }
+}
+
+function collectConfigPaths(value: unknown, prefix = ''): string[] {
+  if (value === null || value === undefined) {
+    return prefix ? [prefix] : [];
+  }
+
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      return prefix ? [prefix] : [];
+    }
+    const result: string[] = [];
+    for (let index = 0; index < value.length; index++) {
+      const childPrefix = `${prefix}[${index}]`;
+      result.push(...collectConfigPaths(value[index], childPrefix));
+    }
+    return result;
+  }
+
+  if (typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (entries.length === 0) {
+      return prefix ? [prefix] : [];
+    }
+    const result: string[] = [];
+    for (const [key, child] of entries) {
+      const childPrefix = prefix ? `${prefix}.${key}` : key;
+      result.push(...collectConfigPaths(child, childPrefix));
+    }
+    return result;
+  }
+
+  return prefix ? [prefix] : [];
 }
 
 export function createConfigCommand(_config: CliConfig): Command {
@@ -167,103 +299,173 @@ export function createConfigCommand(_config: CliConfig): Command {
       }
     });
 
-  // ---------------------------------------------------------------------------
-  // config set — edit a known key in config.yml via line replacement
-  // ---------------------------------------------------------------------------
-  const CONFIG_SET_KEYS: Record<string, { section: string; yamlKey: string; quote?: boolean }> = {
-    'rpc.listening_addr': { section: 'rpc', yamlKey: 'listening_addr', quote: true },
-    'fiber.listening_addr': { section: 'fiber', yamlKey: 'listening_addr', quote: true },
-    'ckb.rpc_url': { section: 'ckb', yamlKey: 'rpc_url', quote: true },
-    chain: { section: 'fiber', yamlKey: 'chain' },
-  };
-
   config
-    .command('set')
-    .description(`Set a known key in config.yml. Keys: ${Object.keys(CONFIG_SET_KEYS).join(', ')}`)
-    .argument('<key>', 'Config key to set')
-    .argument('<value>', 'New value')
+    .command('get')
+    .description('Get config value by path (e.g. fiber.chain, ckb.udt_whitelist[0].name)')
+    .argument('<path>', 'Config path')
     .option('--json')
-    .action(async (key, value, options) => {
+    .action(async (path, options) => {
       const effective = getEffectiveConfig();
       const json = Boolean(options.json);
       const configPath = effective.config.configPath;
+      ensureConfigFileOrExit(configPath, json);
 
-      if (!existsSync(configPath)) {
-        const msg = `Config file not found: ${configPath}. Run \`fiber-pay config init\` first.`;
+      const doc = parseDocument(readFileSync(configPath, 'utf-8'));
+      const segments = parseConfigPath(path);
+      const value = doc.getIn(segments as (string | number)[]);
+
+      if (value === undefined) {
+        const msg = `Config path not found: ${resolveConfigPathAlias(path)}`;
         if (json) {
           printJsonError({
-            code: 'CONFIG_NOT_FOUND',
+            code: 'CONFIG_PATH_NOT_FOUND',
             message: msg,
             recoverable: true,
-            suggestion: 'Run `fiber-pay config init --network testnet` and retry.',
+            suggestion: 'Use `fiber-pay config list` to inspect available paths.',
           });
         } else {
           console.error(`Error: ${msg}`);
         }
         process.exit(1);
       }
-
-      const spec = CONFIG_SET_KEYS[key];
-      if (!spec) {
-        const msg = `Unknown config key: ${key}. Valid keys: ${Object.keys(CONFIG_SET_KEYS).join(', ')}`;
-        if (json) {
-          printJsonError({
-            code: 'CONFIG_INVALID_KEY',
-            message: msg,
-            recoverable: true,
-            suggestion: `Use one of: ${Object.keys(CONFIG_SET_KEYS).join(', ')}`,
-          });
-        } else {
-          console.error(`Error: ${msg}`);
-        }
-        process.exit(1);
-      }
-
-      const content = readFileSync(configPath, 'utf-8');
-      const lines = content.split('\n');
-      let currentSection: string | null = null;
-      let replaced = false;
-
-      for (let i = 0; i < lines.length; i++) {
-        const sectionMatch = lines[i].match(/^([a-zA-Z_]+):\s*$/);
-        if (sectionMatch) {
-          currentSection = sectionMatch[1];
-          continue;
-        }
-
-        if (currentSection === spec.section) {
-          const keyPattern = new RegExp(`^(\\s*)${spec.yamlKey}:\\s*`);
-          if (keyPattern.test(lines[i])) {
-            const indent = lines[i].match(/^(\s*)/)?.[1] ?? '  ';
-            const formatted = spec.quote ? `"${value}"` : value;
-            lines[i] = `${indent}${spec.yamlKey}: ${formatted}`;
-            replaced = true;
-            break;
-          }
-        }
-      }
-
-      if (!replaced) {
-        const msg = `Key "${spec.yamlKey}" not found in section "${spec.section}" of ${configPath}`;
-        if (json) {
-          printJsonError({
-            code: 'CONFIG_KEY_NOT_FOUND_IN_FILE',
-            message: msg,
-            recoverable: true,
-            suggestion: 'Ensure config.yml contains the expected section and key.',
-          });
-        } else {
-          console.error(`Error: ${msg}`);
-        }
-        process.exit(1);
-      }
-
-      writeFileSync(configPath, lines.join('\n'), 'utf-8');
 
       if (json) {
-        printJsonSuccess({ key, value, configPath });
+        printJsonSuccess({ path: resolveConfigPathAlias(path), value });
+      } else if (typeof value === 'object') {
+        console.log(yamlStringify(value).trimEnd());
       } else {
-        console.log(`✅ Set ${key} = ${value} in ${configPath}`);
+        console.log(String(value));
+      }
+    });
+
+  config
+    .command('set')
+    .description('Set config value by path (supports nested keys and array indexes)')
+    .argument('<path>', 'Config path')
+    .argument('<value>', 'New value')
+    .option('--type <type>', 'auto|string|number|boolean|null|json', 'auto')
+    .option('--json')
+    .action(async (path, value, options) => {
+      const effective = getEffectiveConfig();
+      const json = Boolean(options.json);
+      const configPath = effective.config.configPath;
+      ensureConfigFileOrExit(configPath, json);
+
+      const valueType = String(options.type ?? 'auto') as ConfigValueType;
+      if (!['auto', 'string', 'number', 'boolean', 'null', 'json'].includes(valueType)) {
+        const msg = `Invalid --type: ${options.type}. Expected auto|string|number|boolean|null|json`;
+        if (json) {
+          printJsonError({
+            code: 'CONFIG_VALUE_TYPE_INVALID',
+            message: msg,
+            recoverable: true,
+          });
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exit(1);
+      }
+
+      const doc = parseDocument(readFileSync(configPath, 'utf-8'));
+      const resolvedPath = resolveConfigPathAlias(path);
+      const segments = parseConfigPath(path);
+      const parsedValue = parseTypedValue(value, valueType);
+
+      doc.setIn(segments as (string | number)[], parsedValue);
+      writeFileSync(configPath, doc.toString(), 'utf-8');
+
+      if (json) {
+        printJsonSuccess({ path: resolvedPath, value: parsedValue, configPath });
+      } else {
+        console.log(`✅ Set ${resolvedPath} = ${value} in ${configPath}`);
+      }
+    });
+
+  config
+    .command('unset')
+    .description('Remove config value by path')
+    .argument('<path>', 'Config path')
+    .option('--json')
+    .action(async (path, options) => {
+      const effective = getEffectiveConfig();
+      const json = Boolean(options.json);
+      const configPath = effective.config.configPath;
+      ensureConfigFileOrExit(configPath, json);
+
+      const doc = parseDocument(readFileSync(configPath, 'utf-8'));
+      const resolvedPath = resolveConfigPathAlias(path);
+      const segments = parseConfigPath(path);
+      const removed = doc.deleteIn(segments as (string | number)[]);
+
+      if (!removed) {
+        const msg = `Config path not found: ${resolvedPath}`;
+        if (json) {
+          printJsonError({
+            code: 'CONFIG_PATH_NOT_FOUND',
+            message: msg,
+            recoverable: true,
+            suggestion: 'Use `fiber-pay config list` to inspect available paths.',
+          });
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exit(1);
+      }
+
+      writeFileSync(configPath, doc.toString(), 'utf-8');
+
+      if (json) {
+        printJsonSuccess({ path: resolvedPath, removed: true, configPath });
+      } else {
+        console.log(`✅ Removed ${resolvedPath} from ${configPath}`);
+      }
+    });
+
+  config
+    .command('list')
+    .description('List config key paths (optionally under a prefix)')
+    .option('--prefix <path>', 'List only under this path')
+    .option('--json')
+    .action(async (options) => {
+      const effective = getEffectiveConfig();
+      const json = Boolean(options.json);
+      const configPath = effective.config.configPath;
+      ensureConfigFileOrExit(configPath, json);
+
+      const doc = parseDocument(readFileSync(configPath, 'utf-8'));
+      const prefix = options.prefix ? resolveConfigPathAlias(String(options.prefix)) : undefined;
+
+      let rootValue: unknown = doc.toJSON();
+      let basePrefix = '';
+
+      if (prefix) {
+        const segments = parseConfigPath(prefix);
+        rootValue = doc.getIn(segments as (string | number)[]);
+        if (rootValue === undefined) {
+          const msg = `Config path not found: ${prefix}`;
+          if (json) {
+            printJsonError({
+              code: 'CONFIG_PATH_NOT_FOUND',
+              message: msg,
+              recoverable: true,
+              suggestion: 'Use `fiber-pay config list` without prefix first.',
+            });
+          } else {
+            console.error(`Error: ${msg}`);
+          }
+          process.exit(1);
+        }
+        basePrefix = prefix;
+      }
+
+      const paths = collectConfigPaths(rootValue, basePrefix).sort((a, b) => a.localeCompare(b));
+
+      if (json) {
+        printJsonSuccess({ prefix: prefix ?? null, paths, count: paths.length });
+      } else {
+        for (const path of paths) {
+          console.log(path);
+        }
       }
     });
 

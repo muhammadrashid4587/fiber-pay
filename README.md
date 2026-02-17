@@ -74,6 +74,8 @@ Follow this document https://raw.githubusercontent.com/RetricSu/fiber-pay/master
 - CLI behavior + command reference: `packages/cli/llm.txt`
 - Maintainer alignment notes: `AGENT.md`
 - Intent docs: `docs/plans/ai-payment-layer-intent.md`
+- Config docs: `docs/configuration.md`
+- Config artifacts: `configs/fnn.testnet.yml`, `configs/fnn.mainnet.yml`, `configs/fnn.reference.yml`
 
 ## Development
 
