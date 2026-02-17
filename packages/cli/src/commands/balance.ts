@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { ChannelState, type Script, scriptToAddress } from '@fiber-pay/sdk';
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';

@@ -98,7 +98,7 @@ export function saveProfileConfig(dataDir: string, profile: ProfileConfig): void
     mkdirSync(dataDir, { recursive: true });
   }
   const profilePath = getProfilePath(dataDir);
-  writeFileSync(profilePath, JSON.stringify(profile, null, 2) + '\n', 'utf-8');
+  writeFileSync(profilePath, `${JSON.stringify(profile, null, 2)}\n`, 'utf-8');
 }
 
 export function writeNetworkConfigFile(

@@ -417,7 +417,7 @@ export class FiberPay {
 
       if (params.invoice) {
         // Parse invoice to get amount
-        const parsed = await this.rpc!.parseInvoice({ invoice: params.invoice });
+        const parsed = await this.getRpc().parseInvoice({ invoice: params.invoice });
         amountHex = parsed.invoice.amount || '0x0';
         recipient = params.invoice; // Use invoice as recipient identifier for policy
       } else if (params.recipientNodeId && params.amountCkb) {
@@ -452,7 +452,7 @@ export class FiberPay {
       }
 
       // Execute payment
-      const result = await this.rpc!.sendPayment({
+      const result = await this.getRpc().sendPayment({
         invoice: params.invoice,
         target_pubkey: params.recipientNodeId as HexString | undefined,
         amount: params.recipientNodeId ? amountHex : undefined,
@@ -548,7 +548,7 @@ export class FiberPay {
       const expirySeconds = (params.expiryMinutes || 60) * 60;
       const preimage = randomBytes32();
 
-      const result = await this.rpc!.newInvoice({
+      const result = await this.getRpc().newInvoice({
         amount: amountHex,
         currency: this.config.chain === 'mainnet' ? 'Fibb' : 'Fibt',
         description: params.description,
@@ -585,7 +585,7 @@ export class FiberPay {
     this.ensureInitialized();
 
     try {
-      const channels = await this.rpc!.listChannels({});
+      const channels = await this.getRpc().listChannels({});
 
       let totalLocal = 0n;
       let totalRemote = 0n;
@@ -624,7 +624,7 @@ export class FiberPay {
     this.ensureInitialized();
 
     try {
-      const result = await this.rpc!.getPayment({ payment_hash: paymentHash as HexString });
+      const result = await this.getRpc().getPayment({ payment_hash: paymentHash as HexString });
 
       return {
         success: true,
@@ -654,7 +654,7 @@ export class FiberPay {
     this.ensureInitialized();
 
     try {
-      const result = await this.rpc!.getInvoice({ payment_hash: paymentHash as HexString });
+      const result = await this.getRpc().getInvoice({ payment_hash: paymentHash as HexString });
 
       const amountCkb = result.invoice.amount ? shannonsToCkb(result.invoice.amount) : 0;
       const expiresAt = this.getInvoiceExpiryIso(result.invoice);
@@ -686,7 +686,7 @@ export class FiberPay {
     this.ensureInitialized();
 
     try {
-      const result = await this.rpc!.listChannels({});
+      const result = await this.getRpc().listChannels({});
 
       const channels: ChannelSummary[] = result.channels.map((ch) => ({
         id: ch.channel_id,
@@ -722,7 +722,7 @@ export class FiberPay {
 
     try {
       const fundingHex = ckbToShannons(params.fundingCkb);
-      const channels = await this.rpc!.listChannels({});
+      const channels = await this.getRpc().listChannels({});
 
       // Check policy
       const policyCheck = this.policy.checkChannelOperation({
@@ -746,7 +746,7 @@ export class FiberPay {
 
       // Connect to peer if address provided
       if (params.peer.includes('/')) {
-        await this.rpc!.connectPeer({ address: params.peer });
+        await this.getRpc().connectPeer({ address: params.peer });
         // Extract peer ID from multiaddr
         const peerIdMatch = params.peer.match(/\/p2p\/([^/]+)/);
         if (peerIdMatch) {
@@ -754,7 +754,7 @@ export class FiberPay {
         }
       }
 
-      const result = await this.rpc!.openChannel({
+      const result = await this.getRpc().openChannel({
         peer_id: params.peer,
         funding_amount: fundingHex,
         public: params.isPublic ?? true,
@@ -804,7 +804,7 @@ export class FiberPay {
         };
       }
 
-      await this.rpc!.shutdownChannel({
+      await this.getRpc().shutdownChannel({
         channel_id: params.channelId as HexString,
         force: params.force,
       });
@@ -838,7 +838,7 @@ export class FiberPay {
     this.ensureInitialized();
 
     try {
-      const info = await this.rpc!.nodeInfo();
+      const info = await this.getRpc().nodeInfo();
 
       return {
         success: true,
@@ -935,7 +935,9 @@ export class FiberPay {
       }
 
       // Try to fetch from RPC
-      const paymentStatus = await this.rpc!.getPayment({ payment_hash: paymentHash as HexString });
+      const paymentStatus = await this.getRpc().getPayment({
+        payment_hash: paymentHash as HexString,
+      });
 
       return {
         success: true,
@@ -1039,7 +1041,7 @@ export class FiberPay {
       const amountHex = ckbToShannons(params.amountCkb);
       const expirySeconds = (params.expiryMinutes || 60) * 60;
 
-      const result = await this.rpc!.newInvoice({
+      const result = await this.getRpc().newInvoice({
         amount: amountHex,
         currency: this.config.chain === 'mainnet' ? 'Fibb' : 'Fibt',
         description: params.description,
@@ -1091,7 +1093,7 @@ export class FiberPay {
     this.ensureInitialized();
 
     try {
-      await this.rpc!.settleInvoice({
+      await this.getRpc().settleInvoice({
         payment_hash: params.paymentHash as HexString,
         payment_preimage: params.preimage as HexString,
       });
@@ -1127,7 +1129,7 @@ export class FiberPay {
     this.ensureInitialized();
 
     try {
-      const result = await this.rpc!.waitForPayment(paymentHash as HexString, {
+      const result = await this.getRpc().waitForPayment(paymentHash as HexString, {
         timeout: options?.timeoutMs,
       });
 
@@ -1166,7 +1168,7 @@ export class FiberPay {
     this.ensureInitialized();
 
     try {
-      const channel = await this.rpc!.waitForChannelReady(channelId as HexString, {
+      const channel = await this.getRpc().waitForChannelReady(channelId as HexString, {
         timeout: options?.timeoutMs,
       });
 
@@ -1290,6 +1292,13 @@ export class FiberPay {
     if (!this.initialized) {
       throw new Error('FiberPay not initialized. Call initialize() first.');
     }
+  }
+
+  private getRpc(): FiberRpcClient {
+    if (!this.rpc) {
+      throw new Error('RPC client not initialized. Call initialize() first.');
+    }
+    return this.rpc;
   }
 
   /**
