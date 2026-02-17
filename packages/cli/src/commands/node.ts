@@ -1,9 +1,11 @@
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   ensureFiberBinary,
   type FiberNodeConfig,
   getDefaultBinaryPath,
+  getFiberBinaryInfo,
   ProcessManager,
 } from '@fiber-pay/node';
 import {
@@ -13,6 +15,7 @@ import {
   CorsProxy,
   createKeyManager,
   nodeIdToPeerId,
+  type Script,
   scriptToAddress,
 } from '@fiber-pay/sdk';
 import { Command } from 'commander';
@@ -26,6 +29,99 @@ import {
 } from '../lib/format.js';
 import { isProcessRunning, readPidFile, removePidFile, writePidFile } from '../lib/pid.js';
 import { createReadyRpcClient, createRpcClient } from '../lib/rpc.js';
+
+const CELLS_PAGE_SIZE = 100;
+
+interface IndexerCellsResponse {
+  objects: Array<{ output?: { capacity?: string } }>;
+  last_cursor?: string;
+}
+
+async function callJsonRpc<TResult>(
+  url: string,
+  method: string,
+  params: unknown[],
+): Promise<TResult> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} ${response.statusText}`);
+  }
+
+  const payload = (await response.json()) as {
+    result?: TResult;
+    error?: { message?: string; code?: number };
+  };
+
+  if (payload.error) {
+    const code = payload.error.code ?? 'unknown';
+    const message = payload.error.message ?? 'JSON-RPC error';
+    throw new Error(`${message} (code: ${code})`);
+  }
+
+  if (payload.result === undefined) {
+    throw new Error('Missing JSON-RPC result');
+  }
+
+  return payload.result;
+}
+
+async function getLockBalanceShannons(ckbRpcUrl: string, lockScript: Script): Promise<bigint> {
+  let cursor: string | undefined;
+  let total = 0n;
+  const limitHex = `0x${CELLS_PAGE_SIZE.toString(16)}`;
+
+  for (let i = 0; i < 2000; i++) {
+    const params: unknown[] = [{ script: lockScript, script_type: 'lock' }, 'asc', limitHex];
+    if (cursor) {
+      params.push(cursor);
+    }
+
+    const page = await callJsonRpc<IndexerCellsResponse>(ckbRpcUrl, 'get_cells', params);
+    const cells = page.objects ?? [];
+
+    for (const cell of cells) {
+      if (cell.output?.capacity) {
+        total += BigInt(cell.output.capacity);
+      }
+    }
+
+    const nextCursor = page.last_cursor;
+    if (!nextCursor || nextCursor === cursor || cells.length < CELLS_PAGE_SIZE) {
+      break;
+    }
+    cursor = nextCursor;
+  }
+
+  return total;
+}
+
+function getCustomBinaryState(binaryPath: string): {
+  path: string;
+  ready: boolean;
+  version: string;
+} {
+  const exists = existsSync(binaryPath);
+  if (!exists) {
+    return { path: binaryPath, ready: false, version: 'unknown' };
+  }
+
+  try {
+    const result = spawnSync(binaryPath, ['--version'], { encoding: 'utf-8' });
+    if (result.status !== 0) {
+      return { path: binaryPath, ready: false, version: 'unknown' };
+    }
+    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
+    const firstLine = output.split('\n').find((line) => line.trim().length > 0) ?? 'unknown';
+    return { path: binaryPath, ready: true, version: firstLine.trim() };
+  } catch {
+    return { path: binaryPath, ready: false, version: 'unknown' };
+  }
+}
 
 function getBinaryVersion(binaryPath: string): string {
   try {
@@ -422,62 +518,191 @@ export function createNodeCommand(config: CliConfig): Command {
     .action(async (options) => {
       const json = Boolean(options.json);
       const pid = readPidFile(config.dataDir);
-      const output: Record<string, unknown> = {
-        running: false,
-        pid: pid ?? null,
-        rpcResponsive: false,
-      };
+      const managedBinaryPath = join(config.dataDir, 'bin', 'fnn');
+      const binaryInfo = config.binaryPath
+        ? getCustomBinaryState(config.binaryPath)
+        : await getFiberBinaryInfo(join(config.dataDir, 'bin'));
+      const configExists = existsSync(config.configPath);
+      const nodeRunning = Boolean(pid && isProcessRunning(pid));
 
-      if (pid && isProcessRunning(pid)) {
-        output.running = true;
+      let rpcResponsive = false;
+      let nodeId: string | null = null;
+      let peerId: string | null = null;
+      let peerIdError: string | null = null;
+      let multiaddr: string | null = null;
+      let multiaddrError: string | null = null;
+      let multiaddrInferred = false;
+      let channelsTotal = 0;
+      let channelsReady = 0;
+      let canSend = false;
+      let canReceive = false;
+      let localCkb = 0;
+      let remoteCkb = 0;
+      let fundingAddress: string | null = null;
+      let fundingCkb = 0;
+      let fundingBalanceError: string | null = null;
+
+      if (nodeRunning) {
         try {
           const rpc = await createReadyRpcClient(config);
           const nodeInfo = await rpc.nodeInfo();
-          output.rpcResponsive = true;
-          output.nodeId = nodeInfo.node_id;
-          output.rpcUrl = config.rpcUrl;
-          let peerId: string | undefined;
+          const channels = await rpc.listChannels({ include_closed: false });
+          rpcResponsive = true;
+
+          nodeId = nodeInfo.node_id;
           try {
             peerId = await nodeIdToPeerId(nodeInfo.node_id);
-            output.peerId = peerId;
           } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
-            output.peerId = null;
-            output.peerIdError = reason;
+            peerIdError = error instanceof Error ? error.message : String(error);
           }
 
           const baseAddress = nodeInfo.addresses[0];
           if (baseAddress) {
             try {
-              const multiaddr = await buildMultiaddrFromNodeId(baseAddress, nodeInfo.node_id);
-              output.multiaddr = multiaddr;
+              multiaddr = await buildMultiaddrFromNodeId(baseAddress, nodeInfo.node_id);
             } catch (error) {
-              const reason = error instanceof Error ? error.message : String(error);
-              output.multiaddr = null;
-              output.multiaddrError = reason;
+              multiaddrError = error instanceof Error ? error.message : String(error);
             }
           } else if (peerId) {
             try {
-              const inferredMultiaddr = buildMultiaddrFromRpcUrl(config.rpcUrl, peerId);
-              output.multiaddr = inferredMultiaddr;
-              output.multiaddrInferred = true;
+              multiaddr = buildMultiaddrFromRpcUrl(config.rpcUrl, peerId);
+              multiaddrInferred = true;
             } catch (error) {
               const reason = error instanceof Error ? error.message : String(error);
-              output.multiaddr = null;
-              output.multiaddrError = `no advertised addresses; infer failed: ${reason}`;
+              multiaddrError = `no advertised addresses; infer failed: ${reason}`;
+            }
+          }
+
+          channelsTotal = channels.channels.length;
+          const readyChannels = channels.channels.filter(
+            (channel) => channel.state?.state_name === ChannelState.ChannelReady,
+          );
+          channelsReady = readyChannels.length;
+          canSend = readyChannels.some((channel) => BigInt(channel.local_balance) > 0n);
+          canReceive = readyChannels.some((channel) => BigInt(channel.remote_balance) > 0n);
+
+          let totalLocal = 0n;
+          let totalRemote = 0n;
+          for (const channel of readyChannels) {
+            totalLocal += BigInt(channel.local_balance);
+            totalRemote += BigInt(channel.remote_balance);
+          }
+          localCkb = Number(totalLocal) / 1e8;
+          remoteCkb = Number(totalRemote) / 1e8;
+
+          fundingAddress = scriptToAddress(nodeInfo.default_funding_lock_script, config.network);
+          if (config.ckbRpcUrl) {
+            try {
+              const fundingBalance = await getLockBalanceShannons(
+                config.ckbRpcUrl,
+                nodeInfo.default_funding_lock_script as Script,
+              );
+              fundingCkb = Number(fundingBalance) / 1e8;
+            } catch (error) {
+              fundingBalanceError =
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to query CKB balance for funding address';
             }
           } else {
-            output.multiaddr = null;
+            fundingBalanceError =
+              'CKB RPC URL not configured (set ckb.rpc_url in config.yml or FIBER_CKB_RPC_URL)';
           }
         } catch {
-          output.rpcResponsive = false;
+          rpcResponsive = false;
         }
-      } else {
-        if (pid) {
-          output.stalePidFile = true;
-          removePidFile(config.dataDir);
-        }
+      } else if (pid) {
+        removePidFile(config.dataDir);
       }
+
+      let recommendation = 'READY';
+      const reasons: string[] = [];
+
+      if (!binaryInfo.ready) reasons.push('Fiber binary is missing or not executable.');
+      if (!configExists) reasons.push('Config file is missing.');
+      if (!nodeRunning) reasons.push('Node process is not running.');
+      if (nodeRunning && !rpcResponsive)
+        reasons.push('Node process is running but RPC is not reachable.');
+      if (rpcResponsive && channelsReady === 0) reasons.push('No ChannelReady channel found.');
+      if (channelsReady > 0 && !canSend && canReceive) {
+        reasons.push('Send liquidity is low on ChannelReady channels.');
+      }
+      if (channelsReady > 0 && canSend && !canReceive) {
+        reasons.push('Receive liquidity is low on ChannelReady channels.');
+      }
+      if (channelsReady > 0 && !canSend && !canReceive) {
+        reasons.push('ChannelReady channels exist but liquidity is zero.');
+      }
+
+      if (!binaryInfo.ready) {
+        recommendation = 'INSTALL_BINARY';
+      } else if (!configExists) {
+        recommendation = 'INIT_CONFIG';
+      } else if (!nodeRunning) {
+        recommendation = 'START_NODE';
+      } else if (!rpcResponsive) {
+        recommendation = 'WAIT_RPC';
+      } else if (channelsReady === 0) {
+        recommendation = 'OPEN_CHANNEL';
+      } else if (!canSend && !canReceive) {
+        recommendation = 'NO_LIQUIDITY';
+      } else if (!canSend && canReceive) {
+        recommendation = 'SEND_CAPACITY_LOW';
+      } else if (canSend && !canReceive) {
+        recommendation = 'RECEIVE_CAPACITY_LOW';
+      }
+
+      const output = {
+        running: nodeRunning,
+        pid: pid ?? null,
+        rpcResponsive,
+        rpcUrl: config.rpcUrl,
+        nodeId,
+        peerId,
+        peerIdError,
+        multiaddr,
+        multiaddrError,
+        multiaddrInferred,
+        checks: {
+          binary: {
+            path: binaryInfo.path,
+            ready: binaryInfo.ready,
+            version: binaryInfo.version,
+            source: config.binaryPath ? 'env-binary-path' : 'managed-binary-dir',
+            managedPath: managedBinaryPath,
+          },
+          config: {
+            path: config.configPath,
+            exists: configExists,
+            network: config.network,
+            rpcUrl: config.rpcUrl,
+          },
+          node: {
+            running: nodeRunning,
+            pid: pid ?? null,
+            rpcReachable: rpcResponsive,
+          },
+          channels: {
+            total: channelsTotal,
+            ready: channelsReady,
+            canSend,
+            canReceive,
+          },
+        },
+        balance: {
+          totalCkb: localCkb + fundingCkb,
+          channelLocalCkb: localCkb,
+          availableToSend: localCkb,
+          availableToReceive: remoteCkb,
+          channelCount: channelsTotal,
+          activeChannelCount: channelsReady,
+          fundingAddress,
+          fundingAddressTotalCkb: fundingCkb,
+          fundingBalanceError,
+        },
+        recommendation,
+        reasons,
+      };
 
       if (json) {
         printJsonSuccess(output);
@@ -511,6 +736,43 @@ export function createNodeCommand(config: CliConfig): Command {
         console.log(`❌ Node is not running (stale PID file: ${output.pid})`);
       } else {
         console.log('❌ Node is not running');
+      }
+
+      console.log('');
+      console.log('Diagnostics');
+      console.log(`  Binary:        ${output.checks.binary.ready ? 'ready' : 'missing'}`);
+      console.log(`  Config:        ${output.checks.config.exists ? 'present' : 'missing'}`);
+      console.log(
+        `  RPC:           ${output.checks.node.rpcReachable ? 'reachable' : 'unreachable'}`,
+      );
+      console.log(
+        `  Channels:      ${output.checks.channels.ready}/${output.checks.channels.total} ready/total`,
+      );
+      console.log(`  Can Send:      ${output.checks.channels.canSend ? 'yes' : 'no'}`);
+      console.log(`  Can Receive:   ${output.checks.channels.canReceive ? 'yes' : 'no'}`);
+      console.log(`  Recommendation:${output.recommendation}`);
+      if (output.reasons.length > 0) {
+        console.log('  Reasons:');
+        for (const reason of output.reasons) {
+          console.log(`    - ${reason}`);
+        }
+      }
+
+      console.log('');
+      console.log('Balance');
+      console.log(`  Total CKB:     ${output.balance.totalCkb.toFixed(8)}`);
+      console.log(`  Channel Local: ${output.balance.channelLocalCkb.toFixed(8)}`);
+      console.log(`  To Send:       ${output.balance.availableToSend.toFixed(8)}`);
+      console.log(`  To Receive:    ${output.balance.availableToReceive.toFixed(8)}`);
+      console.log(
+        `  Channels:      ${output.balance.activeChannelCount}/${output.balance.channelCount} active/total`,
+      );
+      if (output.balance.fundingAddress) {
+        console.log(`  Funding Addr:  ${output.balance.fundingAddress}`);
+      }
+      console.log(`  Funding CKB:   ${output.balance.fundingAddressTotalCkb.toFixed(8)}`);
+      if (output.balance.fundingBalanceError) {
+        console.log(`  Funding Err:   ${output.balance.fundingBalanceError}`);
       }
     });
 

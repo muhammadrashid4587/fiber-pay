@@ -65,12 +65,9 @@ Config artifacts in this repo:
 ### Lifecycle (`node`)
 *   `start [--cors-proxy <port>] [--json]`: Start node (foreground).
 *   `stop [--json]`: Stop node.
-*   `status [--json]`: Check process status.
+*   `status [--json]`: Unified status (process/rpc identity + diagnostics + balance).
 *   `ready [--json]`: Aggregated automation readiness (node/rpc/channel/liquidity).
 *   `info [--json]`: Get node ID and version details.
-
-### Agent (`agent`)
-*   `check [--json]`: Run aggregated binary/config/node/rpc/channel checks with recommendation.
 
 ### Setup (`binary`, `config`)
 *   `binary download [--version v0.6.1] [--force] [--json]`: Fetch fiber node binary.
@@ -102,11 +99,10 @@ Config artifacts in this repo:
     *   `get <paymentHash> [--json]`: Check payment status.
     *   `watch <paymentHash> [--json] [--until SUCCESS|FAILED|TERMINAL] [--on-timeout fail|success]`: Monitor payment outcome.
 
-### Network & Info (`peer`, `balance`)
+### Network & Info (`peer`)
 *   `peer list [--json]`: Show connected peers.
 *   `peer connect <multiaddr> [--json]`: Connect to peer.
 *   `peer disconnect <peerId> [--json]`: Disconnect.
-*   `balance [--json]`: Show local CKB balance.
 
 ## 📦 JSON Contract (vNext)
 - Non-stream commands in `--json` mode return one envelope:
@@ -154,9 +150,7 @@ fiber-pay --profile local-a node status
 fiber-pay binary info --json
 fiber-pay node status --json
 fiber-pay node ready --json
-fiber-pay agent check --json
 fiber-pay channel list --include-closed --json
-fiber-pay balance --json
 ```
 
 ## ⚠️ 当前限制（Agent 须知）

@@ -42,7 +42,6 @@ Use grouped commands only:
 - `payment`
 - `peer`
 - `binary`
-- `balance`
 - `config`
 
 Examples of valid style:
@@ -76,7 +75,7 @@ Examples of valid style:
 
 ### 3) Send payment
 
-1. `fiber-pay balance --json`
+1. `fiber-pay node status --json`
 2. `fiber-pay payment send <invoice> --json`
 3. `fiber-pay payment get <paymentHash> --json`
 4. Optional watch: `fiber-pay payment watch <paymentHash> --json`
