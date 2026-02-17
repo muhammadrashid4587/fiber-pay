@@ -1,9 +1,12 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { Command } from 'commander';
 import {
   type CliConfig,
   getEffectiveConfig,
+  loadProfileConfig,
+  type ProfileConfig,
   parseNetworkFromConfig,
+  saveProfileConfig,
   writeNetworkConfigFile,
 } from '../lib/config.js';
 import type { FiberNetwork } from '../lib/config-templates.js';
@@ -108,7 +111,7 @@ export function createConfigCommand(_config: CliConfig): Command {
 
   config
     .command('show')
-    .option('--effective', 'Show effective values and their source')
+    .option('--effective', 'Debug resolved values and value source')
     .option('--json')
     .action(async (options) => {
       const effective = getEffectiveConfig();
@@ -163,6 +166,211 @@ export function createConfigCommand(_config: CliConfig): Command {
         console.log(content);
       }
     });
+
+  // ---------------------------------------------------------------------------
+  // config set — edit a known key in config.yml via line replacement
+  // ---------------------------------------------------------------------------
+  const CONFIG_SET_KEYS: Record<string, { section: string; yamlKey: string; quote?: boolean }> = {
+    'rpc.listening_addr': { section: 'rpc', yamlKey: 'listening_addr', quote: true },
+    'fiber.listening_addr': { section: 'fiber', yamlKey: 'listening_addr', quote: true },
+    'ckb.rpc_url': { section: 'ckb', yamlKey: 'rpc_url', quote: true },
+    chain: { section: 'fiber', yamlKey: 'chain' },
+  };
+
+  config
+    .command('set')
+    .description(`Set a known key in config.yml. Keys: ${Object.keys(CONFIG_SET_KEYS).join(', ')}`)
+    .argument('<key>', 'Config key to set')
+    .argument('<value>', 'New value')
+    .option('--json')
+    .action(async (key, value, options) => {
+      const effective = getEffectiveConfig();
+      const json = Boolean(options.json);
+      const configPath = effective.config.configPath;
+
+      if (!existsSync(configPath)) {
+        const msg = `Config file not found: ${configPath}. Run \`fiber-pay config init\` first.`;
+        if (json) {
+          printJsonError({
+            code: 'CONFIG_NOT_FOUND',
+            message: msg,
+            recoverable: true,
+            suggestion: 'Run `fiber-pay config init --network testnet` and retry.',
+          });
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exit(1);
+      }
+
+      const spec = CONFIG_SET_KEYS[key];
+      if (!spec) {
+        const msg = `Unknown config key: ${key}. Valid keys: ${Object.keys(CONFIG_SET_KEYS).join(', ')}`;
+        if (json) {
+          printJsonError({
+            code: 'CONFIG_INVALID_KEY',
+            message: msg,
+            recoverable: true,
+            suggestion: `Use one of: ${Object.keys(CONFIG_SET_KEYS).join(', ')}`,
+          });
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exit(1);
+      }
+
+      const content = readFileSync(configPath, 'utf-8');
+      const lines = content.split('\n');
+      let currentSection: string | null = null;
+      let replaced = false;
+
+      for (let i = 0; i < lines.length; i++) {
+        const sectionMatch = lines[i].match(/^([a-zA-Z_]+):\s*$/);
+        if (sectionMatch) {
+          currentSection = sectionMatch[1];
+          continue;
+        }
+
+        if (currentSection === spec.section) {
+          const keyPattern = new RegExp(`^(\\s*)${spec.yamlKey}:\\s*`);
+          if (keyPattern.test(lines[i])) {
+            const indent = lines[i].match(/^(\s*)/)?.[1] ?? '  ';
+            const formatted = spec.quote ? `"${value}"` : value;
+            lines[i] = `${indent}${spec.yamlKey}: ${formatted}`;
+            replaced = true;
+            break;
+          }
+        }
+      }
+
+      if (!replaced) {
+        const msg = `Key "${spec.yamlKey}" not found in section "${spec.section}" of ${configPath}`;
+        if (json) {
+          printJsonError({
+            code: 'CONFIG_KEY_NOT_FOUND_IN_FILE',
+            message: msg,
+            recoverable: true,
+            suggestion: 'Ensure config.yml contains the expected section and key.',
+          });
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exit(1);
+      }
+
+      writeFileSync(configPath, lines.join('\n'), 'utf-8');
+
+      if (json) {
+        printJsonSuccess({ key, value, configPath });
+      } else {
+        console.log(`✅ Set ${key} = ${value} in ${configPath}`);
+      }
+    });
+
+  // ---------------------------------------------------------------------------
+  // config profile — manage profile.json key-value settings
+  // ---------------------------------------------------------------------------
+  const profile = new Command('profile').description(
+    'Manage profile.json settings (CLI-only overrides)',
+  );
+
+  const PROFILE_KEYS: (keyof ProfileConfig)[] = ['binaryPath', 'keyPassword'];
+
+  profile
+    .command('show')
+    .description('Show current profile.json values')
+    .option('--json')
+    .action(async (options) => {
+      const effective = getEffectiveConfig();
+      const profileData = loadProfileConfig(effective.config.dataDir);
+
+      if (options.json) {
+        printJsonSuccess({ dataDir: effective.config.dataDir, profile: profileData ?? {} });
+      } else {
+        if (!profileData || Object.keys(profileData).length === 0) {
+          console.log('No profile settings found.');
+          console.log(`  Location: ${effective.config.dataDir}/profile.json`);
+          return;
+        }
+        console.log('Profile Settings');
+        console.log(`  Location: ${effective.config.dataDir}/profile.json`);
+        for (const key of PROFILE_KEYS) {
+          if (profileData[key] !== undefined) {
+            console.log(`  ${key}: ${profileData[key]}`);
+          }
+        }
+      }
+    });
+
+  profile
+    .command('set')
+    .description('Set a profile key')
+    .argument('<key>', `One of: ${PROFILE_KEYS.join(', ')}`)
+    .argument('<value>')
+    .option('--json')
+    .action(async (key, value, options) => {
+      if (!PROFILE_KEYS.includes(key as keyof ProfileConfig)) {
+        const msg = `Unknown profile key: ${key}. Valid keys: ${PROFILE_KEYS.join(', ')}`;
+        if (options.json) {
+          printJsonError({
+            code: 'PROFILE_INVALID_KEY',
+            message: msg,
+            recoverable: true,
+            suggestion: `Use one of: ${PROFILE_KEYS.join(', ')}`,
+          });
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exit(1);
+      }
+
+      const effective = getEffectiveConfig();
+      const existing = loadProfileConfig(effective.config.dataDir) ?? {};
+
+      (existing as Record<string, unknown>)[key] = value;
+      saveProfileConfig(effective.config.dataDir, existing);
+
+      if (options.json) {
+        printJsonSuccess({ key, value, dataDir: effective.config.dataDir });
+      } else {
+        console.log(`✅ Profile key "${key}" set to "${value}"`);
+      }
+    });
+
+  profile
+    .command('unset')
+    .description('Remove a profile key')
+    .argument('<key>', `One of: ${PROFILE_KEYS.join(', ')}`)
+    .option('--json')
+    .action(async (key, options) => {
+      if (!PROFILE_KEYS.includes(key as keyof ProfileConfig)) {
+        const msg = `Unknown profile key: ${key}. Valid keys: ${PROFILE_KEYS.join(', ')}`;
+        if (options.json) {
+          printJsonError({
+            code: 'PROFILE_INVALID_KEY',
+            message: msg,
+            recoverable: true,
+            suggestion: `Use one of: ${PROFILE_KEYS.join(', ')}`,
+          });
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exit(1);
+      }
+
+      const effective = getEffectiveConfig();
+      const existing = loadProfileConfig(effective.config.dataDir) ?? {};
+      delete (existing as Record<string, unknown>)[key];
+      saveProfileConfig(effective.config.dataDir, existing);
+
+      if (options.json) {
+        printJsonSuccess({ key, removed: true, dataDir: effective.config.dataDir });
+      } else {
+        console.log(`✅ Profile key "${key}" removed`);
+      }
+    });
+
+  config.addCommand(profile);
 
   return config;
 }

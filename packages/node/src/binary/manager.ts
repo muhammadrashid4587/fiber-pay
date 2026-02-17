@@ -7,6 +7,7 @@ import { exec } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { DEFAULT_FIBER_VERSION } from '../constants.js';
 
 const execAsync = promisify(exec);
 
@@ -252,7 +253,7 @@ export class BinaryManager {
 
     // Resolve release tag
     onProgress({ phase: 'fetching', message: 'Resolving release tag...' });
-    const tag = version ? this.normalizeTag(version) : await this.getLatestTag();
+    const tag = this.normalizeTag(version || DEFAULT_FIBER_VERSION);
 
     onProgress({ phase: 'fetching', message: `Found release: ${tag}` });
 
@@ -479,14 +480,21 @@ export async function getFiberBinaryInfo(installDir?: string): Promise<BinaryInf
 }
 
 /**
- * Ensure the Fiber binary is available, downloading if necessary
+ * Ensure the Fiber binary is available, downloading if necessary.
+ * If the binary exists but its version does not match the requested
+ * (or default) version, it will be re-downloaded.
  */
 export async function ensureFiberBinary(options: DownloadOptions = {}): Promise<string> {
   const manager = new BinaryManager(options.installDir);
   const info = await manager.getBinaryInfo();
 
   if (info.ready) {
-    return info.path;
+    const wantedTag = manager.normalizeTag(options.version || DEFAULT_FIBER_VERSION);
+    const wantedVersion = wantedTag.startsWith('v') ? wantedTag.slice(1) : wantedTag;
+    if (info.version === wantedVersion) {
+      return info.path;
+    }
+    // Version mismatch — re-download
   }
 
   const downloaded = await manager.download(options);

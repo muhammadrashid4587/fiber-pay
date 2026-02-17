@@ -12,18 +12,6 @@ interface IndexerCellsResponse {
   last_cursor?: string;
 }
 
-function parseCkbRpcUrlFromConfig(configPath: string): string | undefined {
-  if (!existsSync(configPath)) return undefined;
-
-  const content = readFileSync(configPath, 'utf-8');
-  const ckbSectionMatch = content.match(/(^|\n)ckb:\n([\s\S]*?)(\n[a-zA-Z_]+:|\nservices:|$)/);
-  const ckbSection = ckbSectionMatch?.[2];
-  if (!ckbSection) return undefined;
-
-  const match = ckbSection.match(/^\s*rpc_url:\s*"?([^"\n]+)"?\s*$/m);
-  return match?.[1]?.trim() || undefined;
-}
-
 async function callJsonRpc<TResult>(
   url: string,
   method: string,
@@ -108,8 +96,7 @@ export function createBalanceCommand(config: CliConfig): Command {
       }
 
       const fundingAddress = scriptToAddress(nodeInfo.default_funding_lock_script, config.network);
-      const ckbRpcUrl =
-        process.env.FIBER_CKB_RPC_URL || parseCkbRpcUrlFromConfig(config.configPath);
+      const ckbRpcUrl = config.ckbRpcUrl;
       let fundingBalance = 0n;
       let fundingBalanceError: string | undefined;
 

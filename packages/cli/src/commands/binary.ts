@@ -1,4 +1,9 @@
-import { type DownloadProgress, downloadFiberBinary, getFiberBinaryInfo } from '@fiber-pay/node';
+import {
+  DEFAULT_FIBER_VERSION,
+  type DownloadProgress,
+  downloadFiberBinary,
+  getFiberBinaryInfo,
+} from '@fiber-pay/node';
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
 import { printJsonSuccess } from '../lib/format.js';
@@ -16,7 +21,7 @@ export function createBinaryCommand(config: CliConfig): Command {
 
   binary
     .command('download')
-    .option('--version <version>', 'Fiber binary version', 'v0.6.1')
+    .option('--version <version>', 'Fiber binary version', DEFAULT_FIBER_VERSION)
     .option('--force', 'Force re-download')
     .option('--json')
     .action(async (options) => {

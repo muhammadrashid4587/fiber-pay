@@ -1,3 +1,4 @@
+import type { RouterHop } from '@fiber-pay/sdk';
 import { ckbToShannons, type HexString, shannonsToCkb } from '@fiber-pay/sdk';
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
@@ -244,6 +245,125 @@ export function createPaymentCommand(config: CliConfig): Command {
         );
       }
       process.exit(1);
+    });
+
+  payment
+    .command('route')
+    .description('Build a payment route through specified hops')
+    .requiredOption('--hops <pubkeys>', 'Comma-separated list of node pubkeys forming the route')
+    .option('--amount <ckb>', 'Amount in CKB to route')
+    .option('--json')
+    .action(async (options) => {
+      const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
+      const pubkeys = (options.hops as string).split(',').map((s: string) => s.trim());
+
+      if (pubkeys.length === 0 || pubkeys.some((pk: string) => !pk)) {
+        const msg = '--hops must be a non-empty comma-separated list of pubkeys';
+        if (json) {
+          printJsonError({
+            code: 'PAYMENT_ROUTE_INPUT_INVALID',
+            message: msg,
+            recoverable: true,
+            suggestion: 'Provide pubkeys: --hops 0xabc...,0xdef...',
+          });
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exit(1);
+      }
+
+      const hopsInfo = pubkeys.map((pubkey: string) => ({ pubkey: pubkey as HexString }));
+      const amount = options.amount ? ckbToShannons(parseFloat(options.amount)) : undefined;
+
+      const result = await rpc.buildRouter({
+        hops_info: hopsInfo,
+        amount,
+      });
+
+      if (json) {
+        printJsonSuccess({ routerHops: result.router_hops });
+      } else {
+        console.log(`Route built: ${result.router_hops.length} hop(s)`);
+        for (let i = 0; i < result.router_hops.length; i++) {
+          const hop = result.router_hops[i];
+          console.log(`  #${i + 1}`);
+          console.log(`    Target:     ${hop.target}`);
+          console.log(
+            `    Outpoint:   ${hop.channel_outpoint.tx_hash}:${hop.channel_outpoint.index}`,
+          );
+          console.log(`    Amount:     ${shannonsToCkb(hop.amount_received)} CKB`);
+          console.log(`    Expiry:     ${hop.incoming_tlc_expiry}`);
+        }
+      }
+    });
+
+  payment
+    .command('send-route')
+    .description('Send a payment using a pre-built route from `payment route`')
+    .requiredOption(
+      '--router <json>',
+      'JSON array of router hops (output of `payment route --json`)',
+    )
+    .option('--invoice <invoice>', 'Invoice to pay')
+    .option('--payment-hash <hash>', 'Payment hash (for keysend)')
+    .option('--keysend', 'Keysend mode')
+    .option('--dry-run', 'Simulate—do not actually send')
+    .option('--json')
+    .action(async (options) => {
+      const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
+
+      let router: RouterHop[];
+      try {
+        router = JSON.parse(options.router as string) as RouterHop[];
+      } catch {
+        const msg = '--router must be a valid JSON array of router hops';
+        if (json) {
+          printJsonError({
+            code: 'PAYMENT_SEND_ROUTE_INPUT_INVALID',
+            message: msg,
+            recoverable: true,
+            suggestion: 'Pipe --json output of `payment route` into this flag.',
+          });
+        } else {
+          console.error(`Error: ${msg}`);
+        }
+        process.exit(1);
+      }
+
+      const result = await rpc.sendPaymentWithRouter({
+        router,
+        invoice: options.invoice as string | undefined,
+        payment_hash: options.paymentHash as HexString | undefined,
+        keysend: options.keysend ? true : undefined,
+        dry_run: options.dryRun ? true : undefined,
+      });
+
+      const payload = {
+        paymentHash: result.payment_hash,
+        status:
+          result.status === 'Success'
+            ? 'success'
+            : result.status === 'Failed'
+              ? 'failed'
+              : 'pending',
+        feeCkb: shannonsToCkb(result.fee),
+        failureReason: result.failed_error,
+        dryRun: Boolean(options.dryRun),
+      };
+
+      if (json) {
+        printJsonSuccess(payload);
+      } else {
+        console.log(options.dryRun ? 'Payment dry-run complete' : 'Payment sent via route');
+        console.log(`  Hash:   ${payload.paymentHash}`);
+        console.log(`  Status: ${payload.status}`);
+        console.log(`  Fee:    ${payload.feeCkb} CKB`);
+        if (payload.failureReason) {
+          console.log(`  Error:  ${payload.failureReason}`);
+        }
+      }
     });
 
   return payment;

@@ -5,11 +5,12 @@ import { createBalanceCommand } from './commands/balance.js';
 import { createBinaryCommand } from './commands/binary.js';
 import { createChannelCommand } from './commands/channel.js';
 import { createConfigCommand } from './commands/config.js';
+import { createGraphCommand } from './commands/graph.js';
 import { createInvoiceCommand } from './commands/invoice.js';
 import { createNodeCommand } from './commands/node.js';
 import { createPaymentCommand } from './commands/payment.js';
 import { createPeerCommand } from './commands/peer.js';
-import { getConfig } from './lib/config.js';
+import { getEffectiveConfig } from './lib/config.js';
 import { printJsonError } from './lib/format.js';
 
 function shouldOutputJson(): boolean {
@@ -24,9 +25,13 @@ function getFlagValue(argv: string[], index: number): string | undefined {
   return value;
 }
 
+/** Tracks which config keys were explicitly set via CLI flags. */
+const explicitFlags = new Set<string>();
+
 function applyGlobalOverrides(argv: string[]): void {
   let explicitDataDir = false;
   let profileName: string | undefined;
+  explicitFlags.clear();
 
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -41,27 +46,40 @@ function applyGlobalOverrides(argv: string[]): void {
         if (value) {
           process.env.FIBER_DATA_DIR = value;
           explicitDataDir = true;
+          explicitFlags.add('dataDir');
         }
         break;
       }
       case '--rpc-url': {
         const value = getFlagValue(argv, index);
-        if (value) process.env.FIBER_RPC_URL = value;
+        if (value) {
+          process.env.FIBER_RPC_URL = value;
+          explicitFlags.add('rpcUrl');
+        }
         break;
       }
       case '--network': {
         const value = getFlagValue(argv, index);
-        if (value) process.env.FIBER_NETWORK = value;
+        if (value) {
+          process.env.FIBER_NETWORK = value;
+          explicitFlags.add('network');
+        }
         break;
       }
       case '--key-password': {
         const value = getFlagValue(argv, index);
-        if (value) process.env.FIBER_KEY_PASSWORD = value;
+        if (value) {
+          process.env.FIBER_KEY_PASSWORD = value;
+          explicitFlags.add('keyPassword');
+        }
         break;
       }
       case '--binary-path': {
         const value = getFlagValue(argv, index);
-        if (value) process.env.FIBER_BINARY_PATH = value;
+        if (value) {
+          process.env.FIBER_BINARY_PATH = value;
+          explicitFlags.add('binaryPath');
+        }
         break;
       }
       default:
@@ -101,7 +119,7 @@ function printFatal(error: unknown): void {
 
 async function main(): Promise<void> {
   applyGlobalOverrides(process.argv);
-  const config = getConfig();
+  const config = getEffectiveConfig(explicitFlags).config;
 
   const program = new Command();
   program
@@ -131,6 +149,7 @@ async function main(): Promise<void> {
   program.addCommand(createInvoiceCommand(config));
   program.addCommand(createPaymentCommand(config));
   program.addCommand(createPeerCommand(config));
+  program.addCommand(createGraphCommand(config));
   program.addCommand(createBinaryCommand(config));
   program.addCommand(createConfigCommand(config));
   program.addCommand(createBalanceCommand(config));

@@ -13,6 +13,7 @@ export type {
 // Binary management
 export {
   BinaryManager,
+  DEFAULT_FIBER_VERSION,
   downloadFiberBinary,
   ensureFiberBinary,
   getDefaultBinaryPath,

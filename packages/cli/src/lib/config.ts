@@ -9,13 +9,21 @@ export interface CliConfig {
   network: FiberNetwork;
   rpcUrl: string;
   keyPassword?: string;
+  ckbRpcUrl?: string;
+}
+
+/** Keys that can be stored in a profile.json file. */
+export interface ProfileConfig {
+  binaryPath?: string;
+  keyPassword?: string;
 }
 
 export interface EffectiveConfigSources {
-  dataDir: 'env' | 'default';
+  dataDir: 'cli' | 'env' | 'default';
   configPath: 'derived';
-  network: 'env' | 'config' | 'default';
-  rpcUrl: 'env' | 'config' | 'default';
+  network: 'cli' | 'env' | 'config' | 'default';
+  rpcUrl: 'cli' | 'env' | 'config' | 'default';
+  ckbRpcUrl?: 'env' | 'config' | 'unset';
 }
 
 export interface EffectiveConfig {
@@ -53,6 +61,44 @@ export function parseRpcUrlFromConfig(configContent: string): string | undefined
     return listeningAddr;
   }
   return `http://${listeningAddr}`;
+}
+
+export function parseCkbRpcUrlFromConfig(configContent: string): string | undefined {
+  const ckbSectionMatch = configContent.match(
+    /(^|\n)ckb:\n([\s\S]*?)(\n[a-zA-Z_]+:|\nservices:|$)/,
+  );
+  const ckbSection = ckbSectionMatch?.[2];
+  if (!ckbSection) return undefined;
+
+  const match = ckbSection.match(/^\s*rpc_url:\s*"?([^"\n]+)"?\s*$/m);
+  return match?.[1]?.trim() || undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Profile helpers
+// ---------------------------------------------------------------------------
+
+function getProfilePath(dataDir: string): string {
+  return join(dataDir, 'profile.json');
+}
+
+export function loadProfileConfig(dataDir: string): ProfileConfig | undefined {
+  const profilePath = getProfilePath(dataDir);
+  if (!existsSync(profilePath)) return undefined;
+  try {
+    const raw = readFileSync(profilePath, 'utf-8');
+    return JSON.parse(raw) as ProfileConfig;
+  } catch {
+    return undefined;
+  }
+}
+
+export function saveProfileConfig(dataDir: string, profile: ProfileConfig): void {
+  if (!existsSync(dataDir)) {
+    mkdirSync(dataDir, { recursive: true });
+  }
+  const profilePath = getProfilePath(dataDir);
+  writeFileSync(profilePath, JSON.stringify(profile, null, 2) + '\n', 'utf-8');
 }
 
 export function writeNetworkConfigFile(
@@ -114,49 +160,102 @@ export function ensureNodeConfigFile(dataDir: string, network: FiberNetwork): st
   return configPath;
 }
 
-export function getEffectiveConfig(): EffectiveConfig {
+export function getEffectiveConfig(explicitFlags?: Set<string>): EffectiveConfig {
   const dataDir = process.env.FIBER_DATA_DIR || DEFAULT_DATA_DIR;
-  const dataDirSource: EffectiveConfigSources['dataDir'] = process.env.FIBER_DATA_DIR
-    ? 'env'
-    : 'default';
+  const dataDirSource: EffectiveConfigSources['dataDir'] = explicitFlags?.has('dataDir')
+    ? 'cli'
+    : process.env.FIBER_DATA_DIR
+      ? 'env'
+      : 'default';
 
   const configPath = getConfigPath(dataDir);
   const configExists = existsSync(configPath);
   const configContent = configExists ? readFileSync(configPath, 'utf-8') : undefined;
 
-  const envNetwork = process.env.FIBER_NETWORK as FiberNetwork | undefined;
-  const fileNetwork = configContent ? parseNetworkFromConfig(configContent) : undefined;
-  const network = envNetwork || fileNetwork || DEFAULT_NETWORK;
-  const networkSource: EffectiveConfigSources['network'] = envNetwork
-    ? 'env'
-    : fileNetwork
-      ? 'config'
-      : 'default';
+  // Load profile.json from the resolved data directory
+  const profile = loadProfileConfig(dataDir);
 
-  const envRpcUrl = process.env.FIBER_RPC_URL;
+  // --- Per-key priority ---
+  // runtime keys: CLI flag > env var > config.yml > default
+  // CLI-only keys: CLI flag > profile.json > env var
+
+  // Network
+  const cliNetwork = explicitFlags?.has('network')
+    ? (process.env.FIBER_NETWORK as FiberNetwork | undefined)
+    : undefined;
+  const envNetwork = !explicitFlags?.has('network')
+    ? (process.env.FIBER_NETWORK as FiberNetwork | undefined)
+    : undefined;
+  const fileNetwork = configContent ? parseNetworkFromConfig(configContent) : undefined;
+  const network = cliNetwork || envNetwork || fileNetwork || DEFAULT_NETWORK;
+  const networkSource: EffectiveConfigSources['network'] = cliNetwork
+    ? 'cli'
+    : envNetwork
+      ? 'env'
+      : fileNetwork
+        ? 'config'
+        : 'default';
+
+  // RPC URL
+  const cliRpcUrl = explicitFlags?.has('rpcUrl') ? process.env.FIBER_RPC_URL : undefined;
+  const envRpcUrl = !explicitFlags?.has('rpcUrl') ? process.env.FIBER_RPC_URL : undefined;
   const fileRpcUrl = configContent ? parseRpcUrlFromConfig(configContent) : undefined;
-  const rpcUrl = envRpcUrl || fileRpcUrl || DEFAULT_RPC_URL;
-  const rpcUrlSource: EffectiveConfigSources['rpcUrl'] = envRpcUrl
+  const rpcUrl = cliRpcUrl || envRpcUrl || fileRpcUrl || DEFAULT_RPC_URL;
+  const rpcUrlSource: EffectiveConfigSources['rpcUrl'] = cliRpcUrl
+    ? 'cli'
+    : envRpcUrl
+      ? 'env'
+      : fileRpcUrl
+        ? 'config'
+        : 'default';
+
+  // Binary path
+  const cliBinaryPath = explicitFlags?.has('binaryPath')
+    ? process.env.FIBER_BINARY_PATH
+    : undefined;
+  const profileBinaryPath = profile?.binaryPath;
+  const envBinaryPath = !explicitFlags?.has('binaryPath')
+    ? process.env.FIBER_BINARY_PATH
+    : undefined;
+  const binaryPath = cliBinaryPath || profileBinaryPath || envBinaryPath || undefined;
+
+  // Key password
+  const cliKeyPassword = explicitFlags?.has('keyPassword')
+    ? process.env.FIBER_KEY_PASSWORD
+    : undefined;
+  const profileKeyPassword = profile?.keyPassword;
+  const envKeyPassword = !explicitFlags?.has('keyPassword')
+    ? process.env.FIBER_KEY_PASSWORD
+    : undefined;
+  const keyPassword = cliKeyPassword || profileKeyPassword || envKeyPassword || undefined;
+
+  // CKB RPC URL
+  const envCkbRpcUrl = process.env.FIBER_CKB_RPC_URL;
+  const fileCkbRpcUrl = configContent ? parseCkbRpcUrlFromConfig(configContent) : undefined;
+  const ckbRpcUrl = envCkbRpcUrl || fileCkbRpcUrl || undefined;
+  const ckbRpcUrlSource: EffectiveConfigSources['ckbRpcUrl'] = envCkbRpcUrl
     ? 'env'
-    : fileRpcUrl
+    : fileCkbRpcUrl
       ? 'config'
-      : 'default';
+      : 'unset';
 
   return {
     configExists,
     config: {
-      binaryPath: process.env.FIBER_BINARY_PATH,
+      binaryPath,
       dataDir,
       configPath,
       network,
       rpcUrl,
-      keyPassword: process.env.FIBER_KEY_PASSWORD,
+      keyPassword,
+      ckbRpcUrl,
     },
     sources: {
       dataDir: dataDirSource,
       configPath: 'derived',
       network: networkSource,
       rpcUrl: rpcUrlSource,
+      ckbRpcUrl: ckbRpcUrlSource,
     },
   };
 }
