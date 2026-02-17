@@ -485,6 +485,7 @@ Returns channel info once ready.`,
 // =============================================================================
 
 export type McpToolName = keyof typeof MCP_TOOLS;
+type EmptyInput = Record<string, never>;
 
 export type McpToolInput<T extends McpToolName> = T extends 'fiber_pay'
   ? {
@@ -498,21 +499,21 @@ export type McpToolInput<T extends McpToolName> = T extends 'fiber_pay'
   : T extends 'fiber_create_invoice'
     ? { amountCkb: number; description?: string; expiryMinutes?: number }
     : T extends 'fiber_get_balance'
-      ? {}
+      ? EmptyInput
       : T extends 'fiber_get_payment_status'
         ? { paymentHash: string }
         : T extends 'fiber_get_invoice_status'
           ? { paymentHash: string }
           : T extends 'fiber_list_channels'
-            ? {}
+            ? EmptyInput
             : T extends 'fiber_open_channel'
               ? { peer: string; fundingCkb: number; isPublic?: boolean }
               : T extends 'fiber_close_channel'
                 ? { channelId: string; force?: boolean }
                 : T extends 'fiber_get_node_info'
-                  ? {}
+                  ? EmptyInput
                   : T extends 'fiber_get_spending_allowance'
-                    ? {}
+                    ? EmptyInput
                     : T extends 'fiber_download_binary'
                       ? { version?: string; force?: boolean }
                       : T extends 'fiber_validate_invoice'
@@ -520,7 +521,7 @@ export type McpToolInput<T extends McpToolName> = T extends 'fiber_pay'
                         : T extends 'fiber_get_payment_proof'
                           ? { paymentHash: string }
                           : T extends 'fiber_analyze_liquidity'
-                            ? {}
+                            ? EmptyInput
                             : T extends 'fiber_can_send'
                               ? { amountCkb: number }
                               : T extends 'fiber_create_hold_invoice'

@@ -250,6 +250,31 @@ export function createChannelCommand(config: CliConfig): Command {
     });
 
   channel
+    .command('accept')
+    .argument('<temporaryChannelId>')
+    .requiredOption('--funding <ckb>')
+    .option('--json')
+    .action(async (temporaryChannelId, options) => {
+      const rpc = await createReadyRpcClient(config);
+      const fundingCkb = parseFloat(options.funding);
+
+      const result = await rpc.acceptChannel({
+        temporary_channel_id: temporaryChannelId as HexString,
+        funding_amount: ckbToShannons(fundingCkb),
+      });
+
+      const payload = { channelId: result.channel_id, temporaryChannelId, fundingCkb };
+      if (options.json) {
+        printJsonSuccess(payload);
+      } else {
+        console.log('Channel accepted');
+        console.log(`  Channel ID:           ${payload.channelId}`);
+        console.log(`  Temporary Channel ID: ${payload.temporaryChannelId}`);
+        console.log(`  Funding:              ${payload.fundingCkb} CKB`);
+      }
+    });
+
+  channel
     .command('close')
     .argument('<channelId>')
     .option('--force')

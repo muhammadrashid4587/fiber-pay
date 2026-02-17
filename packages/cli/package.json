@@ -28,8 +28,9 @@
     "node": ">=20"
   },
   "dependencies": {
-    "commander": "^13.1.0",
+    "@fiber-pay/node": "workspace:*",
     "@fiber-pay/sdk": "workspace:*",
-    "@fiber-pay/node": "workspace:*"
+    "commander": "^13.1.0",
+    "yaml": "^2.8.2"
   }
 }

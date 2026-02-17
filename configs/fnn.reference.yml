@@ -1,0 +1,305 @@
+# =============================================================================
+# Fiber Network Node (fnn) - Full Configuration Reference
+# =============================================================================
+# Version: v0.6.1
+#
+# Usage:
+#   fnn --config /path/to/config.yml
+#   fnn --dir /path/to/base_dir  (will look for config.yml in that dir)
+#   Default config location: ~/.fiber-node/config.yml
+#   Default base directory:  ~/.fiber-node/
+#
+# All options can be overridden by:
+#   1. CLI flags:  --fiber-listening-addr "/ip4/0.0.0.0/tcp/8228"
+#   2. Env vars:   FIBER_LISTENING_ADDR="/ip4/0.0.0.0/tcp/8228"
+#   3. This YAML config file (lowest priority)
+#
+# Secret key is stored at: $BASE_DIR/fiber/sk
+# Encrypt/decrypt with env: FIBER_SECRET_KEY_PASSWORD=<password>
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Services to enable. At least one is required.
+# Valid values: fiber, rpc, ckb, cch
+# -----------------------------------------------------------------------------
+services:
+  - fiber
+  - rpc
+  - ckb
+  # - cch   # Enable for Cross-Chain Hub (BTC Lightning interop)
+
+# =============================================================================
+# FIBER - P2P Payment Channel Network
+# =============================================================================
+fiber:
+  # -- Network --
+
+  # P2P listening address in multiaddr format
+  # [default: "/ip4/0.0.0.0/tcp/0" (random port)]
+  listening_addr: "/ip4/0.0.0.0/tcp/8228"
+
+  # Network: "mainnet", "testnet", or path to custom chain spec file
+  # (required)
+  chain: testnet
+
+  # Bootstrap nodes to connect at startup
+  bootnode_addrs:
+    - "/ip4/54.179.226.154/tcp/8228/p2p/Qmes1EBD4yNo9Ywkfe6eRw9tG1nVNGLDmMud1xJMsoYFKy"
+
+  # -- Node Announcement --
+
+  # Whether to announce the listening address to the network
+  # [default: false]
+  announce_listening_addr: true
+
+  # Addresses to announce to the network (use your public IP)
+  announced_addrs:
+    # - "/ip4/YOUR-PUBLIC-IP/tcp/8228"
+
+  # Whether to announce/process private addresses (for testing only)
+  # [default: false]
+  # announce_private_addr: false
+
+  # Node name announced to the network (max 32 bytes UTF-8)
+  # announced_node_name: "my-fiber-node"
+
+  # Whether to auto-announce the node on startup
+  # [default: true]
+  # auto_announce_node: true
+
+  # Re-announce NodeAnnouncement interval, in seconds. 0 = never re-announce
+  # [default: 3600 (1 hour)]
+  # announce_node_interval_seconds: 3600
+
+  # -- Channel Auto-Accept --
+
+  # Minimum CKB funding amount from opener to trigger auto-accept, in shannons
+  # [default: 10000000000 (100 CKB)]
+  # open_channel_auto_accept_min_ckb_funding_amount: 10000000000
+
+  # CKB amount the acceptor funds when auto-accepting a channel, in shannons
+  # Set to 0 to disable auto-accept for CKB channels
+  # [default: 9900000000 (99 CKB = 98 CKB reserved capacity + 1 CKB shutdown fee)]
+  # auto_accept_channel_ckb_funding_amount: 9900000000
+
+  # -- TLC (Time-Locked Contract) Defaults --
+
+  # Expiry delta for forwarding TLCs, in milliseconds
+  # [default: 14400000 (4 hours)]
+  # tlc_expiry_delta: 14400000
+
+  # Minimum TLC value. 0 = no minimum
+  # [default: 0]
+  # tlc_min_value: 0
+
+  # Fee rate for forwarding TLCs, in millionths of the amount. 1000 = 0.1%
+  # [default: 1000]
+  # tlc_fee_proportional_millionths: 1000
+
+  # -- Peer Connections --
+
+  # Max inbound peer connections
+  # [default: 16]
+  # max_inbound_peers: 16
+
+  # Min outbound peer connections to maintain
+  # [default: 8]
+  # min_outbound_peers: 8
+
+  # -- Gossip --
+
+  # Whether to sync the network graph from peers
+  # [default: true]
+  # sync_network_graph: true
+
+  # Gossip network maintenance interval, in milliseconds
+  # [default: 60000 (1 minute)]
+  # gossip_network_maintenance_interval_ms: 60000
+
+  # Gossip store maintenance interval, in milliseconds
+  # [default: 20000 (20 seconds)]
+  # gossip_store_maintenance_interval_ms: 20000
+
+  # Number of peers for active gossip syncing
+  # [default: None (uses internal default)]
+  # gossip_network_num_targeted_active_syncing_peers:
+
+  # Number of outbound peers for passive gossip syncing
+  # [default: None (uses internal default)]
+  # gossip_network_num_targeted_outbound_passive_syncing_peers:
+
+  # -- Watchtower --
+
+  # Watchtower check interval, in seconds. 0 = never check
+  # [default: 60 (1 minute)]
+  # watchtower_check_interval_seconds: 60
+
+  # External standalone watchtower RPC URL
+  # [default: None]
+  # standalone_watchtower_rpc_url: "http://127.0.0.1:9000"
+
+  # Auth token for standalone watchtower
+  # [default: None]
+  # standalone_watchtower_token: "your-token-here"
+
+  # Disable the built-in watchtower actor (requires standalone watchtower if disabled)
+  # [default: false]
+  # disable_built_in_watchtower: false
+
+  # -- Channel Limits --
+
+  # Max pending channels to accept from one peer
+  # [default: 20]
+  # to_be_accepted_channels_number_limit: 20
+
+  # Max pending channel data size per peer, in bytes
+  # [default: 50KB]
+  # to_be_accepted_channels_bytes_limit: 51200
+
+  # Timeout to auto-close a funding channel, in seconds
+  # [default: 86400 (1 day)]
+  # funding_timeout_seconds: 86400
+
+  # -- WebSocket & Metrics --
+
+  # Reuse the same TCP port for WebSocket connections
+  # [default: true]
+  # reuse_port_for_websocket: true
+
+  # Metrics endpoint address (requires build with RUSTFLAGS="--cfg tokio_unstable" and metrics feature)
+  # [default: None]
+  # metrics_addr: "127.0.0.1:9090"
+
+  # -- On-Chain Scripts (required) --
+  # FundingLock and CommitmentLock script configurations
+  # Get these from: https://github.com/nervosnetwork/fiber-scripts/
+  scripts:
+    - name: FundingLock
+      script:
+        code_hash: 0x6c67887fe201ee0c7853f1682c0b77c0e6214044c156c7558269390a8afa6d7c
+        hash_type: type
+        args: 0x
+      cell_deps:
+        - type_id:
+            code_hash: 0x00000000000000000000000000000000000000000000000000545950455f4944
+            hash_type: type
+            args: 0x3cb7c0304fe53f75bb5727e2484d0beae4bd99d979813c6fc97c3cca569f10f6
+        - cell_dep:
+            out_point:
+              tx_hash: 0x12c569a258dd9c5bd99f632bb8314b1263b90921ba31496467580d6b79dd14a7
+              index: 0x0
+            dep_type: code
+    - name: CommitmentLock
+      script:
+        code_hash: 0x740dee83f87c6f309824d8fd3fbdd3c8380ee6fc9acc90b1a748438afcdf81d8
+        hash_type: type
+        args: 0x
+      cell_deps:
+        - type_id:
+            code_hash: 0x00000000000000000000000000000000000000000000000000545950455f4944
+            hash_type: type
+            args: 0xf7e458887495cf70dd30d1543cad47dc1dfe9d874177bf19291e4db478d5751b
+        - cell_dep:
+            out_point:
+              tx_hash: 0x12c569a258dd9c5bd99f632bb8314b1263b90921ba31496467580d6b79dd14a7
+              index: 0x0
+            dep_type: code
+
+# =============================================================================
+# RPC - JSON-RPC Server
+# =============================================================================
+rpc:
+  # RPC listening address. Bind to localhost only for security!
+  # [default: None - must be set if rpc service is enabled]
+  listening_addr: "127.0.0.1:8227"
+
+  # Biscuit public key for RPC authentication
+  # [default: None (no auth)]
+  # biscuit_public_key: "your-public-key"
+
+  # Enabled RPC modules (comma-separated)
+  # [default: "cch,channel,graph,payment,info,invoice,peer"]
+  # Available: cch, channel, graph, payment, info, invoice, peer, watchtower, dev (debug only)
+  # enabled_modules:
+  #   - cch
+  #   - channel
+  #   - graph
+  #   - payment
+  #   - info
+  #   - invoice
+  #   - peer
+
+# =============================================================================
+# CKB - Layer 1 Blockchain Connection
+# =============================================================================
+ckb:
+  # CKB node RPC endpoint
+  # [default: "http://127.0.0.1:8114"]
+  rpc_url: "https://testnet.ckbapp.dev/"
+
+  # Polling interval for tx tracing, in milliseconds
+  # [default: 4000]
+  # tx_tracing_polling_interval_ms: 4000
+
+  # External shell command to build funding transactions
+  # Receives JSON from stdin: { tx, request, rpc_url, funding_source_lock_script }
+  # Must print Transaction JSON to stdout on success, non-zero exit on failure
+  # [default: None (use built-in funding)]
+  # funding_tx_shell_builder: "/path/to/builder.sh"
+
+  # UDT (User Defined Token) whitelist
+  # Only whitelisted UDTs can be used for channels
+  udt_whitelist:
+    - name: RUSD
+      script:
+        code_hash: 0x1142755a044bf2ee358cba9f2da187ce928c91cd4dc8692ded0337efa677d21a
+        hash_type: type
+        args: 0x878fcc6f1f08d48e87bb1c3b3d5083f23f8a39c5d5c764f253b55b998526439b
+      cell_deps:
+        - type_id:
+            code_hash: 0x00000000000000000000000000000000000000000000000000545950455f4944
+            hash_type: type
+            args: 0x97d30b723c0b2c66e9cb8d4d0df4ab5d7222cbb00d4a9a2055ce2e5d7f0d8b0f
+      # Min amount from opener to auto-accept UDT channel. Omit to disable auto-accept for this UDT.
+      auto_accept_amount: 1000000000
+
+# =============================================================================
+# CCH - Cross-Chain Hub (BTC Lightning Network Interop)
+# =============================================================================
+# Uncomment and add "cch" to services to enable
+# cch:
+#   # LND gRPC endpoint
+#   # [default: "https://127.0.0.1:10009"]
+#   lnd_rpc_url: "https://127.0.0.1:10009"
+#
+#   # Path to LND TLS cert. Leave empty to use system CA certs
+#   # [default: None]
+#   lnd_cert_path: "/path/to/tls.cert"
+#
+#   # Path to LND macaroon file for authentication
+#   # [default: None]
+#   lnd_macaroon_path: "/path/to/admin.macaroon"
+#
+#   # Wrapped BTC type script args (must be a UDT with 8 decimal places)
+#   # (required if cch is enabled)
+#   wrapped_btc_type_script_args: "0x..."
+#
+#   # Cross-chain order expiry time, in seconds
+#   # [default: 3600 (1 hour)]
+#   order_expiry: 3600
+#
+#   # Base fee per cross-chain order, in satoshis
+#   # [default: 0]
+#   base_fee_sats: 0
+#
+#   # Proportional fee per million satoshis
+#   # [default: 1]
+#   fee_rate_per_million_sats: 1
+#
+#   # Final TLC expiry for BTC network, in seconds
+#   # [default: 36]
+#   btc_final_tlc_expiry: 36
+#
+#   # Final TLC expiry delta for CKB network, in milliseconds
+#   # [default: 86400000 (24 hours)]
+#   ckb_final_tlc_expiry_delta: 86400000

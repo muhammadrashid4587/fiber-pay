@@ -17,7 +17,7 @@ This repository currently emphasizes SDK + CLI quality and agent usability throu
 ## Why this repo is AI-friendly
 
 - Canonical CLI guide for agents: `packages/cli/llm.txt`
-- Predictable grouped commands (`node/channel/invoice/payment/peer/binary/balance`)
+- Predictable grouped commands (`node/channel/invoice/payment/peer/binary/config/graph`)
 - Uniform `--json` envelopes for reliable parsing and tool chaining
 - NDJSON stream events for `watch --json` commands
 - Explicit defaults for startup, ports, binary path, and key password behavior
@@ -42,13 +42,12 @@ fiber-pay --profile local-a binary download
 fiber-pay --profile local-a node start
 fiber-pay --profile local-a node status
 fiber-pay --profile local-a node ready --json
-fiber-pay --profile local-a agent check --json
 ```
 
 Common workflows:
 
 ```bash
-fiber-pay balance
+fiber-pay node status
 fiber-pay channel list
 fiber-pay invoice create --amount 10 --description "service"
 fiber-pay payment send <invoice>
@@ -74,6 +73,8 @@ Follow this document https://raw.githubusercontent.com/RetricSu/fiber-pay/master
 - CLI behavior + command reference: `packages/cli/llm.txt`
 - Maintainer alignment notes: `AGENT.md`
 - Intent docs: `docs/plans/ai-payment-layer-intent.md`
+- Config docs: `docs/configuration.md`
+- Config artifacts: `configs/fnn.testnet.yml`, `configs/fnn.mainnet.yml`, `configs/fnn.reference.yml`
 
 ## Development
 

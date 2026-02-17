@@ -1,7 +1,7 @@
 fiber-pay CLI Guide (for Agents)
 ================================
 
-Last updated: 2026-02-13
+Last updated: 2026-02-17
 Fiber node target: v0.6.1
 Primary RPC reference:
 https://github.com/nervosnetwork/fiber/blob/v0.6.1/crates/fiber-lib/src/rpc/README.md
@@ -54,24 +54,31 @@ fiber-pay --help
 Create separate `.env` files (e.g., `.env.node-a`, `.env.node-b`) with unique `FIBER_DATA_DIR`, `FIBER_RPC_PORT`, `FIBER_P2P_PORT`.
 Usage: `source .env.node-a && fiber-pay node start`
 
+Config artifacts in this repo:
+- `configs/fnn.testnet.yml`
+- `configs/fnn.mainnet.yml`
+- `configs/fnn.reference.yml` (full commented reference from fnn docs)
+
 ## 💻 Command Surface
 *All commands support `--json` for structured output.*
 
 ### Lifecycle (`node`)
 *   `start [--cors-proxy <port>] [--json]`: Start node (foreground).
 *   `stop [--json]`: Stop node.
-*   `status [--json]`: Check process status.
+*   `status [--json]`: Unified status (process/rpc identity + diagnostics + balance).
 *   `ready [--json]`: Aggregated automation readiness (node/rpc/channel/liquidity).
 *   `info [--json]`: Get node ID and version details.
-
-### Agent (`agent`)
-*   `check [--json]`: Run aggregated binary/config/node/rpc/channel checks with recommendation.
 
 ### Setup (`binary`, `config`)
 *   `binary download [--version v0.6.1] [--force] [--json]`: Fetch fiber node binary.
 *   `binary info [--json]`: Show binary path/version.
 *   `config init [--data-dir <path>] [--network <net>] [--rpc-port <port>] [--p2p-port <port>] [--force] [--json]`: Initialize config.
-*   `config show [--effective] [--json]`: Display current config.
+*   `config show [--effective] [--json]`: Display current config file or effective resolved values.
+*   `config get <path> [--json]`: Read a config value by path (dot + bracket syntax).
+*   `config set <path> <value> [--type auto|string|number|boolean|null|json] [--json]`: Write a config value by path.
+*   `config unset <path> [--json]`: Remove a config value by path.
+*   `config list [--prefix <path>] [--json]`: List key paths.
+*   `config profile show|set|unset`: Manage CLI-only profile keys (`binaryPath`, `keyPassword`).
 
 ### Operations (`channel`, `invoice`, `payment`)
 *   **Channel**:
@@ -92,11 +99,10 @@ Usage: `source .env.node-a && fiber-pay node start`
     *   `get <paymentHash> [--json]`: Check payment status.
     *   `watch <paymentHash> [--json] [--until SUCCESS|FAILED|TERMINAL] [--on-timeout fail|success]`: Monitor payment outcome.
 
-### Network & Info (`peer`, `balance`)
+### Network & Info (`peer`)
 *   `peer list [--json]`: Show connected peers.
 *   `peer connect <multiaddr> [--json]`: Connect to peer.
 *   `peer disconnect <peerId> [--json]`: Disconnect.
-*   `balance [--json]`: Show local CKB balance.
 
 ## 📦 JSON Contract (vNext)
 - Non-stream commands in `--json` mode return one envelope:
@@ -144,9 +150,7 @@ fiber-pay --profile local-a node status
 fiber-pay binary info --json
 fiber-pay node status --json
 fiber-pay node ready --json
-fiber-pay agent check --json
 fiber-pay channel list --include-closed --json
-fiber-pay balance --json
 ```
 
 ## ⚠️ 当前限制（Agent 须知）
