@@ -10,6 +10,7 @@ import {
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
 import { printJsonError, printJsonEvent, printJsonSuccess } from '../lib/format.js';
+import { parseBoolOption, parseIntegerOption } from '../lib/parse-options.js';
 import { isProcessRunning } from '../lib/pid.js';
 import {
   readRuntimeMeta,
@@ -22,27 +23,6 @@ import {
 interface RuntimeLogFilter {
   minPriority?: AlertPriority;
   types?: Set<AlertType>;
-}
-
-function parseIntegerOption(value: string | undefined, name: string): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`Invalid ${name}: ${value}. Expected positive integer.`);
-  }
-  return parsed;
-}
-
-function parseBoolOption(value: string | undefined, name: string): boolean | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  const normalized = value.toLowerCase();
-  if (normalized === 'true') return true;
-  if (normalized === 'false') return false;
-  throw new Error(`Invalid ${name}: ${value}. Expected true|false.`);
 }
 
 function parseAlertPriorityOption(value: string | undefined): AlertPriority | undefined {

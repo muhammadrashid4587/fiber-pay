@@ -2,13 +2,7 @@ import type { CkbInvoiceStatus, FiberRpcClient } from '@fiber-pay/sdk';
 import type { AlertManager } from '../alerts/alert-manager.js';
 import type { Store } from '../storage/types.js';
 import { BaseMonitor, type BaseMonitorHooks } from './base-monitor.js';
-
-function isExpectedTrackerError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /not found|does not exist|no such|temporarily unavailable|connection refused|timed out|timeout/i.test(
-    message,
-  );
-}
+import { isExpectedTrackerError } from './tracker-utils.js';
 
 export interface InvoiceTrackerConfig {
   intervalMs: number;

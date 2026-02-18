@@ -106,12 +106,9 @@ export class FiberMonitorService extends EventEmitter {
       }),
     ];
 
-    const originalEmit = this.alerts.emit.bind(this.alerts);
-    this.alerts.emit = async (input) => {
-      const alert = await originalEmit(input);
+    this.alerts.onEmit((alert) => {
       this.emit('alert', alert);
-      return alert;
-    };
+    });
 
     this.proxy = new RpcMonitorProxy(
       {

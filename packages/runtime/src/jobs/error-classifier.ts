@@ -28,12 +28,12 @@ const PATTERNS: Array<{ pattern: RegExp; category: ErrorCategory; retryable: boo
 ];
 
 /**
- * Classify a payment failure into a structured error.
+ * Classify an RPC / job failure into a structured error.
  *
  * `failedError` is the raw `failed_error` string from Fiber's `get_payment` response.
  * `error` is any caught JS exception.
  */
-export function classifyPaymentError(
+export function classifyRpcError(
   error: unknown,
   failedError?: string,
 ): ClassifiedError {
@@ -52,11 +52,4 @@ export function classifyPaymentError(
     message: raw,
     rawError: raw,
   };
-}
-
-export function classifyRpcError(
-  error: unknown,
-  failedError?: string,
-): ClassifiedError {
-  return classifyPaymentError(error, failedError);
 }
