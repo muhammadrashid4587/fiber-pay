@@ -12,7 +12,6 @@ import type { CliConfig } from '../lib/config.js';
 import { printJsonError, printJsonEvent, printJsonSuccess } from '../lib/format.js';
 import { isProcessRunning } from '../lib/pid.js';
 import {
-  type RuntimeMeta,
   readRuntimeMeta,
   readRuntimePid,
   removeRuntimeFiles,

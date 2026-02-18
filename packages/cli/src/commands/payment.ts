@@ -10,7 +10,7 @@ import {
   printPaymentDetailHuman,
   sleep,
 } from '../lib/format.js';
-import { createReadyRpcClient } from '../lib/rpc.js';
+import { createReadyRpcClient, resolveRpcEndpoint } from '../lib/rpc.js';
 
 export function createPaymentCommand(config: CliConfig): Command {
   const payment = new Command('payment').description('Payment lifecycle and status commands');
@@ -22,6 +22,8 @@ export function createPaymentCommand(config: CliConfig): Command {
     .option('--to <nodeId>')
     .option('--amount <ckb>')
     .option('--max-fee <ckb>')
+    .option('--wait', 'Wait for runtime job terminal status when runtime proxy is active')
+    .option('--timeout <seconds>', 'Wait timeout for --wait mode', '120')
     .option('--json')
     .action(async (invoiceArg, options) => {
       const rpc = await createReadyRpcClient(config);
@@ -30,6 +32,8 @@ export function createPaymentCommand(config: CliConfig): Command {
       const recipientNodeId = options.to;
       const amountCkb = options.amount ? parseFloat(options.amount) : undefined;
       const maxFeeCkb = options.maxFee ? parseFloat(options.maxFee) : undefined;
+      const shouldWait = Boolean(options.wait);
+      const timeoutSeconds = parseInt(String(options.timeout ?? '120'), 10);
 
       if (!invoice && !recipientNodeId) {
         if (json) {
@@ -58,13 +62,69 @@ export function createPaymentCommand(config: CliConfig): Command {
         process.exit(1);
       }
 
-      const result = await rpc.sendPayment({
+      const paymentParams = {
         invoice,
         target_pubkey: recipientNodeId as HexString | undefined,
         amount: amountCkb ? ckbToShannons(amountCkb) : undefined,
         keysend: recipientNodeId ? true : undefined,
         max_fee_amount: maxFeeCkb ? ckbToShannons(maxFeeCkb) : undefined,
-      });
+      };
+
+      const endpoint = resolveRpcEndpoint(config);
+
+      if (endpoint.target === 'runtime-proxy') {
+        const created = await tryCreateRuntimePaymentJob(endpoint.url, {
+          params: {
+            invoice,
+            sendPaymentParams: paymentParams,
+          },
+          options: {
+            idempotencyKey: invoice,
+          },
+        });
+
+        if (created) {
+          const job = shouldWait
+            ? await waitForRuntimeJobTerminal(endpoint.url, created.id, timeoutSeconds)
+            : created;
+
+          const payload = {
+            paymentHash:
+              getJobPaymentHash(job) ??
+              (typeof paymentParams.payment_hash === 'string'
+                ? paymentParams.payment_hash
+                : undefined) ??
+              'unknown',
+            status:
+              job.state === 'succeeded'
+                ? 'success'
+                : job.state === 'failed' || job.state === 'cancelled'
+                  ? 'failed'
+                  : 'pending',
+            feeCkb: getJobFeeCkb(job),
+            failureReason: getJobFailure(job),
+            jobId: job.id,
+            jobState: job.state,
+          };
+
+          if (json) {
+            printJsonSuccess(payload);
+          } else {
+            console.log('Payment job submitted');
+            console.log(`  Job:    ${payload.jobId}`);
+            console.log(`  Hash:   ${payload.paymentHash}`);
+            console.log(`  Status: ${payload.status} (${payload.jobState})`);
+            console.log(`  Fee:    ${payload.feeCkb} CKB`);
+            if (payload.failureReason) {
+              console.log(`  Error:  ${payload.failureReason}`);
+            }
+          }
+          return;
+        }
+      }
+
+      // Fallback to direct RPC send_payment
+      const result = await rpc.sendPayment(paymentParams);
 
       const payload = {
         paymentHash: result.payment_hash,
@@ -367,4 +427,77 @@ export function createPaymentCommand(config: CliConfig): Command {
     });
 
   return payment;
+}
+
+type RuntimePaymentJobRequest = {
+  params: {
+    invoice?: string;
+    sendPaymentParams: Record<string, unknown>;
+  };
+  options?: {
+    idempotencyKey?: string;
+    maxRetries?: number;
+  };
+};
+
+type RuntimeJobRecord = {
+  id: string;
+  state: string;
+  result?: {
+    paymentHash?: string;
+    fee?: string;
+    failedError?: string;
+  };
+  error?: {
+    message?: string;
+  };
+};
+
+async function tryCreateRuntimePaymentJob(
+  runtimeUrl: string,
+  body: RuntimePaymentJobRequest,
+): Promise<RuntimeJobRecord | null> {
+  try {
+    const response = await fetch(`${runtimeUrl}/jobs/payment`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) return null;
+    return (await response.json()) as RuntimeJobRecord;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForRuntimeJobTerminal(
+  runtimeUrl: string,
+  jobId: string,
+  timeoutSeconds: number,
+): Promise<RuntimeJobRecord> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutSeconds * 1000) {
+    const response = await fetch(`${runtimeUrl}/jobs/${jobId}`);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch runtime job ${jobId}: ${response.status}`);
+    }
+    const job = (await response.json()) as RuntimeJobRecord;
+    if (job.state === 'succeeded' || job.state === 'failed' || job.state === 'cancelled') {
+      return job;
+    }
+    await sleep(500);
+  }
+  throw new Error(`Timed out waiting for runtime job ${jobId}`);
+}
+
+function getJobPaymentHash(job: RuntimeJobRecord): string | undefined {
+  return job.result?.paymentHash;
+}
+
+function getJobFeeCkb(job: RuntimeJobRecord): number {
+  return job.result?.fee ? shannonsToCkb(job.result.fee as HexString) : 0;
+}
+
+function getJobFailure(job: RuntimeJobRecord): string | undefined {
+  return job.result?.failedError ?? job.error?.message;
 }

@@ -14,6 +14,8 @@ import { PaymentTracker } from './monitors/payment-tracker.js';
 import { PeerMonitor } from './monitors/peer-monitor.js';
 import { RpcMonitorProxy } from './proxy/rpc-proxy.js';
 import { MemoryStore } from './storage/memory-store.js';
+import { SqliteJobStore } from './storage/sqlite-store.js';
+import { JobManager } from './jobs/job-manager.js';
 
 export class FiberMonitorService extends EventEmitter {
   private readonly config: RuntimeConfig;
@@ -23,6 +25,8 @@ export class FiberMonitorService extends EventEmitter {
   private readonly alerts: AlertManager;
   private readonly monitors: BaseMonitor[];
   private readonly proxy: RpcMonitorProxy;
+  private readonly jobStore: SqliteJobStore | null;
+  private readonly jobManager: JobManager | null;
   private running = false;
   private offline = false;
 
@@ -46,6 +50,15 @@ export class FiberMonitorService extends EventEmitter {
       backends: this.createAlertBackends(this.config),
       store: this.store,
     });
+
+    this.jobStore = this.config.jobs.enabled ? new SqliteJobStore(this.config.jobs.dbPath) : null;
+    this.jobManager = this.jobStore
+      ? new JobManager(this.client, this.jobStore, {
+          maxConcurrentJobs: this.config.jobs.maxConcurrentJobs,
+          schedulerIntervalMs: this.config.jobs.schedulerIntervalMs,
+          retryPolicy: this.config.jobs.retryPolicy,
+        })
+      : null;
 
     const hooks = {
       onCycleError: async (error: unknown, monitorName: string) => {
@@ -133,6 +146,19 @@ export class FiberMonitorService extends EventEmitter {
         listTrackedPayments: () => this.store.listTrackedPayments(),
         listAlerts: (filters) => this.store.listAlerts(filters),
         getStatus: () => this.getStatus(),
+        createPaymentJob: this.jobManager
+          ? (params, options) => this.jobManager!.ensurePayment(params, options)
+          : undefined,
+        createInvoiceJob: this.jobManager
+          ? (params, options) => this.jobManager!.manageInvoice(params, options)
+          : undefined,
+        createChannelJob: this.jobManager
+          ? (params, options) => this.jobManager!.manageChannel(params, options)
+          : undefined,
+        getJob: this.jobManager ? (id) => this.jobManager!.getJob(id) : undefined,
+        listJobs: this.jobManager ? (filter) => this.jobManager!.listJobs(filter) : undefined,
+        cancelJob: this.jobManager ? (id) => this.jobManager!.cancelJob(id) : undefined,
+        listJobEvents: this.jobStore ? (jobId) => this.jobStore!.listJobEvents(jobId) : undefined,
       },
     );
   }
@@ -150,6 +176,8 @@ export class FiberMonitorService extends EventEmitter {
       monitor.start();
     }
 
+    this.jobManager?.start();
+
     if (this.config.proxy.enabled) {
       await this.proxy.start();
     }
@@ -166,6 +194,8 @@ export class FiberMonitorService extends EventEmitter {
       monitor.stop();
     }
 
+    await this.jobManager?.stop();
+
     if (this.config.proxy.enabled) {
       await this.proxy.stop();
     }
@@ -173,6 +203,7 @@ export class FiberMonitorService extends EventEmitter {
     this.store.stopAutoFlush();
     await this.store.flush();
     await this.alerts.stop();
+    this.jobStore?.close();
     this.running = false;
   }
 

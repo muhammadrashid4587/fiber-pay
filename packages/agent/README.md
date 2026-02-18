@@ -39,6 +39,33 @@ console.log(balance.data);
 await fiber.shutdown();
 ```
 
+## Runtime job orchestration
+
+By default, `FiberPay` enables runtime-backed job orchestration for:
+
+- `pay()`
+- `createInvoice()`
+- `createHoldInvoice()`
+- `settleInvoice()`
+- `openChannel()`
+- `closeChannel()`
+
+This uses an internal SQLite job store and waits for terminal job states before returning.
+
+Config knobs:
+
+- `useRuntimeJobs` (default: `true`)
+- `runtimeJobsDbPath` (default: `${dataDir}/runtime-jobs.db`)
+
+Disable orchestration to force direct RPC calls:
+
+```ts
+const fiber = createFiberPay({
+  dataDir: `${process.env.HOME}/.fiber-pay`,
+  useRuntimeJobs: false,
+});
+```
+
 ## API surface summary
 
 ### Lifecycle

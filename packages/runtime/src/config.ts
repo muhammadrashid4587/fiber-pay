@@ -1,4 +1,6 @@
 import { resolve } from 'node:path';
+import type { RetryPolicy } from './jobs/types.js';
+import { defaultPaymentRetryPolicy } from './jobs/retry-policy.js';
 
 export interface StdoutAlertConfig {
   type: 'stdout';
@@ -38,11 +40,21 @@ export interface RuntimeConfig {
     flushIntervalMs: number;
     maxAlertHistory: number;
   };
+  jobs: {
+    /** Enable the payment job execution engine. Default: false */
+    enabled: boolean;
+    /** Path to the SQLite file for job persistence. Default: derived from storage.stateFilePath */
+    dbPath: string;
+    maxConcurrentJobs: number;
+    schedulerIntervalMs: number;
+    retryPolicy: RetryPolicy;
+  };
 }
 
-export type RuntimeConfigInput = Omit<Partial<RuntimeConfig>, 'proxy' | 'storage'> & {
+export type RuntimeConfigInput = Omit<Partial<RuntimeConfig>, 'proxy' | 'storage' | 'jobs'> & {
   proxy?: Partial<RuntimeConfig['proxy']>;
   storage?: Partial<RuntimeConfig['storage']>;
+  jobs?: Partial<RuntimeConfig['jobs']>;
 };
 
 export const defaultRuntimeConfig: RuntimeConfig = {
@@ -65,6 +77,13 @@ export const defaultRuntimeConfig: RuntimeConfig = {
     flushIntervalMs: 30000,
     maxAlertHistory: 5000,
   },
+  jobs: {
+    enabled: false,
+    dbPath: resolve(process.cwd(), '.fiber-pay-jobs.db'),
+    maxConcurrentJobs: 5,
+    schedulerIntervalMs: 500,
+    retryPolicy: defaultPaymentRetryPolicy,
+  },
 };
 
 export function createRuntimeConfig(input: RuntimeConfigInput = {}): RuntimeConfig {
@@ -78,6 +97,14 @@ export function createRuntimeConfig(input: RuntimeConfigInput = {}): RuntimeConf
     storage: {
       ...defaultRuntimeConfig.storage,
       ...input.storage,
+    },
+    jobs: {
+      ...defaultRuntimeConfig.jobs,
+      ...input.jobs,
+      retryPolicy: {
+        ...defaultRuntimeConfig.jobs.retryPolicy,
+        ...input.jobs?.retryPolicy,
+      },
     },
     alerts: input.alerts ?? defaultRuntimeConfig.alerts,
   };
@@ -105,6 +132,24 @@ export function createRuntimeConfig(input: RuntimeConfigInput = {}): RuntimeConf
   }
   if (config.storage.maxAlertHistory <= 0) {
     throw new Error('storage.maxAlertHistory must be > 0');
+  }
+  if (!config.jobs.dbPath) {
+    throw new Error('jobs.dbPath is required');
+  }
+  if (config.jobs.maxConcurrentJobs <= 0) {
+    throw new Error('jobs.maxConcurrentJobs must be > 0');
+  }
+  if (config.jobs.schedulerIntervalMs <= 0) {
+    throw new Error('jobs.schedulerIntervalMs must be > 0');
+  }
+  if (config.jobs.retryPolicy.maxRetries < 0) {
+    throw new Error('jobs.retryPolicy.maxRetries must be >= 0');
+  }
+  if (config.jobs.retryPolicy.baseDelayMs < 0) {
+    throw new Error('jobs.retryPolicy.baseDelayMs must be >= 0');
+  }
+  if (config.jobs.retryPolicy.maxDelayMs < 0) {
+    throw new Error('jobs.retryPolicy.maxDelayMs must be >= 0');
   }
 
   return config;

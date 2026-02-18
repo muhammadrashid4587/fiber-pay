@@ -17,7 +17,7 @@ This repository currently emphasizes SDK + CLI quality and agent usability throu
 ## Why this repo is AI-friendly
 
 - Canonical CLI guide for agents: `packages/cli/llm.txt`
-- Predictable grouped commands (`node/channel/invoice/payment/peer/binary/config/graph`)
+- Predictable grouped commands (`node/channel/invoice/payment/job/peer/binary/config/graph/runtime`)
 - Uniform `--json` envelopes for reliable parsing and tool chaining
 - NDJSON stream events for `watch --json` commands
 - Explicit defaults for startup, ports, binary path, and key password behavior
@@ -48,9 +48,11 @@ Common workflows:
 
 ```bash
 fiber-pay node status
+fiber-pay runtime start --daemon
 fiber-pay channel list
 fiber-pay invoice create --amount 10 --description "service"
 fiber-pay payment send <invoice>
+fiber-pay job list
 ```
 
 Use `--json` when command output is consumed by scripts or agents.

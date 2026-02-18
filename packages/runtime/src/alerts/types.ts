@@ -14,7 +14,12 @@ export type AlertType =
   | 'peer_connected'
   | 'peer_disconnected'
   | 'node_offline'
-  | 'node_online';
+  | 'node_online'
+  // Job execution alerts
+  | 'payment_job_started'
+  | 'payment_job_retrying'
+  | 'payment_job_succeeded'
+  | 'payment_job_failed';
 
 export const alertTypeValues: AlertType[] = [
   'new_inbound_channel_request',
@@ -29,6 +34,10 @@ export const alertTypeValues: AlertType[] = [
   'peer_disconnected',
   'node_offline',
   'node_online',
+  'payment_job_started',
+  'payment_job_retrying',
+  'payment_job_succeeded',
+  'payment_job_failed',
 ];
 
 export const alertPriorityOrder: Record<AlertPriority, number> = {
@@ -114,6 +123,14 @@ export interface PeerEventData {
 
 export interface RpcHealthData {
   message: string;
+}
+
+export interface PaymentJobAlertData {
+  jobId: string;
+  idempotencyKey: string;
+  retryCount: number;
+  error?: string;
+  fee?: string;
 }
 
 export interface AlertBackend {

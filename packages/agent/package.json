@@ -38,6 +38,7 @@
   },
   "dependencies": {
     "@fiber-pay/sdk": "workspace:*",
-    "@fiber-pay/node": "workspace:*"
+    "@fiber-pay/node": "workspace:*",
+    "@fiber-pay/runtime": "workspace:*"
   }
 }

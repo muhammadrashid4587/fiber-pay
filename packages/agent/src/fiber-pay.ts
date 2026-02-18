@@ -6,8 +6,10 @@
  * payments on the CKB Lightning Network (Fiber Network).
  */
 
+import { join } from 'node:path';
 import type { DownloadProgress } from '@fiber-pay/node';
 import { ensureFiberBinary, ProcessManager } from '@fiber-pay/node';
+import { JobManager, type RuntimeJob, SqliteJobStore } from '@fiber-pay/runtime';
 import type {
   Attribute,
   CkbInvoice,
@@ -182,6 +184,10 @@ export interface FiberPayConfig {
   autoDownload?: boolean;
   /** RPC URL for connecting to an existing node (when autoStart is false) */
   rpcUrl?: string;
+  /** Enable runtime job orchestration for payments/invoices/channels (default: true) */
+  useRuntimeJobs?: boolean;
+  /** Optional sqlite path for runtime jobs */
+  runtimeJobsDbPath?: string;
 }
 
 /**
@@ -221,6 +227,8 @@ export class FiberPay {
   private invoiceVerifier: InvoiceVerifier | null = null;
   private paymentProofManager: PaymentProofManager | null = null;
   private liquidityAnalyzer: LiquidityAnalyzer | null = null;
+  private runtimeJobStore: SqliteJobStore | null = null;
+  private runtimeJobManager: JobManager | null = null;
 
   constructor(config: FiberPayConfig) {
     this.config = {
@@ -228,6 +236,7 @@ export class FiberPay {
       autoStart: true,
       rpcPort: 8227,
       p2pPort: 8228,
+      useRuntimeJobs: true,
       ...config,
     };
 
@@ -335,6 +344,14 @@ export class FiberPay {
       await this.paymentProofManager.load();
       this.liquidityAnalyzer = new LiquidityAnalyzer(this.rpc);
 
+      if (this.config.useRuntimeJobs !== false) {
+        this.runtimeJobStore = new SqliteJobStore(
+          this.config.runtimeJobsDbPath ?? join(this.config.dataDir, 'runtime-jobs.db'),
+        );
+        this.runtimeJobManager = new JobManager(this.rpc, this.runtimeJobStore);
+        this.runtimeJobManager.start();
+      }
+
       this.initialized = true;
 
       // Get node info
@@ -364,6 +381,13 @@ export class FiberPay {
       // Save payment proofs before shutdown
       if (this.paymentProofManager) {
         await this.paymentProofManager.save();
+      }
+
+      if (this.runtimeJobManager) {
+        await this.runtimeJobManager.stop();
+      }
+      if (this.runtimeJobStore) {
+        this.runtimeJobStore.close();
       }
 
       if (this.process?.isRunning()) {
@@ -451,8 +475,7 @@ export class FiberPay {
         };
       }
 
-      // Execute payment
-      const result = await this.getRpc().sendPayment({
+      const paymentParams = {
         invoice: params.invoice,
         target_pubkey: params.recipientNodeId as HexString | undefined,
         amount: params.recipientNodeId ? amountHex : undefined,
@@ -460,7 +483,37 @@ export class FiberPay {
         max_fee_amount: params.maxFeeCkb ? ckbToShannons(params.maxFeeCkb) : undefined,
         custom_records: params.customRecords,
         max_parts: params.maxParts ? toHex(params.maxParts) : undefined,
-      });
+      };
+
+      // Execute payment through runtime job manager when enabled
+      let result: Awaited<ReturnType<FiberRpcClient['sendPayment']>>;
+      if (this.runtimeJobManager) {
+        const job = await this.runtimeJobManager.ensurePayment(
+          {
+            invoice: params.invoice,
+            sendPaymentParams: paymentParams,
+          },
+          {
+            idempotencyKey: params.invoice,
+          },
+        );
+        const terminal = await this.waitForRuntimeJobTerminal(job.id, 120_000);
+        if (terminal.type !== 'payment' || terminal.state !== 'succeeded' || !terminal.result) {
+          throw new Error(terminal.error?.message ?? 'Runtime payment job failed');
+        }
+        result = {
+          payment_hash: terminal.result.paymentHash as HexString,
+          status: terminal.result.status as 'Success' | 'Failed' | 'Inflight' | 'Created',
+          fee: terminal.result.fee as HexString,
+          failed_error: terminal.result.failedError,
+          created_at: '0x0',
+          last_updated_at: '0x0',
+          custom_records: undefined,
+          routers: undefined,
+        };
+      } else {
+        result = await this.getRpc().sendPayment(paymentParams);
+      }
 
       // Record successful payment
       if (result.status === 'Success') {
@@ -547,20 +600,45 @@ export class FiberPay {
       const amountHex = ckbToShannons(params.amountCkb);
       const expirySeconds = (params.expiryMinutes || 60) * 60;
       const preimage = randomBytes32();
-
-      const result = await this.getRpc().newInvoice({
+      const invoiceParams: Parameters<FiberRpcClient['newInvoice']>[0] = {
         amount: amountHex,
         currency: this.config.chain === 'mainnet' ? 'Fibb' : 'Fibt',
         description: params.description,
         expiry: toHex(expirySeconds),
         payment_preimage: preimage,
-      });
+      };
+
+      let invoiceAddress: string;
+      let paymentHash: string;
+
+      if (this.runtimeJobManager) {
+        const job = await this.runtimeJobManager.manageInvoice({
+          action: 'create',
+          newInvoiceParams: invoiceParams,
+          waitForTerminal: false,
+        });
+        const terminal = await this.waitForRuntimeJobTerminal(job.id, 120_000);
+        if (
+          terminal.type !== 'invoice' ||
+          terminal.state !== 'succeeded' ||
+          !terminal.result?.invoiceAddress ||
+          !terminal.result.paymentHash
+        ) {
+          throw new Error(terminal.error?.message ?? 'Runtime invoice job failed');
+        }
+        invoiceAddress = terminal.result.invoiceAddress;
+        paymentHash = terminal.result.paymentHash;
+      } else {
+        const result = await this.getRpc().newInvoice(invoiceParams);
+        invoiceAddress = result.invoice_address;
+        paymentHash = result.invoice.data.payment_hash;
+      }
 
       const expiresAt = new Date(Date.now() + expirySeconds * 1000).toISOString();
 
       const invoiceResult: InvoiceResult = {
-        invoice: result.invoice_address,
-        paymentHash: result.invoice.data.payment_hash,
+        invoice: invoiceAddress,
+        paymentHash,
         amountCkb: params.amountCkb,
         expiresAt,
         status: 'open',
@@ -754,21 +832,46 @@ export class FiberPay {
         }
       }
 
-      const result = await this.getRpc().openChannel({
+      const openParams = {
         peer_id: params.peer,
         funding_amount: fundingHex,
         public: params.isPublic ?? true,
-      });
+      };
+
+      let temporaryChannelId: string;
+      if (this.runtimeJobManager) {
+        const job = await this.runtimeJobManager.manageChannel(
+          {
+            action: 'open',
+            openChannelParams: openParams,
+            waitForReady: false,
+            peerId: params.peer,
+          },
+          { idempotencyKey: `${params.peer}:${Date.now()}` },
+        );
+        const terminal = await this.waitForRuntimeJobTerminal(job.id, 120_000);
+        if (
+          terminal.type !== 'channel' ||
+          terminal.state !== 'succeeded' ||
+          !terminal.result?.temporaryChannelId
+        ) {
+          throw new Error(terminal.error?.message ?? 'Runtime channel open job failed');
+        }
+        temporaryChannelId = terminal.result.temporaryChannelId;
+      } else {
+        const result = await this.getRpc().openChannel(openParams);
+        temporaryChannelId = result.temporary_channel_id;
+      }
 
       this.policy.addAuditEntry('CHANNEL_OPENED', true, {
-        channelId: result.temporary_channel_id,
+        channelId: temporaryChannelId,
         peer: params.peer,
         fundingCkb: params.fundingCkb,
       });
 
       return {
         success: true,
-        data: { channelId: result.temporary_channel_id },
+        data: { channelId: temporaryChannelId },
         metadata: { timestamp: Date.now(), policyCheck },
       };
     } catch (error) {
@@ -804,10 +907,29 @@ export class FiberPay {
         };
       }
 
-      await this.getRpc().shutdownChannel({
-        channel_id: params.channelId as HexString,
-        force: params.force,
-      });
+      if (this.runtimeJobManager) {
+        const job = await this.runtimeJobManager.manageChannel(
+          {
+            action: 'shutdown',
+            channelId: params.channelId as HexString,
+            shutdownChannelParams: {
+              channel_id: params.channelId as HexString,
+              force: params.force,
+            },
+            waitForClosed: false,
+          },
+          { idempotencyKey: params.channelId },
+        );
+        const terminal = await this.waitForRuntimeJobTerminal(job.id, 120_000);
+        if (terminal.type !== 'channel' || terminal.state !== 'succeeded') {
+          throw new Error(terminal.error?.message ?? 'Runtime channel close job failed');
+        }
+      } else {
+        await this.getRpc().shutdownChannel({
+          channel_id: params.channelId as HexString,
+          force: params.force,
+        });
+      }
 
       this.policy.addAuditEntry('CHANNEL_CLOSED', true, params);
 
@@ -1040,20 +1162,47 @@ export class FiberPay {
     try {
       const amountHex = ckbToShannons(params.amountCkb);
       const expirySeconds = (params.expiryMinutes || 60) * 60;
-
-      const result = await this.getRpc().newInvoice({
+      const holdInvoiceParams: Parameters<FiberRpcClient['newInvoice']>[0] = {
         amount: amountHex,
         currency: this.config.chain === 'mainnet' ? 'Fibb' : 'Fibt',
         description: params.description,
         expiry: toHex(expirySeconds),
         payment_hash: params.paymentHash as HexString,
-      });
+      };
+
+      let invoiceAddress: string;
+      let paymentHash: string;
+      if (this.runtimeJobManager) {
+        const job = await this.runtimeJobManager.manageInvoice(
+          {
+            action: 'create',
+            newInvoiceParams: holdInvoiceParams,
+            waitForTerminal: false,
+          },
+          { idempotencyKey: params.paymentHash },
+        );
+        const terminal = await this.waitForRuntimeJobTerminal(job.id, 120_000);
+        if (
+          terminal.type !== 'invoice' ||
+          terminal.state !== 'succeeded' ||
+          !terminal.result?.invoiceAddress ||
+          !terminal.result.paymentHash
+        ) {
+          throw new Error(terminal.error?.message ?? 'Runtime hold invoice job failed');
+        }
+        invoiceAddress = terminal.result.invoiceAddress;
+        paymentHash = terminal.result.paymentHash;
+      } else {
+        const result = await this.getRpc().newInvoice(holdInvoiceParams);
+        invoiceAddress = result.invoice_address;
+        paymentHash = result.invoice.data.payment_hash;
+      }
 
       const expiresAt = new Date(Date.now() + expirySeconds * 1000).toISOString();
 
       const invoiceResult: HoldInvoiceResult = {
-        invoice: result.invoice_address,
-        paymentHash: result.invoice.data.payment_hash,
+        invoice: invoiceAddress,
+        paymentHash,
         amountCkb: params.amountCkb,
         expiresAt,
         status: 'open',
@@ -1093,10 +1242,27 @@ export class FiberPay {
     this.ensureInitialized();
 
     try {
-      await this.getRpc().settleInvoice({
-        payment_hash: params.paymentHash as HexString,
-        payment_preimage: params.preimage as HexString,
-      });
+      if (this.runtimeJobManager) {
+        const job = await this.runtimeJobManager.manageInvoice(
+          {
+            action: 'settle',
+            settleInvoiceParams: {
+              payment_hash: params.paymentHash as HexString,
+              payment_preimage: params.preimage as HexString,
+            },
+          },
+          { idempotencyKey: params.paymentHash },
+        );
+        const terminal = await this.waitForRuntimeJobTerminal(job.id, 120_000);
+        if (terminal.type !== 'invoice' || terminal.state !== 'succeeded') {
+          throw new Error(terminal.error?.message ?? 'Runtime settle invoice job failed');
+        }
+      } else {
+        await this.getRpc().settleInvoice({
+          payment_hash: params.paymentHash as HexString,
+          payment_preimage: params.preimage as HexString,
+        });
+      }
 
       this.policy.addAuditEntry('HOLD_INVOICE_SETTLED', true, {
         paymentHash: params.paymentHash,
@@ -1299,6 +1465,21 @@ export class FiberPay {
       throw new Error('RPC client not initialized. Call initialize() first.');
     }
     return this.rpc;
+  }
+
+  private async waitForRuntimeJobTerminal(jobId: string, timeoutMs: number): Promise<RuntimeJob> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      const job = this.runtimeJobManager?.getJob(jobId);
+      if (!job) {
+        throw new Error(`Runtime job not found: ${jobId}`);
+      }
+      if (job.state === 'succeeded' || job.state === 'failed' || job.state === 'cancelled') {
+        return job;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    throw new Error(`Runtime job ${jobId} timed out after ${timeoutMs}ms`);
   }
 
   /**

@@ -9,6 +9,7 @@ import {
   isAlertType,
 } from '../alerts/types.js';
 import { parseListenAddress } from '../config.js';
+import type { ChannelJobParams, InvoiceJobParams, JobFilter, PaymentJobParams, RuntimeJob } from '../jobs/types.js';
 
 interface JsonRpcMessage {
   id?: string | number;
@@ -36,6 +37,13 @@ export interface RpcMonitorProxyDeps {
   listTrackedPayments: () => TrackedPaymentState[];
   listAlerts: (filters?: AlertFilter) => Alert[];
   getStatus: () => RpcMonitorProxyStatus;
+  createPaymentJob?: (params: PaymentJobParams, options?: { idempotencyKey?: string; maxRetries?: number }) => Promise<RuntimeJob>;
+  createInvoiceJob?: (params: InvoiceJobParams, options?: { idempotencyKey?: string; maxRetries?: number }) => Promise<RuntimeJob>;
+  createChannelJob?: (params: ChannelJobParams, options?: { idempotencyKey?: string; maxRetries?: number }) => Promise<RuntimeJob>;
+  getJob?: (id: string) => RuntimeJob | undefined;
+  listJobs?: (filter?: JobFilter) => RuntimeJob[];
+  cancelJob?: (id: string) => void;
+  listJobEvents?: (jobId: string) => unknown[];
 }
 
 export class RpcMonitorProxy {
@@ -98,8 +106,19 @@ export class RpcMonitorProxy {
       return;
     }
 
+    if (req.method === 'DELETE') {
+      await this.handleDeleteEndpoint(req, res);
+      return;
+    }
+
     if (req.method !== 'POST') {
       this.writeJson(res, 405, { error: 'Method not allowed' });
+      return;
+    }
+
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    if (url.pathname.startsWith('/jobs/')) {
+      await this.handleJobPostEndpoint(url.pathname, req, res);
       return;
     }
 
@@ -145,6 +164,57 @@ export class RpcMonitorProxy {
 
   private handleMonitorEndpoint(req: IncomingMessage, res: ServerResponse): void {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+
+    if (url.pathname === '/jobs') {
+      if (!this.deps.listJobs) {
+        this.writeJson(res, 404, { error: 'Jobs are not enabled in runtime config' });
+        return;
+      }
+      const state = url.searchParams.get('state') ?? undefined;
+      const type = url.searchParams.get('type') as JobFilter['type'] | null;
+      const limit = parseOptionalPositiveInteger(url.searchParams.get('limit'));
+      const offset = parseOptionalPositiveInteger(url.searchParams.get('offset'));
+      this.writeJson(res, 200, {
+        jobs: this.deps.listJobs({
+          state: state as JobFilter['state'],
+          type: type ?? undefined,
+          limit,
+          offset,
+        }),
+      });
+      return;
+    }
+
+    if (url.pathname.startsWith('/jobs/')) {
+      if (!this.deps.getJob) {
+        this.writeJson(res, 404, { error: 'Jobs are not enabled in runtime config' });
+        return;
+      }
+
+      const segments = url.pathname.split('/').filter(Boolean);
+      const [, id, sub] = segments;
+      if (!id) {
+        this.writeJson(res, 400, { error: 'Missing job id' });
+        return;
+      }
+
+      if (sub === 'events') {
+        if (!this.deps.listJobEvents) {
+          this.writeJson(res, 404, { error: 'Job events not available' });
+          return;
+        }
+        this.writeJson(res, 200, { events: this.deps.listJobEvents(id) });
+        return;
+      }
+
+      const job = this.deps.getJob(id);
+      if (!job) {
+        this.writeJson(res, 404, { error: 'Job not found' });
+        return;
+      }
+      this.writeJson(res, 200, job);
+      return;
+    }
 
     if (url.pathname === '/monitor/list_tracked_invoices') {
       this.writeJson(res, 200, { invoices: this.deps.listTrackedInvoices() });
@@ -204,6 +274,91 @@ export class RpcMonitorProxy {
     }
 
     this.writeJson(res, 404, { error: 'Not found' });
+  }
+
+  private async handleJobPostEndpoint(pathname: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const rawBody = await readRawBody(req);
+    const body = tryParseJson(rawBody.toString('utf-8'));
+    if (!isObject(body)) {
+      this.writeJson(res, 400, { error: 'Invalid JSON body' });
+      return;
+    }
+
+    if (pathname === '/jobs/payment') {
+      if (!this.deps.createPaymentJob) {
+        this.writeJson(res, 404, { error: 'Jobs are not enabled in runtime config' });
+        return;
+      }
+      const params = body.params as PaymentJobParams | undefined;
+      if (!params) {
+        this.writeJson(res, 400, { error: 'Missing params for payment job' });
+        return;
+      }
+      const options = body.options as { idempotencyKey?: string; maxRetries?: number } | undefined;
+      const job = await this.deps.createPaymentJob(params, options);
+      this.writeJson(res, 200, job);
+      return;
+    }
+
+    if (pathname === '/jobs/invoice') {
+      if (!this.deps.createInvoiceJob) {
+        this.writeJson(res, 404, { error: 'Jobs are not enabled in runtime config' });
+        return;
+      }
+      const params = body.params as InvoiceJobParams | undefined;
+      if (!params) {
+        this.writeJson(res, 400, { error: 'Missing params for invoice job' });
+        return;
+      }
+      const options = body.options as { idempotencyKey?: string; maxRetries?: number } | undefined;
+      const job = await this.deps.createInvoiceJob(params, options);
+      this.writeJson(res, 200, job);
+      return;
+    }
+
+    if (pathname === '/jobs/channel') {
+      if (!this.deps.createChannelJob) {
+        this.writeJson(res, 404, { error: 'Jobs are not enabled in runtime config' });
+        return;
+      }
+      const params = body.params as ChannelJobParams | undefined;
+      if (!params) {
+        this.writeJson(res, 400, { error: 'Missing params for channel job' });
+        return;
+      }
+      const options = body.options as { idempotencyKey?: string; maxRetries?: number } | undefined;
+      const job = await this.deps.createChannelJob(params, options);
+      this.writeJson(res, 200, job);
+      return;
+    }
+
+    this.writeJson(res, 404, { error: 'Unknown jobs endpoint' });
+  }
+
+  private async handleDeleteEndpoint(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    if (!url.pathname.startsWith('/jobs/')) {
+      this.writeJson(res, 405, { error: 'Method not allowed' });
+      return;
+    }
+    if (!this.deps.cancelJob) {
+      this.writeJson(res, 404, { error: 'Jobs are not enabled in runtime config' });
+      return;
+    }
+
+    const segments = url.pathname.split('/').filter(Boolean);
+    const [, id] = segments;
+    if (!id) {
+      this.writeJson(res, 400, { error: 'Missing job id' });
+      return;
+    }
+
+    try {
+      this.deps.cancelJob(id);
+      this.writeJson(res, 204, {});
+    } catch (error) {
+      this.writeJson(res, 404, { error: String(error) });
+    }
   }
 
   private captureHashes(methodById: Map<string | number, string>, responseBody: unknown): void {
