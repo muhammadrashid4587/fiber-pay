@@ -1,155 +1,62 @@
 ---
 name: fiber-pay
-description: Operate Fiber Network payments on CKB through fiber-pay CLI and SDK. Use when tasks involve node lifecycle, peer connectivity, channel management, invoice/payment flows, balance checks, or building typed integrations against Fiber RPC v0.6.1.
+description: Operate CKB Lightning payments through fiber-pay CLI. Use when tasks involve node lifecycle, channel management, invoice/payment flows, config tuning, or multi-node orchestration on Fiber Network v0.6.1.
 ---
 
-# fiber-pay skill
+# fiber-pay
 
-Use this skill to execute and automate Fiber Network workflows with the current grouped CLI and the TypeScript SDK.
+fiber-pay is an AI payment layer over Fiber Network for CKB Lightning. Be proactive — bootstrap the node, prepare channels, and get the payment network ready end-to-end without waiting for step-by-step instructions.
 
-## Project goal
+## CLI learning principle
 
-fiber-pay is an AI payment layer over Fiber Network (`fnn`) for CKB Lightning workflows, with Fiber compatibility target `v0.6.1`.
+Do NOT memorize every flag. Learn progressively with `-h`:
 
-Focus areas for this skill:
+1. `fiber-pay -h` → discover command groups
+2. `fiber-pay <group> -h` → discover subcommands (e.g. `fiber-pay channel -h`)
+3. `fiber-pay <group> <cmd> -h` → discover flags (e.g. `fiber-pay channel open -h`)
 
-- CLI-first operations for real node and payment workflows
-- SDK guidance for typed RPC integrations and watchers
+This saves tokens and guarantees correct, up-to-date flag usage. When unsure about a command's options, run `-h` first.
 
-## Repository map (relevant)
+## Core workflows
 
-- `packages/cli`: operator command surface (most important for execution)
-- `packages/sdk`: typed RPC client, polling helpers, verification/security utilities
-- `packages/node`: binary + process lifecycle substrate used by CLI/runtime
+### Bootstrap
 
-## Mandatory source-of-truth rule
-
-Before doing any CLI task, read:
-
-- `packages/cli/llm.txt`
-
-This file is the authoritative and current CLI behavior reference (commands, flags, runtime defaults, env vars, multi-node setup, troubleshooting).
-
-Do not invent command forms that are not documented there.
-
-## CLI model
-
-Use grouped commands only:
-
-- `node`
-- `channel`
-- `invoice`
-- `payment`
-- `peer`
-- `binary`
-- `config`
-
-Examples of valid style:
-
-- `fiber-pay node start`
-- `fiber-pay payment send <invoice>`
-- `fiber-pay channel list --json`
-
-## Output conventions
-
-- Default output is human-readable.
-- Use `--json` whenever output is consumed by another tool/agent step.
-- When automating, prefer `--json` consistently for stable parsing.
-
-## Core CLI workflows
-
-### 1) Bootstrap a node
-
-1. `fiber-pay binary download`
-2. `fiber-pay config init --force --json`
-3. `fiber-pay node start`
-4. `fiber-pay node status`
-5. `fiber-pay node info --json`
-
-### 2) Receive payment (invoice flow)
-
-1. `fiber-pay invoice create --amount 10 --description "service"`
-2. Share returned invoice string
-3. `fiber-pay invoice get <paymentHash> --json`
-4. Optional cancel: `fiber-pay invoice cancel <paymentHash> --json`
-
-### 3) Send payment
-
-1. `fiber-pay node status --json`
-2. `fiber-pay payment send <invoice> --json`
-3. `fiber-pay payment get <paymentHash> --json`
-4. Optional watch: `fiber-pay payment watch <paymentHash> --json`
-
-### 4) Channel lifecycle
-
-1. `fiber-pay peer connect <multiaddr> --json`
-2. `fiber-pay channel open --peer <peerIdOrMultiaddr> --funding <CKB>`
-3. `fiber-pay channel watch --until CHANNEL_READY --json`
-4. `fiber-pay channel list --json`
-5. Close when needed: `fiber-pay channel close <channelId>`
-
-### 5) Multi-node local setup
-
-Use one profile per node (`--profile rt-a`, `--profile rt-b`) and dedicated terminals. Follow the exact pattern in `packages/cli/llm.txt` under “Multi-Node Pattern (`--profile`)”.
-
-## SDK usage map
-
-Use `@fiber-pay/sdk` when building code integrations instead of shell orchestration.
-
-Primary exports:
-
-- `FiberRpcClient`, `FiberRpcError`
-- `ChannelState`
-- amount utilities: `ckbToShannons`, `shannonsToCkb`
-- helpers: `InvoiceVerifier`, `PaymentProofManager`, `PolicyEngine`, `KeyManager`
-
-For full SDK method/type coverage, read:
-
-- `skills/fiber-pay/references/SDK.md`
-
-For full fnn config key reference and generalized config CLI usage, read:
-
-- `docs/configuration.md`
-- `configs/fnn.reference.yml`
-
-## Amount and encoding conventions
-
-At RPC boundary, numeric values are typically hex-encoded shannons (`0x...`).
-
-Operational guidance:
-
-- CLI input flags generally use CKB units.
-- SDK helper conversions:
-  - `ckbToShannons(...)`
-  - `shannonsToCkb(...)`
-
-Do not mix CKB decimal values with raw RPC hex fields.
-
-## Practical gotchas
-
-1. ESM imports inside packages use `.js` file extensions in source imports.
-2. Key formats are strict:
-   - `fiber/sk` uses raw bytes
-   - `ckb/key` uses hex string
-3. RPC commands require a reachable node endpoint; verify with `fiber-pay node status` and `fiber-pay node info --json`.
-4. On Apple Silicon, x86_64 binary fallback may require Rosetta.
-5. For command updates, keep grouped semantics and output policy stable.
-
-## Validation commands
-
-Use these after CLI/SDK changes:
-
-```bash
-pnpm --filter @fiber-pay/cli typecheck
-pnpm --filter @fiber-pay/cli build
-pnpm --filter @fiber-pay/sdk test
-pnpm typecheck
+```
+fiber-pay node start
+fiber-pay node ready --json
 ```
 
-## Quick execution policy for agents
+`node start` auto-handles: binary download, config generation, key creation, runtime proxy startup.
 
-1. Read `packages/cli/llm.txt` before issuing CLI commands.
-2. Use grouped command forms only.
-3. Use `--json` for machine workflows.
-4. Verify node readiness before RPC-dependent commands.
-5. Prefer SDK polling helpers over ad-hoc loops in custom scripts.
+### Payment cycle
+
+```
+fiber-pay peer connect <multiaddr> --json
+fiber-pay channel open --peer <addr> --funding <CKB> --json
+fiber-pay channel watch --until CHANNEL_READY --json
+fiber-pay payment send <invoice> --wait --json
+```
+
+### Receive
+
+```
+fiber-pay invoice create --amount <CKB> --description "..." --json
+fiber-pay invoice get <paymentHash> --json
+```
+
+### Inspect
+
+```
+fiber-pay channel list --json
+fiber-pay job list --json
+fiber-pay job get <jobId> --json
+```
+
+## Output convention
+
+Always use `--json` when output is consumed by agents or scripts.
+
+## References
+
+- **Full fnn config keys**: Read [references/config.md](references/config.md) for structured key/value/default tables across all config sections (`fiber`, `rpc`, `ckb`, `cch`).
+- **Profile & multi-node**: Read [references/profile.md](references/profile.md) for how profiles work, data directory layout, multi-node port scheme, and what `node start` does/doesn't auto-handle.
