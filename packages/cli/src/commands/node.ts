@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   ensureFiberBinary,
@@ -28,13 +28,22 @@ import {
   printNodeInfoHuman,
 } from '../lib/format.js';
 import { isProcessRunning, readPidFile, removePidFile, writePidFile } from '../lib/pid.js';
-import { createReadyRpcClient, createRpcClient } from '../lib/rpc.js';
+import { createReadyRpcClient, createRpcClient, resolveRpcEndpoint } from '../lib/rpc.js';
 
 const CELLS_PAGE_SIZE = 100;
 
 interface IndexerCellsResponse {
   objects: Array<{ output?: { capacity?: string } }>;
   last_cursor?: string;
+}
+
+interface RuntimeMeta {
+  pid: number;
+  startedAt: string;
+  fiberRpcUrl: string;
+  proxyListen: string;
+  stateFilePath?: string;
+  daemon: boolean;
 }
 
 async function callJsonRpc<TResult>(
@@ -148,6 +157,57 @@ function getCliEntrypoint(): string {
   return entrypoint;
 }
 
+function getRuntimePidFilePath(dataDir: string): string {
+  return join(dataDir, 'runtime.pid');
+}
+
+function getRuntimeMetaFilePath(dataDir: string): string {
+  return join(dataDir, 'runtime.meta.json');
+}
+
+function writeRuntimePid(dataDir: string, pid: number): void {
+  writeFileSync(getRuntimePidFilePath(dataDir), String(pid));
+}
+
+function writeRuntimeMeta(dataDir: string, meta: RuntimeMeta): void {
+  writeFileSync(getRuntimeMetaFilePath(dataDir), JSON.stringify(meta, null, 2));
+}
+
+function removeRuntimeFiles(dataDir: string): void {
+  const runtimePidPath = getRuntimePidFilePath(dataDir);
+  const runtimeMetaPath = getRuntimeMetaFilePath(dataDir);
+  if (existsSync(runtimePidPath)) {
+    unlinkSync(runtimePidPath);
+  }
+  if (existsSync(runtimeMetaPath)) {
+    unlinkSync(runtimeMetaPath);
+  }
+}
+
+function readRuntimePid(dataDir: string): number | null {
+  const runtimePidPath = getRuntimePidFilePath(dataDir);
+  if (!existsSync(runtimePidPath)) {
+    return null;
+  }
+  try {
+    return Number.parseInt(readFileSync(runtimePidPath, 'utf-8').trim(), 10);
+  } catch {
+    return null;
+  }
+}
+
+function readRuntimeMeta(dataDir: string): RuntimeMeta | null {
+  const runtimeMetaPath = getRuntimeMetaFilePath(dataDir);
+  if (!existsSync(runtimeMetaPath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(readFileSync(runtimeMetaPath, 'utf-8')) as RuntimeMeta;
+  } catch {
+    return null;
+  }
+}
+
 function startRuntimeDaemonFromNode(params: {
   dataDir: string;
   rpcUrl: string;
@@ -210,7 +270,6 @@ export function createNodeCommand(config: CliConfig): Command {
 
   node
     .command('start')
-    .option('--with-runtime', 'Start runtime watcher alongside node and expose runtime proxy')
     .option('--runtime-daemon', 'Start runtime watcher as a detached daemon process')
     .option(
       '--runtime-proxy-listen <host:port>',
@@ -253,24 +312,9 @@ export function createNodeCommand(config: CliConfig): Command {
         process.exit(1);
       }
 
-      const withRuntime = Boolean(options.withRuntime);
       const runtimeDaemon = Boolean(options.runtimeDaemon);
       const runtimeProxyListen = String(options.runtimeProxyListen ?? '127.0.0.1:8228');
-
-      if (runtimeDaemon && !withRuntime) {
-        const message = '--runtime-daemon requires --with-runtime';
-        if (json) {
-          printJsonError({
-            code: 'NODE_RUNTIME_START_FAILED',
-            message,
-            recoverable: true,
-            suggestion: 'Use `fiber-pay node start --with-runtime --runtime-daemon`.',
-          });
-        } else {
-          console.error(`❌ ${message}`);
-        }
-        process.exit(1);
-      }
+      const runtimeStateFilePath = join(config.dataDir, 'runtime-state.json');
 
       const binaryPath = config.binaryPath || getDefaultBinaryPath();
       await ensureFiberBinary();
@@ -369,63 +413,79 @@ export function createNodeCommand(config: CliConfig): Command {
           console.error(`❌ Fiber node exited during startup${details}`);
         }
         removePidFile(config.dataDir);
+        if (runtimeDaemon) {
+          stopRuntimeDaemonFromNode({ dataDir: config.dataDir, rpcUrl: config.rpcUrl });
+        } else if (runtime) {
+          await runtime.stop().catch(() => undefined);
+        }
+        removeRuntimeFiles(config.dataDir);
         process.exit(1);
       }
 
-      if (withRuntime) {
-        try {
-          if (runtimeDaemon) {
-            const daemonStart = startRuntimeDaemonFromNode({
-              dataDir: config.dataDir,
-              rpcUrl: config.rpcUrl,
-              proxyListen: runtimeProxyListen,
-              stateFilePath: join(config.dataDir, 'runtime-state.json'),
-            });
-            if (!daemonStart.ok) {
-              throw new Error(daemonStart.message);
-            }
-          } else {
-            runtime = await startRuntimeService({
-              fiberRpcUrl: config.rpcUrl,
-              proxy: {
-                enabled: true,
-                listen: runtimeProxyListen,
-              },
-              storage: {
-                stateFilePath: join(config.dataDir, 'runtime-state.json'),
-              },
-            });
-          }
-          emitStage('runtime_started', 'ok', {
+      try {
+        if (runtimeDaemon) {
+          const daemonStart = startRuntimeDaemonFromNode({
+            dataDir: config.dataDir,
+            rpcUrl: config.rpcUrl,
             proxyListen: runtimeProxyListen,
-            daemon: runtimeDaemon,
+            stateFilePath: runtimeStateFilePath,
           });
-        } catch (error) {
-          const message = `Runtime failed to start: ${error instanceof Error ? error.message : String(error)}`;
-          emitStage('runtime_started', 'error', {
+          if (!daemonStart.ok) {
+            throw new Error(daemonStart.message);
+          }
+        } else {
+          runtime = await startRuntimeService({
+            fiberRpcUrl: config.rpcUrl,
+            proxy: {
+              enabled: true,
+              listen: runtimeProxyListen,
+            },
+            storage: {
+              stateFilePath: runtimeStateFilePath,
+            },
+          });
+
+          const runtimeStatus = runtime.service.getStatus();
+          writeRuntimePid(config.dataDir, process.pid);
+          writeRuntimeMeta(config.dataDir, {
+            pid: process.pid,
+            startedAt: runtimeStatus.startedAt,
+            fiberRpcUrl: runtimeStatus.targetUrl,
+            proxyListen: runtimeStatus.proxyListen,
+            stateFilePath: runtimeStateFilePath,
+            daemon: false,
+          });
+        }
+
+        emitStage('runtime_started', 'ok', {
+          proxyListen: runtimeProxyListen,
+          daemon: runtimeDaemon,
+        });
+      } catch (error) {
+        const message = `Runtime failed to start: ${error instanceof Error ? error.message : String(error)}`;
+        emitStage('runtime_started', 'error', {
+          code: 'NODE_RUNTIME_START_FAILED',
+          message,
+          proxyListen: runtimeProxyListen,
+        });
+        if (json) {
+          printJsonError({
             code: 'NODE_RUNTIME_START_FAILED',
             message,
-            proxyListen: runtimeProxyListen,
+            recoverable: true,
+            suggestion: 'Retry with a free --runtime-proxy-listen port.',
+            details: {
+              runtimeProxyListen,
+            },
           });
-          if (json) {
-            printJsonError({
-              code: 'NODE_RUNTIME_START_FAILED',
-              message,
-              recoverable: true,
-              suggestion:
-                'Retry with a free --runtime-proxy-listen port or start node without --with-runtime.',
-              details: {
-                runtimeProxyListen,
-              },
-            });
-          } else {
-            console.error(`❌ ${message}`);
-          }
-
-          removePidFile(config.dataDir);
-          await processManager.stop().catch(() => undefined);
-          process.exit(1);
+        } else {
+          console.error(`❌ ${message}`);
         }
+
+        removeRuntimeFiles(config.dataDir);
+        removePidFile(config.dataDir);
+        await processManager.stop().catch(() => undefined);
+        process.exit(1);
       }
 
       if (!rpcReady) {
@@ -456,6 +516,12 @@ export function createNodeCommand(config: CliConfig): Command {
         }
 
         removePidFile(config.dataDir);
+        if (runtimeDaemon) {
+          stopRuntimeDaemonFromNode({ dataDir: config.dataDir, rpcUrl: config.rpcUrl });
+        } else if (runtime) {
+          await runtime.stop().catch(() => undefined);
+          removeRuntimeFiles(config.dataDir);
+        }
         await processManager.stop().catch(() => undefined);
         process.exit(1);
       }
@@ -500,19 +566,17 @@ export function createNodeCommand(config: CliConfig): Command {
           binaryPath,
           binaryVersion,
           pid: processId ?? null,
-          runtimeEnabled: withRuntime,
-          runtimeDaemon: withRuntime ? runtimeDaemon : null,
-          proxyUrl: withRuntime ? `http://${runtimeProxyListen}` : null,
+          runtimeEnabled: true,
+          runtimeDaemon,
+          proxyUrl: `http://${runtimeProxyListen}`,
         });
       } else {
         console.log('✅ Fiber node started successfully!');
         console.log(`   RPC endpoint: ${config.rpcUrl}`);
-        if (withRuntime) {
-          console.log(
-            `   Runtime proxy: http://${runtimeProxyListen} (browser-safe endpoint + monitoring)`,
-          );
-          console.log(`   Runtime mode:  ${runtimeDaemon ? 'daemon' : 'embedded'}`);
-        }
+        console.log(
+          `   Runtime proxy: http://${runtimeProxyListen} (browser-safe endpoint + monitoring)`,
+        );
+        console.log(`   Runtime mode:  ${runtimeDaemon ? 'daemon' : 'embedded'}`);
         console.log('   Press Ctrl+C to stop.');
       }
 
@@ -523,11 +587,12 @@ export function createNodeCommand(config: CliConfig): Command {
         if (!json) {
           console.log('\n🛑 Shutting down...');
         }
-        if (runtimeDaemon && withRuntime) {
+        if (runtimeDaemon) {
           stopRuntimeDaemonFromNode({ dataDir: config.dataDir, rpcUrl: config.rpcUrl });
         } else if (runtime) {
           await runtime.stop();
         }
+        removeRuntimeFiles(config.dataDir);
         removePidFile(config.dataDir);
         await processManager.stop();
         if (json) {
@@ -577,6 +642,10 @@ export function createNodeCommand(config: CliConfig): Command {
           console.error('❌ Fiber node stopped unexpectedly.');
         }
         removePidFile(config.dataDir);
+        if (runtimeDaemon) {
+          stopRuntimeDaemonFromNode({ dataDir: config.dataDir, rpcUrl: config.rpcUrl });
+        }
+        removeRuntimeFiles(config.dataDir);
         process.exit(1);
       }
     });
@@ -586,6 +655,13 @@ export function createNodeCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (options) => {
       const json = Boolean(options.json);
+      const runtimeMeta = readRuntimeMeta(config.dataDir);
+      const runtimePid = readRuntimePid(config.dataDir);
+      if (runtimeMeta?.daemon && runtimePid && isProcessRunning(runtimePid)) {
+        stopRuntimeDaemonFromNode({ dataDir: config.dataDir, rpcUrl: config.rpcUrl });
+      }
+      removeRuntimeFiles(config.dataDir);
+
       const pid = readPidFile(config.dataDir);
       if (!pid) {
         if (json) {
@@ -646,6 +722,7 @@ export function createNodeCommand(config: CliConfig): Command {
     .action(async (options) => {
       const json = Boolean(options.json);
       const pid = readPidFile(config.dataDir);
+      const resolvedRpc = resolveRpcEndpoint(config);
       const managedBinaryPath = join(config.dataDir, 'bin', 'fnn');
       const binaryInfo = config.binaryPath
         ? getCustomBinaryState(config.binaryPath)
@@ -785,6 +862,8 @@ export function createNodeCommand(config: CliConfig): Command {
         pid: pid ?? null,
         rpcResponsive,
         rpcUrl: config.rpcUrl,
+        rpcTarget: resolvedRpc.target,
+        resolvedRpcUrl: resolvedRpc.url,
         nodeId,
         peerId,
         peerIdError,
@@ -809,6 +888,8 @@ export function createNodeCommand(config: CliConfig): Command {
             running: nodeRunning,
             pid: pid ?? null,
             rpcReachable: rpcResponsive,
+            rpcTarget: resolvedRpc.target,
+            rpcClientUrl: resolvedRpc.url,
           },
           channels: {
             total: channelsTotal,
@@ -847,6 +928,9 @@ export function createNodeCommand(config: CliConfig): Command {
             console.log(`   Peer ID: unavailable (${String(output.peerIdError)})`);
           }
           console.log(`   RPC: ${String(output.rpcUrl)}`);
+          console.log(
+            `   RPC Client: ${String(output.rpcTarget)} (${String(output.resolvedRpcUrl)})`,
+          );
           if (output.multiaddr) {
             const inferredSuffix = output.multiaddrInferred
               ? ' (inferred from RPC + peerId; no advertised addresses)'

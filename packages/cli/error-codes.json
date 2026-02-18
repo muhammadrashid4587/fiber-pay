@@ -54,7 +54,7 @@
     {
       "code": "NODE_RUNTIME_START_FAILED",
       "meaning": "Node started but embedded runtime watcher/proxy failed to initialize",
-      "agentAction": "Retry with a free runtime proxy listen port or start node without --with-runtime"
+      "agentAction": "Retry with a free runtime proxy listen port"
     },
     {
       "code": "NODE_STOPPED_UNEXPECTEDLY",

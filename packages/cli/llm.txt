@@ -63,7 +63,7 @@ Config artifacts in this repo:
 *All commands support `--json` for structured output.*
 
 ### Lifecycle (`node`)
-*   `start [--with-runtime] [--runtime-daemon] [--runtime-proxy-listen <host:port>] [--json]`: Start node (foreground). With `--with-runtime`, runtime watcher starts and owns proxy; `--runtime-daemon` runs watcher in detached process.
+*   `start [--runtime-daemon] [--runtime-proxy-listen <host:port>] [--json]`: Start node (foreground) with runtime watcher + proxy by default; `--runtime-daemon` runs watcher in detached process.
 *   `stop [--json]`: Stop node.
 *   `status [--json]`: Unified status (process/rpc identity + diagnostics + balance).
 *   `ready [--json]`: Aggregated automation readiness (node/rpc/channel/liquidity).
@@ -197,6 +197,6 @@ fiber-pay payment watch <payment_hash>
 
 ## 🔧 Troubleshooting
 *   **RPC Error**: Check `fiber-pay node status`. Verify `FIBER_RPC_URL` matches the running node.
-*   **Browser Access**: Run `fiber-pay node start --with-runtime` and use runtime proxy URL.
+*   **Browser Access**: Run `fiber-pay node start` and use runtime proxy URL.
 *   **Apple Silicon**: If x86_64 fallback used, run `softwareupdate --install-rosetta`.
 ```
