@@ -1,5 +1,6 @@
 import { ChannelState, FiberRpcClient } from '@fiber-pay/sdk';
 import type { AlertManager } from '../alerts/alert-manager.js';
+import type { AlertPriority } from '../alerts/types.js';
 import { diffChannels } from '../diff/channel-diff.js';
 import type { Store } from '../storage/types.js';
 import { BaseMonitor, type BaseMonitorHooks } from './base-monitor.js';
@@ -51,6 +52,20 @@ export class ChannelMonitor extends BaseMonitor {
         });
       }
 
+      if (change.type === 'channel_state_changed') {
+        await this.alerts.emit({
+          type: 'channel_state_changed',
+          priority: getChannelStatePriority(change.currentState),
+          source: this.name,
+          data: {
+            channelId: change.channel.channel_id,
+            previousState: change.previousState,
+            currentState: change.currentState,
+            channel: change.channel,
+          },
+        });
+      }
+
       if (change.type === 'channel_state_changed' && change.currentState === ChannelState.ChannelReady) {
         await this.alerts.emit({
           type: 'channel_became_ready',
@@ -73,6 +88,17 @@ export class ChannelMonitor extends BaseMonitor {
       }
 
       if (change.type === 'channel_disappeared') {
+        await this.alerts.emit({
+          type: 'channel_state_changed',
+          priority: 'high',
+          source: this.name,
+          data: {
+            channelId: change.channelId,
+            previousState: change.previousChannel.state.state_name,
+            currentState: 'DISAPPEARED',
+            channel: change.previousChannel,
+          },
+        });
         await this.alerts.emit({
           type: 'channel_closing',
           priority: 'high',
@@ -102,4 +128,26 @@ export class ChannelMonitor extends BaseMonitor {
 
     this.store.setChannelSnapshot(current);
   }
+}
+
+function getChannelStatePriority(stateName: string): AlertPriority {
+  const normalized = stateName.toUpperCase();
+  const closedState = String(ChannelState.Closed).toUpperCase();
+  const shuttingDownState = String(ChannelState.ShuttingDown).toUpperCase();
+  const readyState = String(ChannelState.ChannelReady).toUpperCase();
+
+  if (
+    normalized === closedState ||
+    normalized === 'CLOSED' ||
+    normalized === shuttingDownState ||
+    normalized === 'SHUTTING_DOWN'
+  ) {
+    return 'high';
+  }
+
+  if (normalized === readyState || normalized === 'CHANNEL_READY') {
+    return 'medium';
+  }
+
+  return 'low';
 }

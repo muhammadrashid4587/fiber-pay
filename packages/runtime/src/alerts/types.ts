@@ -3,6 +3,7 @@ import type { Channel, ChannelId, PaymentHash, PeerInfo } from '@fiber-pay/sdk';
 export type AlertPriority = 'critical' | 'high' | 'medium' | 'low';
 
 export type AlertType =
+  | 'channel_state_changed'
   | 'new_inbound_channel_request'
   | 'channel_became_ready'
   | 'channel_closing'
@@ -22,6 +23,7 @@ export type AlertType =
   | 'payment_job_failed';
 
 export const alertTypeValues: AlertType[] = [
+  'channel_state_changed',
   'new_inbound_channel_request',
   'channel_became_ready',
   'channel_closing',
