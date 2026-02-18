@@ -44,6 +44,9 @@ importers:
       '@fiber-pay/node':
         specifier: workspace:*
         version: link:../node
+      '@fiber-pay/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@fiber-pay/sdk':
         specifier: workspace:*
         version: link:../sdk
@@ -55,6 +58,12 @@ importers:
         version: 2.8.2
 
   packages/node: {}
+
+  packages/runtime:
+    dependencies:
+      '@fiber-pay/sdk':
+        specifier: workspace:*
+        version: link:../sdk
 
   packages/sdk:
     dependencies:

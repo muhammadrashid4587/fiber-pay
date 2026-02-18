@@ -1,0 +1,39 @@
+{
+  "name": "@fiber-pay/runtime",
+  "version": "0.1.0",
+  "description": "Polling monitor and alert runtime for Fiber Network nodes",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest --config vitest.config.ts",
+    "test:run": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "fiber",
+    "monitor",
+    "polling",
+    "alerts",
+    "runtime"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@fiber-pay/sdk": "workspace:*"
+  }
+}

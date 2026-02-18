@@ -69,6 +69,11 @@ Config artifacts in this repo:
 *   `ready [--json]`: Aggregated automation readiness (node/rpc/channel/liquidity).
 *   `info [--json]`: Get node ID and version details.
 
+### Runtime Monitor (`runtime`)
+*   `start [--daemon] [--fiber-rpc-url <url>] [--proxy-listen <host:port>] [--channel-poll-ms <ms>] [--invoice-poll-ms <ms>] [--payment-poll-ms <ms>] [--peer-poll-ms <ms>] [--health-poll-ms <ms>] [--include-closed <bool>] [--completed-ttl-seconds <seconds>] [--state-file <path>] [--flush-ms <ms>] [--webhook <url>] [--websocket <host:port>] [--log-min-priority <critical|high|medium|low>] [--log-type <comma-separated-types>] [--json]`: Start polling monitor + proxy (foreground by default, background with `--daemon`).
+*   `status [--json]`: Show runtime process status using runtime PID/meta and proxy health endpoint.
+*   `stop [--json]`: Stop runtime process via runtime PID.
+
 ### Setup (`binary`, `config`)
 *   `binary download [--version v0.6.1] [--force] [--json]`: Fetch fiber node binary.
 *   `binary info [--json]`: Show binary path/version.
@@ -131,6 +136,12 @@ Config artifacts in this repo:
     - `startup_stage` with `data.stage` in `init|binary_resolved|key_initialized|process_started|rpc_ready|bootnodes_connected|startup_complete`
     - `node_started`
     - `node_stopped`
+- `runtime start --json` events:
+    - `runtime_starting`
+    - `runtime_started`
+    - `runtime_alert`
+    - `runtime_stopping`
+    - `runtime_stopped`
 - Timeout behavior is configurable via `--on-timeout fail|success`.
 - Timeout/errors use failure envelope only when timeout behavior is `fail`.
 

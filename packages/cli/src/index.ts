@@ -8,6 +8,7 @@ import { createInvoiceCommand } from './commands/invoice.js';
 import { createNodeCommand } from './commands/node.js';
 import { createPaymentCommand } from './commands/payment.js';
 import { createPeerCommand } from './commands/peer.js';
+import { createRuntimeCommand } from './commands/runtime.js';
 import { getEffectiveConfig } from './lib/config.js';
 import { printJsonError } from './lib/format.js';
 
@@ -150,6 +151,7 @@ async function main(): Promise<void> {
   program.addCommand(createGraphCommand(config));
   program.addCommand(createBinaryCommand(config));
   program.addCommand(createConfigCommand(config));
+  program.addCommand(createRuntimeCommand(config));
 
   await program.parseAsync(process.argv);
 }
