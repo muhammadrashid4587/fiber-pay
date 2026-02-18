@@ -113,8 +113,8 @@ Useful env overrides:
 
 ## TODO
 
-- [ ] alert new channel to accept and add funding
-- [ ] alert new invoice comming
-- [ ] alert new payment comming
-- [ ] channel status snapshot check
-- [ ] alert channel closed
+- [x] alert new channel to accept and add funding (`new_inbound_channel_request`)
+- [x] alert new invoice coming (`incoming_payment_received`)
+- [x] alert new payment coming (`new_pending_tlc`, `channel_balance_changed`)
+- [x] channel status snapshot check (`channel_became_ready`, channel diff)
+- [x] alert channel closed (`channel_closing`)

@@ -1,6 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import type { Alert, AlertPriority, AlertType, RuntimeConfigInput } from '@fiber-pay/runtime';
 import {
   alertPriorityOrder,
@@ -11,75 +10,19 @@ import {
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
 import { printJsonError, printJsonEvent, printJsonSuccess } from '../lib/format.js';
-
-interface RuntimeMeta {
-  pid: number;
-  startedAt: string;
-  fiberRpcUrl: string;
-  proxyListen: string;
-  stateFilePath?: string;
-  daemon: boolean;
-}
+import { isProcessRunning } from '../lib/pid.js';
+import {
+  type RuntimeMeta,
+  readRuntimeMeta,
+  readRuntimePid,
+  removeRuntimeFiles,
+  writeRuntimeMeta,
+  writeRuntimePid,
+} from '../lib/runtime-meta.js';
 
 interface RuntimeLogFilter {
   minPriority?: AlertPriority;
   types?: Set<AlertType>;
-}
-
-function getRuntimePidFilePath(dataDir: string): string {
-  return join(dataDir, 'runtime.pid');
-}
-
-function getRuntimeMetaFilePath(dataDir: string): string {
-  return join(dataDir, 'runtime.meta.json');
-}
-
-function writeRuntimePid(dataDir: string, pid: number): void {
-  writeFileSync(getRuntimePidFilePath(dataDir), String(pid));
-}
-
-function readRuntimePid(dataDir: string): number | null {
-  const pidPath = getRuntimePidFilePath(dataDir);
-  if (!existsSync(pidPath)) return null;
-  try {
-    return Number.parseInt(readFileSync(pidPath, 'utf-8').trim(), 10);
-  } catch {
-    return null;
-  }
-}
-
-function writeRuntimeMeta(dataDir: string, meta: RuntimeMeta): void {
-  writeFileSync(getRuntimeMetaFilePath(dataDir), JSON.stringify(meta, null, 2));
-}
-
-function readRuntimeMeta(dataDir: string): RuntimeMeta | null {
-  const metaPath = getRuntimeMetaFilePath(dataDir);
-  if (!existsSync(metaPath)) return null;
-  try {
-    return JSON.parse(readFileSync(metaPath, 'utf-8')) as RuntimeMeta;
-  } catch {
-    return null;
-  }
-}
-
-function removeRuntimeFiles(dataDir: string): void {
-  const pidPath = getRuntimePidFilePath(dataDir);
-  const metaPath = getRuntimeMetaFilePath(dataDir);
-  if (existsSync(pidPath)) {
-    unlinkSync(pidPath);
-  }
-  if (existsSync(metaPath)) {
-    unlinkSync(metaPath);
-  }
-}
-
-function isProcessRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function parseIntegerOption(value: string | undefined, name: string): number | undefined {
@@ -162,7 +105,7 @@ export function createRuntimeCommand(config: CliConfig): Command {
     .description('Start runtime monitor service in foreground')
     .option('--daemon', 'Start runtime monitor in detached background mode')
     .option('--fiber-rpc-url <url>', 'Target fiber rpc URL (defaults to --rpc-url/global config)')
-    .option('--proxy-listen <host:port>', 'Monitor proxy listen address', '127.0.0.1:8228')
+    .option('--proxy-listen <host:port>', 'Monitor proxy listen address', '127.0.0.1:8229')
     .option('--channel-poll-ms <ms>', 'Channel polling interval in milliseconds')
     .option('--invoice-poll-ms <ms>', 'Invoice polling interval in milliseconds')
     .option('--payment-poll-ms <ms>', 'Payment polling interval in milliseconds')

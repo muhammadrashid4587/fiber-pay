@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   ensureFiberBinary,
@@ -29,21 +29,19 @@ import {
 } from '../lib/format.js';
 import { isProcessRunning, readPidFile, removePidFile, writePidFile } from '../lib/pid.js';
 import { createReadyRpcClient, createRpcClient, resolveRpcEndpoint } from '../lib/rpc.js';
+import {
+  readRuntimeMeta,
+  readRuntimePid,
+  removeRuntimeFiles,
+  writeRuntimeMeta,
+  writeRuntimePid,
+} from '../lib/runtime-meta.js';
 
 const CELLS_PAGE_SIZE = 100;
 
 interface IndexerCellsResponse {
   objects: Array<{ output?: { capacity?: string } }>;
   last_cursor?: string;
-}
-
-interface RuntimeMeta {
-  pid: number;
-  startedAt: string;
-  fiberRpcUrl: string;
-  proxyListen: string;
-  stateFilePath?: string;
-  daemon: boolean;
 }
 
 async function callJsonRpc<TResult>(
@@ -157,57 +155,6 @@ function getCliEntrypoint(): string {
   return entrypoint;
 }
 
-function getRuntimePidFilePath(dataDir: string): string {
-  return join(dataDir, 'runtime.pid');
-}
-
-function getRuntimeMetaFilePath(dataDir: string): string {
-  return join(dataDir, 'runtime.meta.json');
-}
-
-function writeRuntimePid(dataDir: string, pid: number): void {
-  writeFileSync(getRuntimePidFilePath(dataDir), String(pid));
-}
-
-function writeRuntimeMeta(dataDir: string, meta: RuntimeMeta): void {
-  writeFileSync(getRuntimeMetaFilePath(dataDir), JSON.stringify(meta, null, 2));
-}
-
-function removeRuntimeFiles(dataDir: string): void {
-  const runtimePidPath = getRuntimePidFilePath(dataDir);
-  const runtimeMetaPath = getRuntimeMetaFilePath(dataDir);
-  if (existsSync(runtimePidPath)) {
-    unlinkSync(runtimePidPath);
-  }
-  if (existsSync(runtimeMetaPath)) {
-    unlinkSync(runtimeMetaPath);
-  }
-}
-
-function readRuntimePid(dataDir: string): number | null {
-  const runtimePidPath = getRuntimePidFilePath(dataDir);
-  if (!existsSync(runtimePidPath)) {
-    return null;
-  }
-  try {
-    return Number.parseInt(readFileSync(runtimePidPath, 'utf-8').trim(), 10);
-  } catch {
-    return null;
-  }
-}
-
-function readRuntimeMeta(dataDir: string): RuntimeMeta | null {
-  const runtimeMetaPath = getRuntimeMetaFilePath(dataDir);
-  if (!existsSync(runtimeMetaPath)) {
-    return null;
-  }
-  try {
-    return JSON.parse(readFileSync(runtimeMetaPath, 'utf-8')) as RuntimeMeta;
-  } catch {
-    return null;
-  }
-}
-
 function startRuntimeDaemonFromNode(params: {
   dataDir: string;
   rpcUrl: string;
@@ -274,7 +221,7 @@ export function createNodeCommand(config: CliConfig): Command {
     .option(
       '--runtime-proxy-listen <host:port>',
       'Runtime monitor proxy listen address',
-      '127.0.0.1:8228',
+      '127.0.0.1:8229',
     )
     .option('--event-stream <format>', 'Event stream format for --json mode (jsonl)', 'jsonl')
     .option('--json')
@@ -313,7 +260,7 @@ export function createNodeCommand(config: CliConfig): Command {
       }
 
       const runtimeDaemon = Boolean(options.runtimeDaemon);
-      const runtimeProxyListen = String(options.runtimeProxyListen ?? '127.0.0.1:8228');
+      const runtimeProxyListen = String(options.runtimeProxyListen ?? '127.0.0.1:8229');
       const runtimeStateFilePath = join(config.dataDir, 'runtime-state.json');
 
       const binaryPath = config.binaryPath || getDefaultBinaryPath();

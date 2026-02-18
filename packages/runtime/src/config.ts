@@ -58,7 +58,7 @@ export const defaultRuntimeConfig: RuntimeConfig = {
   alerts: [{ type: 'stdout' }],
   proxy: {
     enabled: true,
-    listen: '127.0.0.1:8228',
+    listen: '127.0.0.1:8229',
   },
   storage: {
     stateFilePath: resolve(process.cwd(), '.fiber-pay-runtime-state.json'),

@@ -82,6 +82,17 @@ export class RpcMonitorProxy {
   }
 
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'access-control-allow-origin': '*',
+        'access-control-allow-methods': 'GET,POST,OPTIONS',
+        'access-control-allow-headers': 'Content-Type, Authorization',
+        'access-control-max-age': '86400',
+      });
+      res.end();
+      return;
+    }
+
     if (req.method === 'GET') {
       this.handleMonitorEndpoint(req, res);
       return;
