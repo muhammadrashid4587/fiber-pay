@@ -17,7 +17,7 @@ This repository currently emphasizes SDK + CLI quality and agent usability throu
 ## Why this repo is AI-friendly
 
 - Canonical CLI guide for agents: `packages/cli/llm.txt`
-- Predictable grouped commands (`node/channel/invoice/payment/peer/binary/config/graph`)
+- Predictable grouped commands (`node/channel/invoice/payment/job/peer/binary/config/graph/runtime`)
 - Uniform `--json` envelopes for reliable parsing and tool chaining
 - NDJSON stream events for `watch --json` commands
 - Explicit defaults for startup, ports, binary path, and key password behavior
@@ -48,9 +48,11 @@ Common workflows:
 
 ```bash
 fiber-pay node status
+fiber-pay runtime start --daemon
 fiber-pay channel list
 fiber-pay invoice create --amount 10 --description "service"
 fiber-pay payment send <invoice>
+fiber-pay job list
 ```
 
 Use `--json` when command output is consumed by scripts or agents.
@@ -111,10 +113,34 @@ Useful env overrides:
 - `CHANNEL_FUNDING_CKB`, `INVOICE_AMOUNT_CKB`, `DEPOSIT_AMOUNT_CKB`
 - `NODE_A_RPC_PORT`, `NODE_A_P2P_PORT`, `NODE_B_RPC_PORT`, `NODE_B_P2P_PORT`
 
+## E2E runtime orchestration script (job path)
+
+Reusable regression for runtime job orchestration (`/jobs/channel`, `/jobs/invoice`, `/jobs/payment`):
+
+```bash
+pnpm e2e:runtime-jobs
+```
+
+It validates this flow through runtime jobs: peer connect → channel open → invoice create → payment send → channel shutdown.
+
+Useful env overrides:
+
+- `PROFILE_A`, `PROFILE_B` (default `rt-a`, `rt-b`)
+- `PROXY_A_URL`, `PROXY_B_URL` (default `http://127.0.0.1:9729`, `http://127.0.0.1:9829`)
+- `CHANNEL_FUNDING_CKB`, `INVOICE_AMOUNT_CKB`, `INVOICE_CURRENCY`
+- `JOB_TIMEOUT_SEC`, `POLL_INTERVAL_MS`, `PEER_CONNECT_TIMEOUT_SEC`
+- `FIBER_PAY_BIN` (optional; by default script uses local `packages/cli/dist/cli.js` via current Node)
+
+Machine-readable output:
+
+```bash
+pnpm e2e:runtime-jobs -- --json
+```
+
 ## TODO
 
-- [ ] alert new channel to accept and add funding
-- [ ] alert new invoice comming
-- [ ] alert new payment comming
-- [ ] channel status snapshot check
-- [ ] alert channel closed
+- [x] alert new channel to accept and add funding (`new_inbound_channel_request`)
+- [x] alert new invoice coming (`incoming_payment_received`)
+- [x] alert new payment coming (`new_pending_tlc`, `channel_balance_changed`)
+- [x] channel status snapshot check (`channel_became_ready`, channel diff)
+- [x] alert channel closed (`channel_closing`)

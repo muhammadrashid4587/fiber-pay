@@ -52,6 +52,11 @@
       "agentAction": "Inspect start logs and config ports; avoid immediate retry loops"
     },
     {
+      "code": "NODE_RUNTIME_START_FAILED",
+      "meaning": "Node started but embedded runtime watcher/proxy failed to initialize",
+      "agentAction": "Retry with a free runtime proxy listen port"
+    },
+    {
       "code": "NODE_STOPPED_UNEXPECTEDLY",
       "meaning": "Running node exited unexpectedly",
       "agentAction": "Capture logs and restart after root-cause check"
@@ -95,6 +100,21 @@
       "code": "INVOICE_CREATE_INPUT_INVALID",
       "meaning": "Invoice creation amount is missing or invalid",
       "agentAction": "Provide valid numeric amount with `--amount`"
+    },
+    {
+      "code": "RUNTIME_ALREADY_RUNNING",
+      "meaning": "Runtime process is already running",
+      "agentAction": "Query `runtime status` or stop the existing runtime before restarting"
+    },
+    {
+      "code": "RUNTIME_NOT_RUNNING",
+      "meaning": "Runtime PID is missing or stale",
+      "agentAction": "Start runtime with `runtime start --daemon` or clean stale files"
+    },
+    {
+      "code": "RUNTIME_START_FAILED",
+      "meaning": "Runtime failed to start due to config, RPC, or port issues",
+      "agentAction": "Verify RPC reachability and runtime options, then retry"
     }
   ]
 }

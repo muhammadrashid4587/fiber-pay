@@ -1,6 +1,7 @@
 import type { RouterHop } from '@fiber-pay/sdk';
 import { ckbToShannons, type HexString, shannonsToCkb } from '@fiber-pay/sdk';
 import { Command } from 'commander';
+import { sleep } from '../lib/async.js';
 import type { CliConfig } from '../lib/config.js';
 import {
   formatPaymentResult,
@@ -8,9 +9,13 @@ import {
   printJsonEvent,
   printJsonSuccess,
   printPaymentDetailHuman,
-  sleep,
 } from '../lib/format.js';
-import { createReadyRpcClient } from '../lib/rpc.js';
+import { createReadyRpcClient, resolveRpcEndpoint } from '../lib/rpc.js';
+import {
+  type RuntimeJobRecord,
+  tryCreateRuntimePaymentJob,
+  waitForRuntimeJobTerminal,
+} from '../lib/runtime-jobs.js';
 
 export function createPaymentCommand(config: CliConfig): Command {
   const payment = new Command('payment').description('Payment lifecycle and status commands');
@@ -22,6 +27,8 @@ export function createPaymentCommand(config: CliConfig): Command {
     .option('--to <nodeId>')
     .option('--amount <ckb>')
     .option('--max-fee <ckb>')
+    .option('--wait', 'Wait for runtime job terminal status when runtime proxy is active')
+    .option('--timeout <seconds>', 'Wait timeout for --wait mode', '120')
     .option('--json')
     .action(async (invoiceArg, options) => {
       const rpc = await createReadyRpcClient(config);
@@ -30,6 +37,8 @@ export function createPaymentCommand(config: CliConfig): Command {
       const recipientNodeId = options.to;
       const amountCkb = options.amount ? parseFloat(options.amount) : undefined;
       const maxFeeCkb = options.maxFee ? parseFloat(options.maxFee) : undefined;
+      const shouldWait = Boolean(options.wait);
+      const timeoutSeconds = parseInt(String(options.timeout ?? '120'), 10);
 
       if (!invoice && !recipientNodeId) {
         if (json) {
@@ -58,13 +67,69 @@ export function createPaymentCommand(config: CliConfig): Command {
         process.exit(1);
       }
 
-      const result = await rpc.sendPayment({
+      const paymentParams = {
         invoice,
         target_pubkey: recipientNodeId as HexString | undefined,
         amount: amountCkb ? ckbToShannons(amountCkb) : undefined,
         keysend: recipientNodeId ? true : undefined,
         max_fee_amount: maxFeeCkb ? ckbToShannons(maxFeeCkb) : undefined,
-      });
+      };
+
+      const endpoint = resolveRpcEndpoint(config);
+
+      if (endpoint.target === 'runtime-proxy') {
+        const created = await tryCreateRuntimePaymentJob(endpoint.url, {
+          params: {
+            invoice,
+            sendPaymentParams: paymentParams,
+          },
+          options: {
+            idempotencyKey: invoice,
+          },
+        });
+
+        if (created) {
+          const job = shouldWait
+            ? await waitForRuntimeJobTerminal(endpoint.url, created.id, timeoutSeconds)
+            : created;
+
+          const payload = {
+            paymentHash:
+              getJobPaymentHash(job) ??
+              (typeof paymentParams.payment_hash === 'string'
+                ? paymentParams.payment_hash
+                : undefined) ??
+              'unknown',
+            status:
+              job.state === 'succeeded'
+                ? 'success'
+                : job.state === 'failed' || job.state === 'cancelled'
+                  ? 'failed'
+                  : 'pending',
+            feeCkb: getJobFeeCkb(job),
+            failureReason: getJobFailure(job),
+            jobId: job.id,
+            jobState: job.state,
+          };
+
+          if (json) {
+            printJsonSuccess(payload);
+          } else {
+            console.log('Payment job submitted');
+            console.log(`  Job:    ${payload.jobId}`);
+            console.log(`  Hash:   ${payload.paymentHash}`);
+            console.log(`  Status: ${payload.status} (${payload.jobState})`);
+            console.log(`  Fee:    ${payload.feeCkb} CKB`);
+            if (payload.failureReason) {
+              console.log(`  Error:  ${payload.failureReason}`);
+            }
+          }
+          return;
+        }
+      }
+
+      // Fallback to direct RPC send_payment
+      const result = await rpc.sendPayment(paymentParams);
 
       const payload = {
         paymentHash: result.payment_hash,
@@ -367,4 +432,19 @@ export function createPaymentCommand(config: CliConfig): Command {
     });
 
   return payment;
+}
+
+function getJobPaymentHash(job: RuntimeJobRecord): string | undefined {
+  const result = job.result as { paymentHash?: string } | undefined;
+  return result?.paymentHash;
+}
+
+function getJobFeeCkb(job: RuntimeJobRecord): number {
+  const result = job.result as { fee?: string } | undefined;
+  return result?.fee ? shannonsToCkb(result.fee as HexString) : 0;
+}
+
+function getJobFailure(job: RuntimeJobRecord): string | undefined {
+  const result = job.result as { failedError?: string } | undefined;
+  return result?.failedError ?? job.error?.message;
 }

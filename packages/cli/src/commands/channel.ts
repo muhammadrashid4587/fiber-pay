@@ -1,5 +1,6 @@
 import { type ChannelState, ckbToShannons, type HexString } from '@fiber-pay/sdk';
 import { Command } from 'commander';
+import { sleep } from '../lib/async.js';
 import type { CliConfig } from '../lib/config.js';
 import {
   formatChannel,
@@ -10,7 +11,6 @@ import {
   printJsonError,
   printJsonEvent,
   printJsonSuccess,
-  sleep,
   truncateMiddle,
 } from '../lib/format.js';
 import { createReadyRpcClient } from '../lib/rpc.js';

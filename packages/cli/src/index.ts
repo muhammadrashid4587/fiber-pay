@@ -5,9 +5,13 @@ import { createChannelCommand } from './commands/channel.js';
 import { createConfigCommand } from './commands/config.js';
 import { createGraphCommand } from './commands/graph.js';
 import { createInvoiceCommand } from './commands/invoice.js';
+import { createJobCommand } from './commands/job.js';
 import { createNodeCommand } from './commands/node.js';
 import { createPaymentCommand } from './commands/payment.js';
 import { createPeerCommand } from './commands/peer.js';
+import { createRuntimeCommand } from './commands/runtime.js';
+import { createVersionCommand } from './commands/version.js';
+import { CLI_COMMIT, CLI_VERSION } from './lib/build-info.js';
 import { getEffectiveConfig } from './lib/config.js';
 import { printJsonError } from './lib/format.js';
 
@@ -123,6 +127,7 @@ async function main(): Promise<void> {
   program
     .name('fiber-pay')
     .description('AI Agent Payment SDK for CKB Lightning Network')
+    .version(`${CLI_VERSION} (${CLI_COMMIT})`, '-v, --version', 'Show version and commit id')
     .option('--profile <name>', 'Use profile at ~/.fiber-pay/profiles/<name>')
     .option('--data-dir <path>', 'Override data directory for all commands')
     .option('--rpc-url <url>', 'Override RPC URL for all commands')
@@ -146,15 +151,32 @@ async function main(): Promise<void> {
   program.addCommand(createChannelCommand(config));
   program.addCommand(createInvoiceCommand(config));
   program.addCommand(createPaymentCommand(config));
+  program.addCommand(createJobCommand(config));
   program.addCommand(createPeerCommand(config));
   program.addCommand(createGraphCommand(config));
   program.addCommand(createBinaryCommand(config));
   program.addCommand(createConfigCommand(config));
+  program.addCommand(createRuntimeCommand(config));
+  program.addCommand(createVersionCommand());
 
   await program.parseAsync(process.argv);
 }
 
 main().catch((error) => {
+  const commanderCode =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code: unknown }).code)
+      : undefined;
+  const commanderExitCode =
+    error && typeof error === 'object' && 'exitCode' in error
+      ? Number((error as { exitCode: unknown }).exitCode)
+      : undefined;
+
   printFatal(error);
+
+  if (commanderCode?.startsWith('commander.') && commanderExitCode === 0) {
+    process.exit(0);
+  }
+
   process.exit(1);
 });
