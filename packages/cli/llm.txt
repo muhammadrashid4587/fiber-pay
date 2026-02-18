@@ -1,39 +1,51 @@
-fiber-pay CLI Guide (for Agents)
-================================
+fiber-pay Guide (for Agents)
+============================
 
-Last updated: 2026-02-17
+Last updated: 2026-02-18
 Fiber node target: v0.6.1
 Primary RPC reference:
 https://github.com/nervosnetwork/fiber/blob/v0.6.1/crates/fiber-lib/src/rpc/README.md
 
 Purpose
 -------
-This file is the source-of-truth for how `@fiber-pay/cli` works. 
-You, the agent, should use it to equip yourself with a p2p payment system.
-Use this document for runtime behavior, command selection, output conventions, and troubleshooting.
+This file is the source-of-truth for how fiber-pay works.
+You, the agent, should use it to equip yourself with a CKB p2p payment system.
+Use this document for integration tiers, command selection, output conventions,
+runtime orchestration, and troubleshooting.
 
-## 🛠️ Installation
-Source: `https://github.com/RetricSu/fiber-pay`
+## Integration Tiers (pick one)
+
+| Tier | Interface | When to use |
+| :--- | :--- | :--- |
+| **1. CLI** | `@fiber-pay/cli` | Shell-based agent or human operator |
+| **2. Runtime REST API** | (runtime proxy) | Custom HTTP client, browser, or other languages |
+
+Both tiers share the same underlying runtime job orchestration.
+The CLI auto-routes through the REST API when the runtime proxy is active.
+
+---
+
+## Tier 1 — CLI (`@fiber-pay/cli`)
+
+### Install
 ```bash
-# Install & Link
 git clone https://github.com/RetricSu/fiber-pay.git && cd fiber-pay
 pnpm install && pnpm build
 cd packages/cli && pnpm link --global
-# Verify
 fiber-pay --help
 ```
 
-## 🛡️ Agent Policy
-1. **Initialization**: Ask user: "Custom `FIBER_KEY_PASSWORD` or default?" before starting.
-2. **Format**: Use `--json` for machine parsing; default output is human-readable.
-3. **Safety**: Do NOT invent undocumented commands. Do NOT force env setup for single-node quickstart unless requested.
-4. **Style**: Use explicit grouped commands (e.g., `fiber-pay node start`), never legacy aliases.
+### Agent Policy
+1. Ask user: "Custom `FIBER_KEY_PASSWORD` or default?" before starting.
+2. Always use `--json` for machine parsing.
+3. Do NOT invent undocumented commands.
+4. Use explicit grouped commands (e.g., `fiber-pay node start`), never legacy aliases.
 
-## ⚙️ Configuration & Environment
+### Configuration & Environment
 **Defaults**: Data Dir: `$HOME/.fiber-pay` | Network: `testnet` | RPC: `127.0.0.1:8227`
 **Priority**: CLI Flags > Env Vars > Config File > Defaults
 
-### Global Flags (all commands)
+#### Global Flags (all commands)
 - `--profile <name>`: maps to data dir `~/.fiber-pay/profiles/<name>`
 - `--data-dir <path>`: override data directory
 - `--rpc-url <url>`: override RPC endpoint
@@ -54,149 +66,197 @@ fiber-pay --help
 Create separate `.env` files (e.g., `.env.node-a`, `.env.node-b`) with unique `FIBER_DATA_DIR`, `FIBER_RPC_PORT`, `FIBER_P2P_PORT`.
 Usage: `source .env.node-a && fiber-pay node start`
 
-Config artifacts in this repo:
+Config files in this repo:
 - `configs/fnn.testnet.yml`
 - `configs/fnn.mainnet.yml`
-- `configs/fnn.reference.yml` (full commented reference from fnn docs)
+- `configs/fnn.reference.yml` (full commented reference)
 
-## 💻 Command Surface
+### Command Surface
 *All commands support `--json` for structured output.*
 
-### Lifecycle (`node`)
-*   `start [--runtime-daemon] [--runtime-proxy-listen <host:port>] [--json]`: Start node (foreground) with runtime watcher + proxy by default; `--runtime-daemon` runs watcher in detached process.
-*   `stop [--json]`: Stop node.
+#### Lifecycle (`node`)
+*   `start [--runtime-daemon] [--runtime-proxy-listen <host:port>] [--json]`: Start node (foreground) with runtime watcher + proxy; `--runtime-daemon` runs watcher detached.
+*   `stop [--json]`: Stop node (and runtime daemon if running).
 *   `status [--json]`: Unified status (process/rpc identity + diagnostics + balance).
 *   `ready [--json]`: Aggregated automation readiness (node/rpc/channel/liquidity).
-*   `info [--json]`: Get node ID and version details.
+*   `info [--json]`: Get node ID and version.
 
-### Runtime Monitor (`runtime`)
-*   `start [--daemon] [--fiber-rpc-url <url>] [--proxy-listen <host:port>] [--channel-poll-ms <ms>] [--invoice-poll-ms <ms>] [--payment-poll-ms <ms>] [--peer-poll-ms <ms>] [--health-poll-ms <ms>] [--include-closed <bool>] [--completed-ttl-seconds <seconds>] [--state-file <path>] [--flush-ms <ms>] [--webhook <url>] [--websocket <host:port>] [--log-min-priority <critical|high|medium|low>] [--log-type <comma-separated-types>] [--json]`: Start polling monitor + proxy (foreground by default, background with `--daemon`).
-*   `status [--json]`: Show runtime process status using runtime PID/meta and proxy health endpoint.
-*   `stop [--json]`: Stop runtime process via runtime PID.
+#### Runtime Monitor (`runtime`)
+*   `start [--daemon] [--proxy-listen <host:port>] [--channel-poll-ms <ms>] [--invoice-poll-ms <ms>] [--payment-poll-ms <ms>] [--peer-poll-ms <ms>] [--health-poll-ms <ms>] [--include-closed <bool>] [--completed-ttl-seconds <seconds>] [--state-file <path>] [--flush-ms <ms>] [--webhook <url>] [--websocket <host:port>] [--log-min-priority <critical|high|medium|low>] [--log-type <comma-separated>] [--json]`: Start polling monitor + HTTP proxy.
+*   `status [--json]`: Runtime process & proxy health.
+*   `stop [--json]`: Stop runtime process.
 
-### Setup (`binary`, `config`)
+#### Job Orchestration (`job`)
+*Requires runtime proxy. Auto-started by `node start` or `runtime start`.*
+*   `job list [--state <state>] [--type <payment|invoice|channel>] [--limit <n>] [--offset <n>] [--json]`: List runtime jobs.
+*   `job get <jobId> [--json]`: Get job details (state, result, retries, error).
+*   `job cancel <jobId> [--json]`: Cancel a running job.
+*   `job events <jobId> [--json]`: Show state transition history for a job.
+
+#### Setup (`binary`, `config`)
 *   `binary download [--version v0.6.1] [--force] [--json]`: Fetch fiber node binary.
 *   `binary info [--json]`: Show binary path/version.
 *   `config init [--data-dir <path>] [--network <net>] [--rpc-port <port>] [--p2p-port <port>] [--force] [--json]`: Initialize config.
-*   `config show [--effective] [--json]`: Display current config file or effective resolved values.
-*   `config get <path> [--json]`: Read a config value by path (dot + bracket syntax).
-*   `config set <path> <value> [--type auto|string|number|boolean|null|json] [--json]`: Write a config value by path.
-*   `config unset <path> [--json]`: Remove a config value by path.
+*   `config show [--effective] [--json]`: Display config.
+*   `config get <path> [--json]`: Read config value (dot + bracket syntax).
+*   `config set <path> <value> [--type auto|string|number|boolean|null|json] [--json]`: Write config value.
+*   `config unset <path> [--json]`: Remove config value.
 *   `config list [--prefix <path>] [--json]`: List key paths.
-*   `config profile show|set|unset`: Manage CLI-only profile keys (`binaryPath`, `keyPassword`).
+*   `config profile show|set|unset`: Manage profile keys (`binaryPath`, `keyPassword`).
 
-### Operations (`channel`, `invoice`, `payment`)
+#### Operations (`channel`, `invoice`, `payment`)
 *   **Channel**:
-    *   `list [--state <state>] [--peer <id>] [--include-closed] [--json]`: List channels.
-    *   `open --peer <multiaddr> --funding <CKB> [--private] [--json]`: Open channel.
-    *   `close <id> [--force] [--json]`: Close channel.
-    *   `abandon <id> [--json]`: Abandon channel.
-    *   `update <id> [--enabled <bool>] ... [--json]`: Update TLC/fee settings.
-    *   `watch [--json] [--on-timeout fail|success]`: Monitor channel state changes.
+    *   `list [--state <state>] [--peer <id>] [--include-closed] [--json]`
+    *   `open --peer <multiaddr> --funding <CKB> [--private] [--json]`
+    *   `close <id> [--force] [--json]`
+    *   `abandon <id> [--json]`
+    *   `update <id> [--enabled <bool>] ... [--json]`
+    *   `watch [--json] [--on-timeout fail|success]`
 *   **Invoice**:
-    *   `create --amount <CKB> --description <txt> [--expiry <min>] [--json]`: Gen invoice.
-    *   `parse <invoiceString> [--json]`: Parse invoice.
-    *   `get <paymentHash> [--json]`: Query invoice status.
-    *   `cancel <paymentHash> [--json]`: Cancel invoice.
-    *   `settle <paymentHash> --preimage <hex> [--json]`: Manually settle.
+    *   `create --amount <CKB> --description <txt> [--expiry <min>] [--json]`
+    *   `parse <invoiceString> [--json]`
+    *   `get <paymentHash> [--json]`
+    *   `cancel <paymentHash> [--json]`
+    *   `settle <paymentHash> --preimage <hex> [--json]`
 *   **Payment**:
-    *   `send <invoice> | --to <nodeId> --amount <CKB> [--json]`: Pay an invoice.
-    *   `get <paymentHash> [--json]`: Check payment status.
-    *   `watch <paymentHash> [--json] [--until SUCCESS|FAILED|TERMINAL] [--on-timeout fail|success]`: Monitor payment outcome.
+    *   `send <invoice> | --to <nodeId> --amount <CKB> [--wait] [--timeout <seconds>] [--json]`: Pay an invoice. When runtime proxy is active, automatically creates a runtime job. `--wait` blocks until the job reaches a terminal state.
+    *   `get <paymentHash> [--json]`
+    *   `watch <paymentHash> [--json] [--until SUCCESS|FAILED|TERMINAL] [--on-timeout fail|success]`
+    *   `route --hops <pubkeys> [--amount <CKB>] [--json]`: Build a payment route.
+    *   `send-route --router <json> [--invoice <inv>] [--payment-hash <hash>] [--keysend] [--dry-run] [--json]`: Send via pre-built route.
 
-### Network & Info (`peer`)
-*   `peer list [--json]`: Show connected peers.
+#### Network Graph (`graph`, `peer`)
+*   `graph nodes [--limit <n>] [--after <cursor>] [--json]`: List network graph nodes.
+*   `graph channels [--limit <n>] [--after <cursor>] [--json]`: List network graph channels.
+*   `peer list [--json]`: Connected peers.
 *   `peer connect <multiaddr> [--json]`: Connect to peer.
 *   `peer disconnect <peerId> [--json]`: Disconnect.
 
-## 📦 JSON Contract (vNext)
-- Non-stream commands in `--json` mode return one envelope:
-    - success: `{"success":true,"data":{...}}`
-    - failure: `{"success":false,"error":{"code":"...","message":"...","recoverable":true|false?,"suggestion":"..."?,"details":{...}?}}`
-- `payment send` returns `success: true` when RPC accepted the request, with `data.status` in `success|pending|failed`.
-- In `--json` mode, command stdout is machine-only JSON (no progress bars, emoji, or human prose).
+### JSON Contract
+Non-stream commands in `--json` return one envelope:
+- success: `{"success":true,"data":{...}}`
+- failure: `{"success":false,"error":{"code":"...","message":"...","recoverable":true|false,"suggestion":"...","details":{...}}}`
 
-### Error object fields
+`payment send --json` returns `success: true` when accepted, with `data.status` in `success|pending|failed`.
+When `--wait` is used and runtime proxy is active, the response includes `data.jobId` and `data.jobState`.
+
+Error object fields:
 - `code` (required): stable machine code
 - `message` (required): human-readable failure summary
-- `recoverable` (optional): whether agent can usually retry after correction
-- `suggestion` (optional): immediate remediation hint
-- `details` (optional): structured context (provided/expected/timeouts/etc)
+- `recoverable` (optional): whether agent can retry after correction
+- `suggestion` (optional): remediation hint
+- `details` (optional): structured context
 
-## 🌊 Streaming Contract (`watch --json`)
-- Streaming commands emit NDJSON (one JSON object per line), not a single pretty JSON blob.
-- `channel watch --json` events:
-    - `snapshot`: current channels + summary
-    - `state_change`: transition for one channel
-    - `terminal`: exit condition reached
-- `payment watch --json` events:
-    - `status_transition`
-    - `terminal`
-- `node start --json` lifecycle events:
-    - `startup_stage` with `data.stage` in `init|binary_resolved|key_initialized|process_started|rpc_ready|bootnodes_connected|startup_complete`
-    - `node_started`
-    - `node_stopped`
-- `runtime start --json` events:
-    - `runtime_starting`
-    - `runtime_started`
-    - `runtime_alert`
-    - `runtime_stopping`
-    - `runtime_stopped`
-- Timeout behavior is configurable via `--on-timeout fail|success`.
-- Timeout/errors use failure envelope only when timeout behavior is `fail`.
+### Streaming Contract (`watch --json`)
+Streaming commands emit NDJSON (one JSON object per line).
+- `channel watch --json`: `snapshot` → `state_change` → `terminal`
+- `payment watch --json`: `status_transition` → `terminal`
+- `node start --json`: `startup_stage` (init|binary_resolved|key_initialized|process_started|rpc_ready|bootnodes_connected|startup_complete) → `node_started` → `node_stopped`
+- `runtime start --json`: `runtime_starting` → `runtime_started` → `runtime_alert` → `runtime_stopping` → `runtime_stopped`
+- `--on-timeout fail|success` controls exit behavior on timeout.
 
-## 🚀 Common Workflows
+---
+
+## Tier 2 — Runtime Proxy REST API
+
+The runtime proxy starts automatically with `node start` (default `127.0.0.1:8229`).
+It is a plain HTTP/JSON API — no auth, no TLS. All below paths are relative to the proxy base URL.
+
+### Job submission (POST)
+```
+POST /jobs/payment   { "params": { "invoice": "...", "sendPaymentParams": {...} }, "options": { "idempotencyKey": "...", "maxRetries": 3 } }
+POST /jobs/invoice   { "params": { "newInvoiceParams": {...} }, "options": {...} }
+POST /jobs/channel   { "params": { "openChannelParams": {...} }, "options": {...} }
+```
+Response: full job record `{ id, type, state, params, result, error, ... }`
+
+### Job management (GET / DELETE)
+```
+GET    /jobs                          ?state=pending&type=payment&limit=10&offset=0
+GET    /jobs/:id
+GET    /jobs/:id/events
+DELETE /jobs/:id                      → 204 on success (cancel)
+```
+
+### Monitoring (GET)
+```
+GET /monitor/status                   → runtime health + uptime
+GET /monitor/list_alerts              ?limit=50&min_priority=high&type=...&source=...
+GET /monitor/list_tracked_invoices    → currently-tracked invoices
+GET /monitor/list_tracked_payments    → currently-tracked payments
+```
+
+### Job states
+`pending` → `running` → `succeeded` | `failed` | `cancelled`
+
+Jobs have automatic retry with exponential backoff. Terminal states are permanent.
+
+---
+
+## Common Workflows
 
 **1. Quick Start (Single Node)**
 ```bash
 fiber-pay --profile local-a binary download
-# foreground process (keep this terminal open)
-fiber-pay --profile local-a node start
+fiber-pay --profile local-a node start          # foreground, keep terminal open
 # In new terminal:
-fiber-pay --profile local-a node status
+fiber-pay --profile local-a node status --json
 ```
 
-## ✅ Agent 快速验证（复制粘贴）
+**2. Send Payment (CLI, runtime-backed)**
+```bash
+fiber-pay payment send <invoice> --wait --json
+# Returns job status with paymentHash, jobId, jobState
+```
+
+**3. Receive Payment**
+```bash
+fiber-pay invoice create --amount 10 --description "Test" --json
+fiber-pay invoice get <payment_hash> --json
+```
+
+**4. Monitor Jobs**
+```bash
+fiber-pay job list --state pending --json
+fiber-pay job get <jobId> --json
+fiber-pay job events <jobId> --json
+```
+
+## Agent Quick Verification
 ```bash
 fiber-pay binary info --json
 fiber-pay node status --json
 fiber-pay node ready --json
 fiber-pay channel list --include-closed --json
+fiber-pay job list --json
 ```
 
-## ⚠️ 当前限制（Agent 须知）
-- 通道开户到可用需要时间；`open` 成功不代表立即 `ChannelReady`。
-- 长时命令（如 `node start`、`watch`）是阻塞式前台行为，自动化中需放在独立进程/终端。
-- `watch --json` 为 NDJSON 流式输出，不是单个 JSON 文档。
+## Limitations
+- Channel open → usable takes time; `open` success ≠ immediate `ChannelReady`.
+  Use `waitForChannelReady()` (SDK) or `channel watch --json` (CLI).
+- Long-running commands (`node start`, `watch`) are blocking foreground processes;
+  run in a dedicated terminal or use `--runtime-daemon`.
+- `watch --json` emits NDJSON stream, not a single JSON document.
+- Runtime proxy has no auth/TLS — bind to localhost only in production.
 
-## 🧭 错误码参考（节选）
+## Error Code Reference
 | Code | Meaning | Agent Action |
 | :--- | :--- | :--- |
-| `NODE_ALREADY_RUNNING` | 节点已在运行 | 跳过启动或先停止旧进程 |
-| `NODE_NOT_RUNNING` | 节点未运行/陈旧 PID | 先 `node start` 或清理运行态 |
-| `NODE_RPC_NOT_READY` | 启动后 RPC 未就绪 | 延迟重试并检查配置/端口 |
-| `CHANNEL_NOT_FOUND` | 指定通道不存在 | 先 `channel list --include-closed --json` 再操作 |
-| `PAYMENT_SEND_INPUT_INVALID` | 支付参数不合法 | 修正 `invoice` 或 `--to/--amount` |
-| `PAYMENT_WATCH_TIMEOUT` | 支付未在超时内终态 | 继续轮询 `payment get` 或延长超时 |
-| `CONFIG_NOT_FOUND` | 配置文件不存在 | 先 `config init --network testnet` |
+| `NODE_ALREADY_RUNNING` | Node already running | Skip start or stop first |
+| `NODE_NOT_RUNNING` | Node not running / stale PID | `node start` or clean up |
+| `NODE_RPC_NOT_READY` | RPC not ready after start | Retry with delay, check port |
+| `CHANNEL_NOT_FOUND` | Channel does not exist | `channel list --include-closed --json` first |
+| `PAYMENT_SEND_INPUT_INVALID` | Bad payment params | Fix `invoice` or `--to/--amount` |
+| `PAYMENT_WATCH_TIMEOUT` | Payment not terminal in time | Continue polling or extend timeout |
+| `CONFIG_NOT_FOUND` | Config file missing | `config init --network testnet` |
+| `RUNTIME_PROXY_REQUIRED` | Job command needs runtime proxy | `runtime start` or `node start` first |
+| `JOB_CANCEL_FAILED` | Job cancel failed | Check job ID and state |
+| `JOB_EVENTS_FAILED` | Job events fetch failed | Check job ID exists |
 
-完整机器可读清单：`packages/cli/error-codes.json`
+Full machine-readable list: `packages/cli/error-codes.json`
 
-**2. Receive Payment**
-```bash
-fiber-pay invoice create --amount 10 --description "Test"
-# Returns <invoice_string> and <payment_hash>
-fiber-pay invoice get <payment_hash>
-```
-
-**3. Send Payment**
-```bash
-fiber-pay payment send <invoice_string>
-fiber-pay payment watch <payment_hash>
-```
-
-## 🔧 Troubleshooting
-*   **RPC Error**: Check `fiber-pay node status`. Verify `FIBER_RPC_URL` matches the running node.
-*   **Browser Access**: Run `fiber-pay node start` and use runtime proxy URL.
-*   **Apple Silicon**: If x86_64 fallback used, run `softwareupdate --install-rosetta`.
-```
+## Troubleshooting
+*   **RPC Error**: `fiber-pay node status --json`. Verify `FIBER_RPC_URL` matches the running node.
+*   **Runtime proxy not reachable**: `fiber-pay runtime status --json`. Ensure proxy is started.
+*   **Job stuck in pending**: Check `fiber-pay job events <id> --json` for transition history and errors.
+*   **Apple Silicon**: If x86_64 fallback used, `softwareupdate --install-rosetta`.
