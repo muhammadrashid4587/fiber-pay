@@ -795,6 +795,11 @@ export class FiberPay {
     fundingCkb: number;
     /** Make channel public */
     isPublic?: boolean;
+    /**
+     * Optional idempotency key for retries.
+     * Reuse the same key when retrying the same open intent; use a new key for a distinct open request.
+     */
+    idempotencyKey?: string;
   }): Promise<AgentResult<{ channelId: string }>> {
     this.ensureInitialized();
 
@@ -837,6 +842,9 @@ export class FiberPay {
         funding_amount: fundingHex,
         public: params.isPublic ?? true,
       };
+      const idempotencyKey =
+        params.idempotencyKey ??
+        `open:${openParams.peer_id}:${openParams.funding_amount}:${openParams.public}`;
 
       let temporaryChannelId: string;
       if (this.runtimeJobManager) {
@@ -847,7 +855,7 @@ export class FiberPay {
             waitForReady: false,
             peerId: params.peer,
           },
-          { idempotencyKey: `${params.peer}:${Date.now()}` },
+          { idempotencyKey },
         );
         const terminal = await this.waitForRuntimeJobTerminal(job.id, 120_000);
         if (
