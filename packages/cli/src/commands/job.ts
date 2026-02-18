@@ -2,29 +2,7 @@ import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
 import { printJsonError, printJsonSuccess } from '../lib/format.js';
 import { resolveRpcEndpoint } from '../lib/rpc.js';
-
-type JobRecord = {
-  id: string;
-  type: string;
-  state: string;
-  idempotencyKey?: string;
-  retryCount?: number;
-  maxRetries?: number;
-  createdAt?: number;
-  updatedAt?: number;
-  completedAt?: number;
-  result?: unknown;
-  error?: { message?: string };
-};
-
-type JobEventRecord = {
-  id: string;
-  eventType: string;
-  fromState?: string;
-  toState?: string;
-  createdAt: number;
-  data?: unknown;
-};
+import type { RuntimeJobEventRecord, RuntimeJobRecord } from '../lib/runtime-jobs.js';
 
 export function createJobCommand(config: CliConfig): Command {
   const job = new Command('job').description('Runtime job management commands');
@@ -52,7 +30,7 @@ export function createJobCommand(config: CliConfig): Command {
         return handleHttpError(response, 'JOB_LIST_FAILED', json);
       }
 
-      const payload = (await response.json()) as { jobs: JobRecord[] };
+      const payload = (await response.json()) as { jobs: RuntimeJobRecord[] };
       if (json) {
         printJsonSuccess(payload);
         return;
@@ -87,7 +65,7 @@ export function createJobCommand(config: CliConfig): Command {
         return handleHttpError(response, 'JOB_GET_FAILED', json);
       }
 
-      const payload = (await response.json()) as JobRecord;
+      const payload = (await response.json()) as RuntimeJobRecord;
       if (json) {
         printJsonSuccess(payload);
         return;
@@ -122,7 +100,7 @@ export function createJobCommand(config: CliConfig): Command {
         return handleHttpError(response, 'JOB_EVENTS_FAILED', json);
       }
 
-      const payload = (await response.json()) as { events: JobEventRecord[] };
+      const payload = (await response.json()) as { events: RuntimeJobEventRecord[] };
       if (json) {
         printJsonSuccess(payload);
         return;
@@ -188,10 +166,7 @@ function getRuntimeUrlOrExit(config: CliConfig, json: boolean): string {
 
 async function handleHttpError(response: Response, code: string, json: boolean): Promise<never> {
   const body = await safeJson(response);
-  const message =
-    (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string'
-      ? body.error
-      : undefined) ?? `HTTP ${response.status}`;
+  const message = extractErrorMessage(body) ?? `HTTP ${response.status}`;
 
   if (json) {
     printJsonError({
@@ -199,12 +174,43 @@ async function handleHttpError(response: Response, code: string, json: boolean):
       message,
       recoverable: response.status >= 500 || response.status === 404,
       suggestion: 'Check runtime status and job id, then retry.',
-      details: body,
+      details: {
+        status: response.status,
+        body,
+      },
     });
   } else {
     console.error(`Error: ${message}`);
   }
   process.exit(1);
+}
+
+function extractErrorMessage(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') {
+    return undefined;
+  }
+
+  if ('error' in body) {
+    const error = (body as { error?: unknown }).error;
+    if (typeof error === 'string') {
+      return error;
+    }
+    if (error && typeof error === 'object' && 'message' in error) {
+      const message = (error as { message?: unknown }).message;
+      if (typeof message === 'string') {
+        return message;
+      }
+    }
+  }
+
+  if ('message' in body) {
+    const message = (body as { message?: unknown }).message;
+    if (typeof message === 'string') {
+      return message;
+    }
+  }
+
+  return undefined;
 }
 
 async function safeJson(response: Response): Promise<unknown> {

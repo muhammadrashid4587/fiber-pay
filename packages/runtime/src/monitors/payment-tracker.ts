@@ -3,6 +3,13 @@ import type { AlertManager } from '../alerts/alert-manager.js';
 import type { Store } from '../storage/types.js';
 import { BaseMonitor, type BaseMonitorHooks } from './base-monitor.js';
 
+function isExpectedTrackerError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /not found|does not exist|no such|temporarily unavailable|connection refused|timed out|timeout/i.test(
+    message,
+  );
+}
+
 export interface PaymentTrackerConfig {
   intervalMs: number;
   completedItemTtlSeconds: number;
@@ -72,8 +79,11 @@ export class PaymentTracker extends BaseMonitor {
             });
           }
         }
-      } catch {
-        // payment may not exist yet or node may be temporarily unavailable
+      } catch (error) {
+        if (isExpectedTrackerError(error)) {
+          continue;
+        }
+        throw error;
       }
     }
 

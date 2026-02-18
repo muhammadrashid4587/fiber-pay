@@ -14,6 +14,7 @@ export type MachineEvent =
   | 'invoice_expired'
   | 'invoice_cancelled'
   | 'channel_opening'
+  | 'channel_closing'
   | 'channel_ready'
   | 'channel_closed'
   | 'channel_failed'
@@ -46,6 +47,7 @@ const PAYMENT_TRANSITIONS: Transition[] = [
 const INVOICE_TRANSITIONS: Transition[] = [
   { from: 'queued', event: 'send_issued', to: 'executing' },
   { from: 'executing', event: 'invoice_created', to: 'invoice_created' },
+  { from: 'invoice_created', event: 'payment_success', to: 'succeeded' },
   { from: 'executing', event: 'payment_failed_retryable', to: 'waiting_retry' },
   { from: 'invoice_created', event: 'payment_failed_retryable', to: 'waiting_retry' },
   { from: 'invoice_active', event: 'payment_failed_retryable', to: 'waiting_retry' },
@@ -61,6 +63,7 @@ const INVOICE_TRANSITIONS: Transition[] = [
   { from: ['invoice_created', 'invoice_received'], event: 'invoice_expired', to: 'invoice_expired' },
   { from: ['invoice_created', 'invoice_received'], event: 'invoice_cancelled', to: 'invoice_cancelled' },
   { from: ['invoice_settled', 'invoice_expired', 'invoice_cancelled'], event: 'payment_success', to: 'succeeded' },
+  { from: ['invoice_expired', 'invoice_cancelled'], event: 'payment_failed_permanent', to: 'failed' },
   { from: ['executing', 'invoice_created', 'invoice_active', 'invoice_received'], event: 'payment_failed_permanent', to: 'failed' },
   {
     from: ['queued', 'executing', 'waiting_retry', 'invoice_created', 'invoice_active', 'invoice_received'],
@@ -72,17 +75,22 @@ const INVOICE_TRANSITIONS: Transition[] = [
 const CHANNEL_TRANSITIONS: Transition[] = [
   { from: 'queued', event: 'send_issued', to: 'executing' },
   { from: 'executing', event: 'channel_opening', to: 'channel_opening' },
+  { from: 'channel_opening', event: 'payment_success', to: 'succeeded' },
   { from: 'executing', event: 'payment_failed_retryable', to: 'waiting_retry' },
   { from: 'channel_opening', event: 'payment_failed_retryable', to: 'waiting_retry' },
   { from: 'channel_awaiting_ready', event: 'payment_failed_retryable', to: 'waiting_retry' },
   { from: 'channel_closing', event: 'payment_failed_retryable', to: 'waiting_retry' },
+  { from: ['executing', 'channel_ready'], event: 'channel_closing', to: 'channel_closing' },
   { from: 'waiting_retry', event: 'retry_delay_elapsed', to: 'executing' },
   { from: 'channel_opening', event: 'channel_opening', to: 'channel_awaiting_ready' },
   { from: 'channel_awaiting_ready', event: 'channel_opening', to: 'channel_awaiting_ready' },
   { from: 'channel_opening', event: 'channel_ready', to: 'channel_ready' },
   { from: 'channel_awaiting_ready', event: 'channel_ready', to: 'channel_ready' },
   { from: ['channel_opening', 'channel_ready'], event: 'channel_closed', to: 'channel_closed' },
+  { from: 'channel_awaiting_ready', event: 'channel_closed', to: 'channel_closed' },
   { from: 'channel_closing', event: 'channel_closed', to: 'channel_closed' },
+  { from: 'channel_closing', event: 'payment_success', to: 'succeeded' },
+  { from: 'channel_closed', event: 'payment_failed_permanent', to: 'failed' },
   { from: ['channel_ready', 'channel_opening'], event: 'channel_failed', to: 'failed' },
   { from: ['channel_ready', 'channel_closed'], event: 'payment_success', to: 'succeeded' },
   {

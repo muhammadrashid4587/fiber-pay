@@ -27,7 +27,14 @@ export class HealthMonitor extends BaseMonitor {
   }
 
   protected async poll(): Promise<void> {
-    const isHealthy = await this.client.ping();
+    let isHealthy = false;
+    let failureReason: string | undefined;
+    try {
+      isHealthy = await this.client.ping();
+    } catch (error) {
+      failureReason = error instanceof Error ? error.message : String(error);
+      isHealthy = false;
+    }
 
     if (isHealthy && this.isOffline) {
       this.isOffline = false;
@@ -46,7 +53,9 @@ export class HealthMonitor extends BaseMonitor {
         type: 'node_offline',
         priority: 'critical',
         source: this.name,
-        data: { message: 'Fiber node ping returned false' },
+        data: {
+          message: failureReason ? `Fiber node ping failed: ${failureReason}` : 'Fiber node ping returned false',
+        },
       });
     }
   }

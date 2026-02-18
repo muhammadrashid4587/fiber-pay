@@ -1,7 +1,9 @@
 import type { FiberRpcClient } from '@fiber-pay/sdk';
-import { classifyPaymentError } from '../error-classifier.js';
-import { computeRetryDelay, shouldRetry } from '../retry-policy.js';
+import { classifyRpcError } from '../error-classifier.js';
+import { invoiceStateMachine } from '../state-machine.js';
 import type { InvoiceJob, RetryPolicy } from '../types.js';
+import { sleep } from '../../utils/async.js';
+import { applyRetryOrFail, transitionJobState } from '../executor-utils.js';
 
 const DEFAULT_POLL_INTERVAL = 1_500;
 
@@ -14,17 +16,14 @@ export async function* runInvoiceJob(
   let current = { ...job };
 
   if (current.state === 'queued') {
-    current = { ...current, state: 'executing', updatedAt: Date.now() };
+    current = transitionJobState(current, invoiceStateMachine, 'send_issued');
     yield current;
   }
 
   if (current.state === 'waiting_retry') {
-    current = {
-      ...current,
-      state: 'executing',
-      nextRetryAt: undefined,
-      updatedAt: Date.now(),
-    };
+    current = transitionJobState(current, invoiceStateMachine, 'retry_delay_elapsed', {
+      patch: { nextRetryAt: undefined },
+    });
     yield current;
   }
 
@@ -53,12 +52,7 @@ export async function* runInvoiceJob(
       yield current;
 
       if (!current.params.waitForTerminal) {
-        current = {
-          ...current,
-          state: 'succeeded',
-          completedAt: Date.now(),
-          updatedAt: Date.now(),
-        };
+        current = transitionJobState(current, invoiceStateMachine, 'payment_success');
         yield current;
         return;
       }
@@ -66,7 +60,7 @@ export async function* runInvoiceJob(
       // Watch invoice until terminal
       while (true) {
         if (signal.aborted) {
-          current = { ...current, state: 'cancelled', completedAt: Date.now(), updatedAt: Date.now() };
+          current = transitionJobState(current, invoiceStateMachine, 'cancel');
           yield current;
           return;
         }
@@ -86,12 +80,7 @@ export async function* runInvoiceJob(
           };
           yield current;
 
-          current = {
-            ...current,
-            state: 'succeeded',
-            completedAt: Date.now(),
-            updatedAt: Date.now(),
-          };
+          current = transitionJobState(current, invoiceStateMachine, 'payment_success');
           yield current;
           return;
         }
@@ -123,7 +112,7 @@ export async function* runInvoiceJob(
             updatedAt: Date.now(),
           };
           yield current;
-          current = { ...current, state: 'failed', completedAt: Date.now(), updatedAt: Date.now() };
+          current = transitionJobState(current, invoiceStateMachine, 'payment_failed_permanent');
           yield current;
           return;
         } else if (invoice.status === 'Expired') {
@@ -140,7 +129,7 @@ export async function* runInvoiceJob(
             updatedAt: Date.now(),
           };
           yield current;
-          current = { ...current, state: 'failed', completedAt: Date.now(), updatedAt: Date.now() };
+          current = transitionJobState(current, invoiceStateMachine, 'payment_failed_permanent');
           yield current;
           return;
         }
@@ -154,6 +143,12 @@ export async function* runInvoiceJob(
         throw new Error('Invoice watch job requires getInvoicePaymentHash');
       }
       while (true) {
+        if (signal.aborted) {
+          current = transitionJobState(current, invoiceStateMachine, 'cancel');
+          yield current;
+          return;
+        }
+
         const invoice = await rpc.getInvoice({ payment_hash: current.params.getInvoicePaymentHash });
         current = {
           ...current,
@@ -178,12 +173,12 @@ export async function* runInvoiceJob(
         yield current;
 
         if (invoice.status === 'Paid') {
-          current = { ...current, state: 'succeeded', completedAt: Date.now(), updatedAt: Date.now() };
+          current = transitionJobState(current, invoiceStateMachine, 'payment_success');
           yield current;
           return;
         }
         if (invoice.status === 'Cancelled' || invoice.status === 'Expired') {
-          current = { ...current, state: 'failed', completedAt: Date.now(), updatedAt: Date.now() };
+          current = transitionJobState(current, invoiceStateMachine, 'payment_failed_permanent');
           yield current;
           return;
         }
@@ -209,7 +204,7 @@ export async function* runInvoiceJob(
         updatedAt: Date.now(),
       };
       yield current;
-      current = { ...current, state: 'succeeded', completedAt: Date.now(), updatedAt: Date.now() };
+      current = transitionJobState(current, invoiceStateMachine, 'payment_success');
       yield current;
       return;
     }
@@ -229,53 +224,20 @@ export async function* runInvoiceJob(
         updatedAt: Date.now(),
       };
       yield current;
-      current = { ...current, state: 'succeeded', completedAt: Date.now(), updatedAt: Date.now() };
+      current = transitionJobState(current, invoiceStateMachine, 'payment_success');
       yield current;
       return;
     }
 
     throw new Error(`Unsupported invoice action: ${(current.params as { action?: string }).action}`);
   } catch (error) {
-    const classified = classifyPaymentError(error);
-    if (shouldRetry(classified, current.retryCount, policy)) {
-      const delay = computeRetryDelay(current.retryCount, policy);
-      current = {
-        ...current,
-        state: 'waiting_retry',
-        error: classified,
-        retryCount: current.retryCount + 1,
-        nextRetryAt: Date.now() + delay,
-        updatedAt: Date.now(),
-      };
-      yield current;
-      return;
-    }
-
-    current = {
-      ...current,
-      state: 'failed',
-      error: classified,
-      completedAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+    const classified = classifyRpcError(error);
+    current = applyRetryOrFail(current, classified, policy, {
+      machine: invoiceStateMachine,
+      retryEvent: 'payment_failed_retryable',
+      failEvent: 'payment_failed_permanent',
+    });
     yield current;
   }
 }
 
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException('Aborted', 'AbortError'));
-      return;
-    }
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer);
-        reject(new DOMException('Aborted', 'AbortError'));
-      },
-      { once: true },
-    );
-  });
-}

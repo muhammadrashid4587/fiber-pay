@@ -1,4 +1,5 @@
 import type { Alert, AlertBackend } from '../types.js';
+import { sleep } from '../../utils/async.js';
 
 export interface WebhookAlertBackendConfig {
   url: string;
@@ -50,8 +51,4 @@ export class WebhookAlertBackend implements AlertBackend {
 
     throw new Error(`Failed to deliver webhook alert: ${String(lastError)}`);
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -7,10 +7,6 @@ import {
   toHex,
 } from '@fiber-pay/sdk';
 
-export function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export function truncateMiddle(value: string, start = 10, end = 8): string {
   if (!value || value.length <= start + end + 3) {
     return value;

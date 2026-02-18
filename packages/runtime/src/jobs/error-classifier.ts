@@ -53,3 +53,10 @@ export function classifyPaymentError(
     rawError: raw,
   };
 }
+
+export function classifyRpcError(
+  error: unknown,
+  failedError?: string,
+): ClassifiedError {
+  return classifyPaymentError(error, failedError);
+}

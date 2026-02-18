@@ -1,6 +1,7 @@
 import type { RouterHop } from '@fiber-pay/sdk';
 import { ckbToShannons, type HexString, shannonsToCkb } from '@fiber-pay/sdk';
 import { Command } from 'commander';
+import { sleep } from '../lib/async.js';
 import type { CliConfig } from '../lib/config.js';
 import {
   formatPaymentResult,
@@ -8,9 +9,13 @@ import {
   printJsonEvent,
   printJsonSuccess,
   printPaymentDetailHuman,
-  sleep,
 } from '../lib/format.js';
 import { createReadyRpcClient, resolveRpcEndpoint } from '../lib/rpc.js';
+import {
+  type RuntimeJobRecord,
+  tryCreateRuntimePaymentJob,
+  waitForRuntimeJobTerminal,
+} from '../lib/runtime-jobs.js';
 
 export function createPaymentCommand(config: CliConfig): Command {
   const payment = new Command('payment').description('Payment lifecycle and status commands');
@@ -429,75 +434,17 @@ export function createPaymentCommand(config: CliConfig): Command {
   return payment;
 }
 
-type RuntimePaymentJobRequest = {
-  params: {
-    invoice?: string;
-    sendPaymentParams: Record<string, unknown>;
-  };
-  options?: {
-    idempotencyKey?: string;
-    maxRetries?: number;
-  };
-};
-
-type RuntimeJobRecord = {
-  id: string;
-  state: string;
-  result?: {
-    paymentHash?: string;
-    fee?: string;
-    failedError?: string;
-  };
-  error?: {
-    message?: string;
-  };
-};
-
-async function tryCreateRuntimePaymentJob(
-  runtimeUrl: string,
-  body: RuntimePaymentJobRequest,
-): Promise<RuntimeJobRecord | null> {
-  try {
-    const response = await fetch(`${runtimeUrl}/jobs/payment`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!response.ok) return null;
-    return (await response.json()) as RuntimeJobRecord;
-  } catch {
-    return null;
-  }
-}
-
-async function waitForRuntimeJobTerminal(
-  runtimeUrl: string,
-  jobId: string,
-  timeoutSeconds: number,
-): Promise<RuntimeJobRecord> {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutSeconds * 1000) {
-    const response = await fetch(`${runtimeUrl}/jobs/${jobId}`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch runtime job ${jobId}: ${response.status}`);
-    }
-    const job = (await response.json()) as RuntimeJobRecord;
-    if (job.state === 'succeeded' || job.state === 'failed' || job.state === 'cancelled') {
-      return job;
-    }
-    await sleep(500);
-  }
-  throw new Error(`Timed out waiting for runtime job ${jobId}`);
-}
-
 function getJobPaymentHash(job: RuntimeJobRecord): string | undefined {
-  return job.result?.paymentHash;
+  const result = job.result as { paymentHash?: string } | undefined;
+  return result?.paymentHash;
 }
 
 function getJobFeeCkb(job: RuntimeJobRecord): number {
-  return job.result?.fee ? shannonsToCkb(job.result.fee as HexString) : 0;
+  const result = job.result as { fee?: string } | undefined;
+  return result?.fee ? shannonsToCkb(result.fee as HexString) : 0;
 }
 
 function getJobFailure(job: RuntimeJobRecord): string | undefined {
-  return job.result?.failedError ?? job.error?.message;
+  const result = job.result as { failedError?: string } | undefined;
+  return result?.failedError ?? job.error?.message;
 }

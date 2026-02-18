@@ -28,7 +28,6 @@ export class FiberMonitorService extends EventEmitter {
   private readonly jobStore: SqliteJobStore | null;
   private readonly jobManager: JobManager | null;
   private running = false;
-  private offline = false;
 
   constructor(configInput: RuntimeConfigInput = {}) {
     super();
@@ -60,23 +59,7 @@ export class FiberMonitorService extends EventEmitter {
         })
       : null;
 
-    const hooks = {
-      onCycleError: async (error: unknown, monitorName: string) => {
-        await this.handleRpcFailure(error, monitorName);
-      },
-      onCycleSuccess: async () => {
-        if (this.offline) {
-          this.offline = false;
-          const alert = await this.alerts.emit({
-            type: 'node_online',
-            priority: 'low',
-            source: 'service',
-            data: { message: 'RPC calls recovered after previous failure' },
-          });
-          this.emit('alert', alert);
-        }
-      },
-    };
+    const hooks = {};
 
     this.monitors = [
       new ChannelMonitor({
@@ -259,20 +242,5 @@ export class FiberMonitorService extends EventEmitter {
         port: Number(portText),
       });
     });
-  }
-
-  private async handleRpcFailure(error: unknown, monitorName: string): Promise<void> {
-    if (this.offline) {
-      return;
-    }
-
-    this.offline = true;
-    const alert = await this.alerts.emit({
-      type: 'node_offline',
-      priority: 'critical',
-      source: monitorName,
-      data: { message: String(error) },
-    });
-    this.emit('alert', alert);
   }
 }

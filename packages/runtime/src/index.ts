@@ -9,6 +9,6 @@ export { MemoryStore } from './storage/memory-store.js';
 export { SqliteJobStore } from './storage/sqlite-store.js';
 export { JobManager } from './jobs/job-manager.js';
 export { paymentStateMachine } from './jobs/state-machine.js';
-export { classifyPaymentError } from './jobs/error-classifier.js';
+export { classifyPaymentError, classifyRpcError } from './jobs/error-classifier.js';
 export { defaultPaymentRetryPolicy, shouldRetry, computeRetryDelay } from './jobs/retry-policy.js';
 export { alertPriorityOrder, alertTypeValues, isAlertPriority, isAlertType } from './alerts/types.js';

@@ -1,8 +1,9 @@
 import type { FiberRpcClient } from '@fiber-pay/sdk';
-import { classifyPaymentError } from '../error-classifier.js';
-import { computeRetryDelay, shouldRetry } from '../retry-policy.js';
+import { classifyRpcError } from '../error-classifier.js';
 import { paymentStateMachine } from '../state-machine.js';
 import type { PaymentJob, RetryPolicy } from '../types.js';
+import { sleep } from '../../utils/async.js';
+import { applyRetryOrFail, transitionJobState } from '../executor-utils.js';
 
 // ─── PaymentExecutor ──────────────────────────────────────────────────────────
 
@@ -25,13 +26,13 @@ export async function* runPaymentJob(
 
   while (!paymentStateMachine.isTerminal(current.state)) {
     if (signal.aborted) {
-      current = transition(current, 'cancelled', undefined, new Date().getTime());
+      current = transitionJobState(current, paymentStateMachine, 'cancel');
       yield current;
       return;
     }
 
     if (current.state === 'queued') {
-      current = { ...current, state: 'executing', updatedAt: Date.now() };
+      current = transitionJobState(current, paymentStateMachine, 'send_issued');
       yield current;
       continue;
     }
@@ -43,12 +44,14 @@ export async function* runPaymentJob(
       if (delay > 0) {
         await sleep(delay, signal);
         if (signal.aborted) {
-          current = transition(current, 'cancelled', undefined, Date.now());
+          current = transitionJobState(current, paymentStateMachine, 'cancel');
           yield current;
           return;
         }
       }
-      current = { ...current, state: 'executing', nextRetryAt: undefined, updatedAt: Date.now() };
+      current = transitionJobState(current, paymentStateMachine, 'retry_delay_elapsed', {
+        patch: { nextRetryAt: undefined },
+      });
       yield current;
       continue;
     }
@@ -62,59 +65,44 @@ export async function* runPaymentJob(
         paymentHash = sendResult.payment_hash;
 
         if (sendResult.status === 'Success') {
-          current = {
-            ...current,
-            state: 'succeeded',
-            result: {
-              paymentHash: sendResult.payment_hash,
-              status: sendResult.status,
-              fee: sendResult.fee,
-              failedError: sendResult.failed_error,
-            },
-            completedAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-          yield current;
-          return;
-        }
-
-        if (sendResult.status === 'Failed') {
-          const classified = classifyPaymentError(
-            new Error(sendResult.failed_error ?? 'Payment failed'),
-            sendResult.failed_error,
-          );
-          if (shouldRetry(classified, current.retryCount, policy)) {
-            const delay = computeRetryDelay(current.retryCount, policy);
-            current = {
-              ...current,
-              state: 'waiting_retry',
-              error: classified,
-              retryCount: current.retryCount + 1,
-              nextRetryAt: Date.now() + delay,
-              updatedAt: Date.now(),
-            };
-            yield current;
-          } else {
-            current = {
-              ...current,
-              state: 'failed',
-              error: classified,
+          current = transitionJobState(current, paymentStateMachine, 'payment_success', {
+            patch: {
               result: {
                 paymentHash: sendResult.payment_hash,
                 status: sendResult.status,
                 fee: sendResult.fee,
                 failedError: sendResult.failed_error,
               },
-              completedAt: Date.now(),
-              updatedAt: Date.now(),
-            };
-            yield current;
-          }
+            },
+          });
+          yield current;
+          return;
+        }
+
+        if (sendResult.status === 'Failed') {
+          const classified = classifyRpcError(
+            new Error(sendResult.failed_error ?? 'Payment failed'),
+            sendResult.failed_error,
+          );
+          current = applyRetryOrFail(current, classified, policy, {
+            failedPatch: {
+              result: {
+                paymentHash: sendResult.payment_hash,
+                status: sendResult.status,
+                fee: sendResult.fee,
+                failedError: sendResult.failed_error,
+              },
+            },
+            machine: paymentStateMachine,
+            retryEvent: 'payment_failed_retryable',
+            failEvent: 'payment_failed_permanent',
+          });
+          yield current;
           continue;
         }
 
         // Status is 'Created' or 'Inflight' — move to polling state
-        current = { ...current, state: 'inflight', updatedAt: Date.now() };
+        current = transitionJobState(current, paymentStateMachine, 'payment_inflight');
         if (paymentHash) {
           current = { ...current, params: { ...current.params, sendPaymentParams: { ...current.params.sendPaymentParams, payment_hash: paymentHash as `0x${string}` } } };
         }
@@ -122,28 +110,13 @@ export async function* runPaymentJob(
         continue;
       } catch (err) {
         // RPC call itself threw — classify and decide
-        const classified = classifyPaymentError(err);
-        if (shouldRetry(classified, current.retryCount, policy)) {
-          const delay = computeRetryDelay(current.retryCount, policy);
-          current = {
-            ...current,
-            state: 'waiting_retry',
-            error: classified,
-            retryCount: current.retryCount + 1,
-            nextRetryAt: Date.now() + delay,
-            updatedAt: Date.now(),
-          };
-          yield current;
-        } else {
-          current = {
-            ...current,
-            state: 'failed',
-            error: classified,
-            completedAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-          yield current;
-        }
+        const classified = classifyRpcError(err);
+        current = applyRetryOrFail(current, classified, policy, {
+          machine: paymentStateMachine,
+          retryEvent: 'payment_failed_retryable',
+          failEvent: 'payment_failed_permanent',
+        });
+        yield current;
         continue;
       }
     }
@@ -155,13 +128,11 @@ export async function* runPaymentJob(
 
       if (!hash) {
         // Shouldn't happen, but fail-safe
-        current = {
-          ...current,
-          state: 'failed',
-          error: { category: 'unknown', retryable: false, message: 'No payment_hash in inflight job' },
-          completedAt: Date.now(),
-          updatedAt: Date.now(),
-        };
+        current = transitionJobState(current, paymentStateMachine, 'payment_failed_permanent', {
+          patch: {
+            error: { category: 'unknown', retryable: false, message: 'No payment_hash in inflight job' },
+          },
+        });
         yield current;
         continue;
       }
@@ -170,61 +141,46 @@ export async function* runPaymentJob(
         const pollResult = await rpc.getPayment({ payment_hash: hash as `0x${string}` });
 
         if (pollResult.status === 'Success') {
-          current = {
-            ...current,
-            state: 'succeeded',
-            result: {
-              paymentHash: pollResult.payment_hash,
-              status: pollResult.status,
-              fee: pollResult.fee,
-              failedError: pollResult.failed_error,
-            },
-            completedAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-          yield current;
-          return;
-        }
-
-        if (pollResult.status === 'Failed') {
-          const classified = classifyPaymentError(
-            new Error(pollResult.failed_error ?? 'Payment failed'),
-            pollResult.failed_error,
-          );
-          if (shouldRetry(classified, current.retryCount, policy)) {
-            const delay = computeRetryDelay(current.retryCount, policy);
-            current = {
-              ...current,
-              state: 'waiting_retry',
-              error: classified,
-              retryCount: current.retryCount + 1,
-              nextRetryAt: Date.now() + delay,
-              updatedAt: Date.now(),
-            };
-            yield current;
-          } else {
-            current = {
-              ...current,
-              state: 'failed',
-              error: classified,
+          current = transitionJobState(current, paymentStateMachine, 'payment_success', {
+            patch: {
               result: {
                 paymentHash: pollResult.payment_hash,
                 status: pollResult.status,
                 fee: pollResult.fee,
                 failedError: pollResult.failed_error,
               },
-              completedAt: Date.now(),
-              updatedAt: Date.now(),
-            };
-            yield current;
-          }
+            },
+          });
+          yield current;
+          return;
+        }
+
+        if (pollResult.status === 'Failed') {
+          const classified = classifyRpcError(
+            new Error(pollResult.failed_error ?? 'Payment failed'),
+            pollResult.failed_error,
+          );
+          current = applyRetryOrFail(current, classified, policy, {
+            failedPatch: {
+              result: {
+                paymentHash: pollResult.payment_hash,
+                status: pollResult.status,
+                fee: pollResult.fee,
+                failedError: pollResult.failed_error,
+              },
+            },
+            machine: paymentStateMachine,
+            retryEvent: 'payment_failed_retryable',
+            failEvent: 'payment_failed_permanent',
+          });
+          yield current;
           continue;
         }
 
         // Still in-flight — wait and poll again
         await sleep(POLL_INTERVAL_MS, signal);
         if (signal.aborted) {
-          current = transition(current, 'cancelled', undefined, Date.now());
+          current = transitionJobState(current, paymentStateMachine, 'cancel');
           yield current;
           return;
         }
@@ -233,28 +189,13 @@ export async function* runPaymentJob(
         continue;
       } catch (err) {
         // Transient RPC error while polling — back off briefly and retry
-        const classified = classifyPaymentError(err);
-        if (shouldRetry(classified, current.retryCount, policy)) {
-          const delay = computeRetryDelay(current.retryCount, policy);
-          current = {
-            ...current,
-            state: 'waiting_retry',
-            error: classified,
-            retryCount: current.retryCount + 1,
-            nextRetryAt: Date.now() + delay,
-            updatedAt: Date.now(),
-          };
-          yield current;
-        } else {
-          current = {
-            ...current,
-            state: 'failed',
-            error: classified,
-            completedAt: Date.now(),
-            updatedAt: Date.now(),
-          };
-          yield current;
-        }
+        const classified = classifyRpcError(err);
+        current = applyRetryOrFail(current, classified, policy, {
+          machine: paymentStateMachine,
+          retryEvent: 'payment_failed_retryable',
+          failEvent: 'payment_failed_permanent',
+        });
+        yield current;
         continue;
       }
     }
@@ -264,35 +205,4 @@ export async function* runPaymentJob(
   }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 const POLL_INTERVAL_MS = 1_500;
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException('Aborted', 'AbortError'));
-      return;
-    }
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => {
-      clearTimeout(timer);
-      reject(new DOMException('Aborted', 'AbortError'));
-    }, { once: true });
-  });
-}
-
-function transition(
-  job: PaymentJob,
-  state: PaymentJob['state'],
-  result?: PaymentJob['result'],
-  now = Date.now(),
-): PaymentJob {
-  return {
-    ...job,
-    state,
-    result: result ?? job.result,
-    updatedAt: now,
-    completedAt: paymentStateMachine.isTerminal(state) ? now : job.completedAt,
-  };
-}

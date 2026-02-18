@@ -1,7 +1,9 @@
 import { ChannelState, type FiberRpcClient } from '@fiber-pay/sdk';
-import { classifyPaymentError } from '../error-classifier.js';
-import { computeRetryDelay, shouldRetry } from '../retry-policy.js';
+import { classifyRpcError } from '../error-classifier.js';
+import { channelStateMachine } from '../state-machine.js';
 import type { ChannelJob, RetryPolicy } from '../types.js';
+import { sleep } from '../../utils/async.js';
+import { applyRetryOrFail, transitionJobState } from '../executor-utils.js';
 
 const DEFAULT_POLL_INTERVAL = 2_000;
 
@@ -15,17 +17,14 @@ export async function* runChannelJob(
   const resumedFromRetry = job.state === 'waiting_retry';
 
   if (current.state === 'queued') {
-    current = { ...current, state: 'executing', updatedAt: Date.now() };
+    current = transitionJobState(current, channelStateMachine, 'send_issued');
     yield current;
   }
 
   if (current.state === 'waiting_retry') {
-    current = {
-      ...current,
-      state: 'executing',
-      nextRetryAt: undefined,
-      updatedAt: Date.now(),
-    };
+    current = transitionJobState(current, channelStateMachine, 'retry_delay_elapsed', {
+      patch: { nextRetryAt: undefined },
+    });
     yield current;
   }
 
@@ -43,60 +42,52 @@ export async function* runChannelJob(
       if (resumedFromRetry) {
         const existing = await findTargetChannel(rpc, targetPeerId, current.params.channelId);
         if (existing && !isClosed(existing.state.state_name)) {
-          current = {
-            ...current,
-            state: 'channel_opening',
-            result: {
-              temporaryChannelId,
-              channelId: existing.channel_id,
-              state: existing.state.state_name,
+          current = transitionJobState(current, channelStateMachine, 'channel_opening', {
+            patch: {
+              result: {
+                temporaryChannelId,
+                channelId: existing.channel_id,
+                state: existing.state.state_name,
+              },
             },
-            updatedAt: Date.now(),
-          };
+          });
           yield current;
         } else {
           const opened = await rpc.openChannel(current.params.openChannelParams);
           temporaryChannelId = opened.temporary_channel_id;
-          current = {
-            ...current,
-            state: 'channel_opening',
-            result: {
-              temporaryChannelId,
-              state: 'OPENING',
+          current = transitionJobState(current, channelStateMachine, 'channel_opening', {
+            patch: {
+              result: {
+                temporaryChannelId,
+                state: 'OPENING',
+              },
             },
-            updatedAt: Date.now(),
-          };
+          });
           yield current;
         }
       } else {
         const opened = await rpc.openChannel(current.params.openChannelParams);
         temporaryChannelId = opened.temporary_channel_id;
-        current = {
-          ...current,
-          state: 'channel_opening',
-          result: {
-            temporaryChannelId,
-            state: 'OPENING',
+        current = transitionJobState(current, channelStateMachine, 'channel_opening', {
+          patch: {
+            result: {
+              temporaryChannelId,
+              state: 'OPENING',
+            },
           },
-          updatedAt: Date.now(),
-        };
+        });
         yield current;
       }
 
       if (!current.params.waitForReady) {
-        current = {
-          ...current,
-          state: 'succeeded',
-          completedAt: Date.now(),
-          updatedAt: Date.now(),
-        };
+        current = transitionJobState(current, channelStateMachine, 'payment_success');
         yield current;
         return;
       }
 
       while (true) {
         if (signal.aborted) {
-          current = { ...current, state: 'cancelled', completedAt: Date.now(), updatedAt: Date.now() };
+          current = transitionJobState(current, channelStateMachine, 'cancel');
           yield current;
           return;
         }
@@ -124,42 +115,39 @@ export async function* runChannelJob(
             : undefined;
 
         if (readyMatch) {
-          current = {
-            ...current,
-            state: 'channel_ready',
-            result: {
-              temporaryChannelId,
-              channelId: readyMatch.channel_id,
-              state: readyMatch.state.state_name,
+          current = transitionJobState(current, channelStateMachine, 'channel_ready', {
+            patch: {
+              result: {
+                temporaryChannelId,
+                channelId: readyMatch.channel_id,
+                state: readyMatch.state.state_name,
+              },
             },
-            updatedAt: Date.now(),
-          };
+          });
           yield current;
 
-          current = { ...current, state: 'succeeded', completedAt: Date.now(), updatedAt: Date.now() };
+          current = transitionJobState(current, channelStateMachine, 'payment_success');
           yield current;
           return;
         }
 
         if (closedMatch) {
-          current = {
-            ...current,
-            state: 'channel_closed',
-            result: {
-              temporaryChannelId,
-              channelId: closedMatch.channel_id,
-              state: closedMatch.state.state_name,
+          current = transitionJobState(current, channelStateMachine, 'channel_closed', {
+            patch: {
+              result: {
+                temporaryChannelId,
+                channelId: closedMatch.channel_id,
+                state: closedMatch.state.state_name,
+              },
             },
-            completedAt: Date.now(),
-            updatedAt: Date.now(),
-          };
+          });
           yield current;
-          current = { ...current, state: 'failed', completedAt: Date.now(), updatedAt: Date.now() };
+          current = transitionJobState(current, channelStateMachine, 'payment_failed_permanent');
           yield current;
           return;
         }
 
-        current = { ...current, state: 'channel_awaiting_ready', updatedAt: Date.now() };
+        current = transitionJobState(current, channelStateMachine, 'channel_opening');
         yield current;
         await sleep(pollIntervalMs, signal);
       }
@@ -171,26 +159,25 @@ export async function* runChannelJob(
       }
 
       await rpc.shutdownChannel(current.params.shutdownChannelParams);
-      current = {
-        ...current,
-        state: 'channel_closing',
-        result: {
-          channelId: current.params.shutdownChannelParams.channel_id,
-          state: 'SHUTTING_DOWN',
+      current = transitionJobState(current, channelStateMachine, 'channel_closing', {
+        patch: {
+          result: {
+            channelId: current.params.shutdownChannelParams.channel_id,
+            state: 'SHUTTING_DOWN',
+          },
         },
-        updatedAt: Date.now(),
-      };
+      });
       yield current;
 
       if (!current.params.waitForClosed) {
-        current = { ...current, state: 'succeeded', completedAt: Date.now(), updatedAt: Date.now() };
+        current = transitionJobState(current, channelStateMachine, 'payment_success');
         yield current;
         return;
       }
 
       while (true) {
         if (signal.aborted) {
-          current = { ...current, state: 'cancelled', completedAt: Date.now(), updatedAt: Date.now() };
+          current = transitionJobState(current, channelStateMachine, 'cancel');
           yield current;
           return;
         }
@@ -199,17 +186,16 @@ export async function* runChannelJob(
         const match = channels.channels.find((channel) => channel.channel_id === current.params.shutdownChannelParams?.channel_id);
 
         if (!match || match.state.state_name === ChannelState.Closed || match.state.state_name === 'CLOSED') {
-          current = {
-            ...current,
-            state: 'channel_closed',
-            result: {
-              channelId: current.params.shutdownChannelParams.channel_id,
-              state: 'CLOSED',
+          current = transitionJobState(current, channelStateMachine, 'channel_closed', {
+            patch: {
+              result: {
+                channelId: current.params.shutdownChannelParams.channel_id,
+                state: 'CLOSED',
+              },
             },
-            updatedAt: Date.now(),
-          };
+          });
           yield current;
-          current = { ...current, state: 'succeeded', completedAt: Date.now(), updatedAt: Date.now() };
+          current = transitionJobState(current, channelStateMachine, 'payment_success');
           yield current;
           return;
         }
@@ -220,48 +206,14 @@ export async function* runChannelJob(
 
     throw new Error(`Unsupported channel action: ${(current.params as { action?: string }).action}`);
   } catch (error) {
-    const classified = classifyPaymentError(error);
-    if (shouldRetry(classified, current.retryCount, policy)) {
-      const delay = computeRetryDelay(current.retryCount, policy);
-      current = {
-        ...current,
-        state: 'waiting_retry',
-        error: classified,
-        retryCount: current.retryCount + 1,
-        nextRetryAt: Date.now() + delay,
-        updatedAt: Date.now(),
-      };
-      yield current;
-      return;
-    }
-
-    current = {
-      ...current,
-      state: 'failed',
-      error: classified,
-      completedAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+    const classified = classifyRpcError(error);
+    current = applyRetryOrFail(current, classified, policy, {
+      machine: channelStateMachine,
+      retryEvent: 'payment_failed_retryable',
+      failEvent: 'payment_failed_permanent',
+    });
     yield current;
   }
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException('Aborted', 'AbortError'));
-      return;
-    }
-    const timer = setTimeout(resolve, ms);
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer);
-        reject(new DOMException('Aborted', 'AbortError'));
-      },
-      { once: true },
-    );
-  });
 }
 
 async function findTargetChannel(
