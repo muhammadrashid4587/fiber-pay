@@ -62,9 +62,21 @@ fiber-pay --help
 | `FIBER_KEY_PASSWORD`| Keystore password | `fiber-pay-default-key` |
 | `FIBER_NETWORK` | `mainnet` or `testnet` | `testnet` |
 
-**Multi-Node Pattern**:
-Create separate `.env` files (e.g., `.env.node-a`, `.env.node-b`) with unique `FIBER_DATA_DIR`, `FIBER_RPC_PORT`, `FIBER_P2P_PORT`.
-Usage: `source .env.node-a && fiber-pay node start`
+**Multi-Node Pattern (`--profile`)**:
+Use one profile per node. `--profile <name>` maps to `~/.fiber-pay/profiles/<name>`, giving each node isolated config/state.
+
+```bash
+fiber-pay --profile rt-a binary download --version v0.6.1 --json
+fiber-pay --profile rt-b binary download --version v0.6.1 --json
+
+fiber-pay --profile rt-a node start --runtime-proxy-listen 127.0.0.1:9729 --json
+fiber-pay --profile rt-b node start --runtime-proxy-listen 127.0.0.1:9829 --json
+
+fiber-pay --profile rt-a node status --json
+fiber-pay --profile rt-b node status --json
+```
+
+Prefer profile-scoped commands over ad-hoc `source .env.*` switching.
 
 Config files in this repo:
 - `configs/fnn.testnet.yml`

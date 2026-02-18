@@ -90,7 +90,7 @@ Examples of valid style:
 
 ### 5) Multi-node local setup
 
-Use one env file per node and dedicated terminals. Follow the exact pattern in `packages/cli/llm.txt` under “Running Multiple Local Nodes”.
+Use one profile per node (`--profile rt-a`, `--profile rt-b`) and dedicated terminals. Follow the exact pattern in `packages/cli/llm.txt` under “Multi-Node Pattern (`--profile`)”.
 
 ## SDK usage map
 
