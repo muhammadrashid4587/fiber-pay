@@ -135,7 +135,7 @@ export function createRuntimeCommand(config: CliConfig): Command {
     .description('Start runtime monitor service in foreground')
     .option('--daemon', 'Start runtime monitor in detached background mode')
     .option('--fiber-rpc-url <url>', 'Target fiber rpc URL (defaults to --rpc-url/global config)')
-    .option('--proxy-listen <host:port>', 'Monitor proxy listen address', '127.0.0.1:8229')
+    .option('--proxy-listen <host:port>', 'Monitor proxy listen address')
     .option('--channel-poll-ms <ms>', 'Channel polling interval in milliseconds')
     .option('--invoice-poll-ms <ms>', 'Invoice polling interval in milliseconds')
     .option('--payment-poll-ms <ms>', 'Payment polling interval in milliseconds')
@@ -228,7 +228,7 @@ export function createRuntimeCommand(config: CliConfig): Command {
           ),
           proxy: {
             enabled: true,
-            listen: String(options.proxyListen),
+            listen: String(options.proxyListen ?? config.runtimeProxyListen ?? '127.0.0.1:8229'),
           },
           storage: {
             stateFilePath: options.stateFile

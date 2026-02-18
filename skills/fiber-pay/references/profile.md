@@ -12,7 +12,7 @@ A profile is an isolated data directory. Each profile gets its own `config.yml`,
 ```
 <data-dir>/
 ├── config.yml          # fnn node config (fiber/rpc/ckb sections)
-├── profile.json        # CLI-only overrides (binaryPath, keyPassword)
+├── profile.json        # CLI-only overrides (binaryPath, keyPassword, runtimeProxyListen)
 ├── bin/fnn             # downloaded binary
 ├── fiber/sk            # secret key (auto-generated)
 ├── runtime.pid         # runtime process PID (transient)
@@ -24,12 +24,13 @@ A profile is an isolated data directory. Each profile gets its own `config.yml`,
 
 ## profile.json scope
 
-Only two CLI-level keys:
+Three CLI-level keys:
 
 | Key | Description |
 |-----|-------------|
 | `binaryPath` | Path to fnn binary (overrides default `<data-dir>/bin/fnn`) |
 | `keyPassword` | Keystore encryption password |
+| `runtimeProxyListen` | Runtime proxy `host:port` (overrides default `127.0.0.1:8229`) |
 
 Manage with:
 ```
@@ -46,6 +47,7 @@ fiber-pay config profile unset <key>
 |---------|---------------|
 | `binaryPath` | CLI flag → profile.json → env `FIBER_BINARY_PATH` |
 | `keyPassword` | CLI flag → profile.json → env `FIBER_KEY_PASSWORD` |
+| `runtimeProxyListen` | CLI flag → env `FIBER_RUNTIME_PROXY_LISTEN` → profile.json → default `127.0.0.1:8229` |
 | `network` | CLI flag → env `FIBER_NETWORK` → config.yml → default `testnet` |
 | `rpcUrl` | CLI flag → env `FIBER_RPC_URL` → config.yml → default `127.0.0.1:8227` |
 | `dataDir` | CLI flag → env `FIBER_DATA_DIR` → default `~/.fiber-pay` |
@@ -64,11 +66,11 @@ Each node needs unique ports for: RPC, P2P, and runtime proxy.
 ### Minimal steps to add a second node
 
 ```bash
-# 1. Init config with non-conflicting ports
-fiber-pay --profile b config init --network testnet --rpc-port 8327 --p2p-port 8328
+# 1. Init config with non-conflicting ports (including proxy)
+fiber-pay --profile b config init --network testnet --rpc-port 8327 --p2p-port 8328 --proxy-port 8329
 
 # 2. Start node (binary auto-downloads if missing)
-fiber-pay --profile b node start --runtime-proxy-listen 127.0.0.1:8329
+fiber-pay --profile b node start
 ```
 
 ### What `node start` auto-handles
@@ -81,8 +83,7 @@ fiber-pay --profile b node start --runtime-proxy-listen 127.0.0.1:8329
 ### What `node start` does NOT auto-handle
 
 - **Port conflicts**: auto-generated config uses default ports, so the second node will collide. Always run `config init --rpc-port --p2p-port` first for additional profiles.
-- **Runtime proxy port**: defaults to `127.0.0.1:8229` every time, not persisted. Must pass `--runtime-proxy-listen` explicitly each start for non-default ports.
-- **Profile-level proxy port**: not yet stored in `profile.json` — see `docs/runtime-proxy-listen-gap.md`.
+- **Runtime proxy port**: defaults to `127.0.0.1:8229`. Can be set during `config init --proxy-port`, persisted per-profile with `config profile set runtimeProxyListen <host:port>`, or overridden per-invocation with `--runtime-proxy-listen`.
 
 ### Recommended port scheme
 
@@ -99,8 +100,8 @@ fiber-pay --profile b node start --runtime-proxy-listen 127.0.0.1:8329
 fiber-pay node start
 
 # Terminal 2: node B
-fiber-pay --profile b config init --network testnet --rpc-port 8327 --p2p-port 8328
-fiber-pay --profile b node start --runtime-proxy-listen 127.0.0.1:8329
+fiber-pay --profile b config init --network testnet --rpc-port 8327 --p2p-port 8328 --proxy-port 8329
+fiber-pay --profile b node start
 
 # Terminal 3: connect and open channel
 A_ADDR="$(fiber-pay node status --json | jq -r '.data.multiaddr')"

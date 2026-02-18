@@ -96,16 +96,18 @@ Use this workflow unless the user explicitly asks for manual step-by-step contro
 | `FIBER_P2P_PORT` | Port for `config init` | `8228` |
 | `FIBER_KEY_PASSWORD`| Keystore password | `fiber-pay-default-key` |
 | `FIBER_NETWORK` | `mainnet` or `testnet` | `testnet` |
+| `FIBER_RUNTIME_PROXY_LISTEN` | Runtime proxy `host:port` | `127.0.0.1:8229` |
 
 **Multi-Node Pattern (`--profile`)**:
 Use one profile per node. `--profile <name>` maps to `~/.fiber-pay/profiles/<name>`, giving each node isolated config/state.
+Persist per-profile proxy ports so they don't need to be repeated on every `node start`:
 
 ```bash
-fiber-pay --profile rt-a binary download --version v0.6.1 --json
-fiber-pay --profile rt-b binary download --version v0.6.1 --json
+fiber-pay --profile rt-a config init --network testnet --proxy-port 9729
+fiber-pay --profile rt-b config init --network testnet --rpc-port 9827 --p2p-port 9828 --proxy-port 9829
 
-fiber-pay --profile rt-a node start --runtime-proxy-listen 127.0.0.1:9729 --json
-fiber-pay --profile rt-b node start --runtime-proxy-listen 127.0.0.1:9829 --json
+fiber-pay --profile rt-a node start --json
+fiber-pay --profile rt-b node start --json
 
 fiber-pay --profile rt-a node status --json
 fiber-pay --profile rt-b node status --json
@@ -143,13 +145,13 @@ Config files in this repo:
 #### Setup (`binary`, `config`)
 *   `binary download [--version v0.6.1] [--force] [--json]`: Fetch fiber node binary.
 *   `binary info [--json]`: Show binary path/version.
-*   `config init [--data-dir <path>] [--network <net>] [--rpc-port <port>] [--p2p-port <port>] [--force] [--json]`: Initialize config.
+*   `config init [--data-dir <path>] [--network <net>] [--rpc-port <port>] [--p2p-port <port>] [--proxy-port <port>] [--force] [--json]`: Initialize config. `--proxy-port` persists `runtimeProxyListen` in profile.json.
 *   `config show [--effective] [--json]`: Display config.
 *   `config get <path> [--json]`: Read config value (dot + bracket syntax).
 *   `config set <path> <value> [--type auto|string|number|boolean|null|json] [--json]`: Write config value.
 *   `config unset <path> [--json]`: Remove config value.
 *   `config list [--prefix <path>] [--json]`: List key paths.
-*   `config profile show|set|unset`: Manage profile keys (`binaryPath`, `keyPassword`).
+*   `config profile show|set|unset`: Manage profile keys (`binaryPath`, `keyPassword`, `runtimeProxyListen`).
 
 #### Operations (`channel`, `invoice`, `payment`)
 *   **Channel**:

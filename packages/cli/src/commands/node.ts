@@ -15,11 +15,7 @@ export function createNodeCommand(config: CliConfig): Command {
   node
     .command('start')
     .option('--runtime-daemon', 'Start runtime watcher as a detached daemon process')
-    .option(
-      '--runtime-proxy-listen <host:port>',
-      'Runtime monitor proxy listen address',
-      '127.0.0.1:8229',
-    )
+    .option('--runtime-proxy-listen <host:port>', 'Runtime monitor proxy listen address')
     .option('--event-stream <format>', 'Event stream format for --json mode (jsonl)', 'jsonl')
     .option('--json')
     .action(async (options) => {

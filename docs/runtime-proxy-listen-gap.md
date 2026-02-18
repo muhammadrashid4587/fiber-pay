@@ -1,7 +1,30 @@
-# Runtime Proxy Listen 行为记录（待改进）
+# Runtime Proxy Listen 行为记录（已解决）
 
 - 记录日期：2026-02-18
+- 解决日期：2026-02-18
 - 背景：多 profile / 多节点并行运行时，`runtime-proxy-listen` 的配置体验不一致，容易造成重复参数和端口冲突。
+
+## 解决方案
+
+采用方案 A：在 `profile.json` 增加 `runtimeProxyListen` 键，支持 profile 级持久化。
+
+优先级链：CLI 参数 `--runtime-proxy-listen` > 环境变量 `FIBER_RUNTIME_PROXY_LISTEN` > `profile.json.runtimeProxyListen` > 默认值 `127.0.0.1:8229`
+
+用法：
+```bash
+# 推荐：在 config init 时一并指定所有端口
+fiber-pay --profile a config init --network testnet --proxy-port 8229
+fiber-pay --profile b config init --network testnet --rpc-port 8327 --p2p-port 8328 --proxy-port 8329
+
+# 后续启动无需重复传参
+fiber-pay --profile a node start --json
+fiber-pay --profile b node start --json
+
+# 也可以单独设置
+fiber-pay --profile b config profile set runtimeProxyListen 127.0.0.1:8329
+```
+
+`node start --json` 输出中包含 `proxyListenSource` 字段（`cli` / `profile` / `default`），标识值来源。
 
 ## 当前行为（as-is）
 

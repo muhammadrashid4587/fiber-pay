@@ -10,12 +10,14 @@ export interface CliConfig {
   rpcUrl: string;
   keyPassword?: string;
   ckbRpcUrl?: string;
+  runtimeProxyListen?: string;
 }
 
 /** Keys that can be stored in a profile.json file. */
 export interface ProfileConfig {
   binaryPath?: string;
   keyPassword?: string;
+  runtimeProxyListen?: string;
 }
 
 export interface EffectiveConfigSources {
@@ -24,6 +26,7 @@ export interface EffectiveConfigSources {
   network: 'cli' | 'env' | 'config' | 'default';
   rpcUrl: 'cli' | 'env' | 'config' | 'default';
   ckbRpcUrl?: 'env' | 'config' | 'unset';
+  runtimeProxyListen?: 'cli' | 'env' | 'profile' | 'default';
 }
 
 export interface EffectiveConfig {
@@ -239,6 +242,29 @@ export function getEffectiveConfig(explicitFlags?: Set<string>): EffectiveConfig
       ? 'config'
       : 'unset';
 
+  // Runtime proxy listen — CLI flag > env var > profile.json > default
+  const DEFAULT_RUNTIME_PROXY_LISTEN = '127.0.0.1:8229';
+  const cliRuntimeProxyListen = explicitFlags?.has('runtimeProxyListen')
+    ? process.env.FIBER_RUNTIME_PROXY_LISTEN
+    : undefined;
+  const envRuntimeProxyListen = !explicitFlags?.has('runtimeProxyListen')
+    ? process.env.FIBER_RUNTIME_PROXY_LISTEN
+    : undefined;
+  const profileRuntimeProxyListen = profile?.runtimeProxyListen;
+  const runtimeProxyListen =
+    cliRuntimeProxyListen ||
+    envRuntimeProxyListen ||
+    profileRuntimeProxyListen ||
+    DEFAULT_RUNTIME_PROXY_LISTEN;
+  const runtimeProxyListenSource: EffectiveConfigSources['runtimeProxyListen'] =
+    cliRuntimeProxyListen
+      ? 'cli'
+      : envRuntimeProxyListen
+        ? 'env'
+        : profileRuntimeProxyListen
+          ? 'profile'
+          : 'default';
+
   return {
     configExists,
     config: {
@@ -249,6 +275,7 @@ export function getEffectiveConfig(explicitFlags?: Set<string>): EffectiveConfig
       rpcUrl,
       keyPassword,
       ckbRpcUrl,
+      runtimeProxyListen,
     },
     sources: {
       dataDir: dataDirSource,
@@ -256,6 +283,7 @@ export function getEffectiveConfig(explicitFlags?: Set<string>): EffectiveConfig
       network: networkSource,
       rpcUrl: rpcUrlSource,
       ckbRpcUrl: ckbRpcUrlSource,
+      runtimeProxyListen: runtimeProxyListenSource,
     },
   };
 }

@@ -5,7 +5,7 @@ Runtime monitor + job orchestration for Fiber (`fnn v0.6.1`).
 ## Quick start
 
 ```bash
-fiber-pay runtime start --daemon --proxy-listen 127.0.0.1:8229 --json
+fiber-pay runtime start --daemon --json
 fiber-pay runtime status --json
 ```
 
@@ -16,8 +16,11 @@ fiber-pay runtime status --json
 ### 1) 启动两边节点（带 runtime proxy）
 
 ```bash
-fiber-pay --profile rt-a node start --runtime-proxy-listen 127.0.0.1:9729 --json
-fiber-pay --profile rt-b node start --runtime-proxy-listen 127.0.0.1:9829 --json
+fiber-pay --profile rt-a config init --network testnet --proxy-port 9729
+fiber-pay --profile rt-b config init --network testnet --rpc-port 9827 --p2p-port 9828 --proxy-port 9829
+
+fiber-pay --profile rt-a node start --json
+fiber-pay --profile rt-b node start --json
 ```
 
 ### 2) 连接 peer

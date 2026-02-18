@@ -84,6 +84,15 @@ function applyGlobalOverrides(argv: string[]): void {
         }
         break;
       }
+      case '--runtime-proxy-listen':
+      case '--proxy-listen': {
+        const value = getFlagValue(argv, index);
+        if (value) {
+          process.env.FIBER_RUNTIME_PROXY_LISTEN = value;
+          explicitFlags.add('runtimeProxyListen');
+        }
+        break;
+      }
       default:
         break;
     }

@@ -64,7 +64,14 @@ export async function runNodeStartCommand(
   }
 
   const runtimeDaemon = Boolean(options.runtimeDaemon);
-  const runtimeProxyListen = String(options.runtimeProxyListen ?? '127.0.0.1:8229');
+  const runtimeProxyListen = String(
+    options.runtimeProxyListen ?? config.runtimeProxyListen ?? '127.0.0.1:8229',
+  );
+  const proxyListenSource: 'cli' | 'profile' | 'default' = options.runtimeProxyListen
+    ? 'cli'
+    : config.runtimeProxyListen
+      ? 'profile'
+      : 'default';
   const runtimeStateFilePath = join(config.dataDir, 'runtime-state.json');
 
   const binaryPath = config.binaryPath || getDefaultBinaryPath();
@@ -324,6 +331,7 @@ export async function runNodeStartCommand(
       runtimeEnabled: true,
       runtimeDaemon,
       proxyUrl: `http://${runtimeProxyListen}`,
+      proxyListenSource,
     });
   } else {
     console.log('✅ Fiber node started successfully!');

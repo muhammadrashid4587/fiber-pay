@@ -21,7 +21,7 @@ function parseNetworkInput(input: string | undefined): FiberNetwork {
 
 function parsePortInput(
   input: string | undefined,
-  label: 'rpc-port' | 'p2p-port',
+  label: 'rpc-port' | 'p2p-port' | 'proxy-port',
 ): number | undefined {
   if (input === undefined) return undefined;
   const parsed = Number.parseInt(input, 10);
@@ -188,6 +188,7 @@ export function createConfigCommand(_config: CliConfig): Command {
     .option('--network <network>', 'testnet | mainnet')
     .option('--rpc-port <port>', 'Override rpc.listening_addr port in generated config')
     .option('--p2p-port <port>', 'Override fiber.listening_addr port in generated config')
+    .option('--proxy-port <port>', 'Set runtime proxy port and persist in profile.json')
     .option('--force', 'Overwrite existing config file')
     .option('--json')
     .action(async (options) => {
@@ -204,6 +205,15 @@ export function createConfigCommand(_config: CliConfig): Command {
         p2pPort: p2pPort.value,
       });
 
+      // Persist proxy port into profile.json if specified
+      let proxyPort: number | undefined;
+      if (options.proxyPort !== undefined) {
+        proxyPort = parsePortInput(options.proxyPort, 'proxy-port');
+        const existing = loadProfileConfig(dataDir) ?? {};
+        existing.runtimeProxyListen = `127.0.0.1:${proxyPort}`;
+        saveProfileConfig(dataDir, existing);
+      }
+
       const payload = {
         configPath: result.path,
         dataDir,
@@ -212,6 +222,7 @@ export function createConfigCommand(_config: CliConfig): Command {
         rpcPortSource: rpcPort.source,
         p2pPort: p2pPort.value,
         p2pPortSource: p2pPort.source,
+        proxyPort: proxyPort ?? null,
         created: result.created,
         overwritten: result.overwritten,
         skipped: !result.created && !result.overwritten,
@@ -238,6 +249,7 @@ export function createConfigCommand(_config: CliConfig): Command {
           console.log(`   RPC Port: ${rpcPort.value} (${rpcPort.source})`);
         if (p2pPort.value !== undefined)
           console.log(`   P2P Port: ${p2pPort.value} (${p2pPort.source})`);
+        if (proxyPort !== undefined) console.log(`   Proxy Port: ${proxyPort} (profile.json)`);
       }
     });
 
@@ -476,7 +488,7 @@ export function createConfigCommand(_config: CliConfig): Command {
     'Manage profile.json settings (CLI-only overrides)',
   );
 
-  const PROFILE_KEYS: (keyof ProfileConfig)[] = ['binaryPath', 'keyPassword'];
+  const PROFILE_KEYS: (keyof ProfileConfig)[] = ['binaryPath', 'keyPassword', 'runtimeProxyListen'];
 
   profile
     .command('show')
