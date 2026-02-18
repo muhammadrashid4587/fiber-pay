@@ -1,5 +1,6 @@
 import { ChannelState, type FiberRpcClient } from '@fiber-pay/sdk';
 import { classifyPaymentError } from '../error-classifier.js';
+import { computeRetryDelay, shouldRetry } from '../retry-policy.js';
 import type { ChannelJob, RetryPolicy } from '../types.js';
 
 const DEFAULT_POLL_INTERVAL = 2_000;
@@ -7,13 +8,24 @@ const DEFAULT_POLL_INTERVAL = 2_000;
 export async function* runChannelJob(
   job: ChannelJob,
   rpc: FiberRpcClient,
-  _policy: RetryPolicy,
+  policy: RetryPolicy,
   signal: AbortSignal,
 ): AsyncGenerator<ChannelJob> {
   let current = { ...job };
+  const resumedFromRetry = job.state === 'waiting_retry';
 
   if (current.state === 'queued') {
     current = { ...current, state: 'executing', updatedAt: Date.now() };
+    yield current;
+  }
+
+  if (current.state === 'waiting_retry') {
+    current = {
+      ...current,
+      state: 'executing',
+      nextRetryAt: undefined,
+      updatedAt: Date.now(),
+    };
     yield current;
   }
 
@@ -25,17 +37,51 @@ export async function* runChannelJob(
         throw new Error('Channel open job requires openChannelParams');
       }
 
-      const opened = await rpc.openChannel(current.params.openChannelParams);
-      current = {
-        ...current,
-        state: 'channel_opening',
-        result: {
-          temporaryChannelId: opened.temporary_channel_id,
-          state: 'OPENING',
-        },
-        updatedAt: Date.now(),
-      };
-      yield current;
+      const targetPeerId = current.params.peerId ?? current.params.openChannelParams.peer_id;
+      let temporaryChannelId = current.result?.temporaryChannelId;
+
+      if (resumedFromRetry) {
+        const existing = await findTargetChannel(rpc, targetPeerId, current.params.channelId);
+        if (existing && !isClosed(existing.state.state_name)) {
+          current = {
+            ...current,
+            state: 'channel_opening',
+            result: {
+              temporaryChannelId,
+              channelId: existing.channel_id,
+              state: existing.state.state_name,
+            },
+            updatedAt: Date.now(),
+          };
+          yield current;
+        } else {
+          const opened = await rpc.openChannel(current.params.openChannelParams);
+          temporaryChannelId = opened.temporary_channel_id;
+          current = {
+            ...current,
+            state: 'channel_opening',
+            result: {
+              temporaryChannelId,
+              state: 'OPENING',
+            },
+            updatedAt: Date.now(),
+          };
+          yield current;
+        }
+      } else {
+        const opened = await rpc.openChannel(current.params.openChannelParams);
+        temporaryChannelId = opened.temporary_channel_id;
+        current = {
+          ...current,
+          state: 'channel_opening',
+          result: {
+            temporaryChannelId,
+            state: 'OPENING',
+          },
+          updatedAt: Date.now(),
+        };
+        yield current;
+      }
 
       if (!current.params.waitForReady) {
         current = {
@@ -56,54 +102,61 @@ export async function* runChannelJob(
         }
 
         const channels = await rpc.listChannels({
-          peer_id: current.params.peerId ?? current.params.openChannelParams.peer_id,
+          peer_id: targetPeerId,
           include_closed: true,
         });
 
-        const match = channels.channels.find((channel) => {
+        const candidates = channels.channels.filter((channel) => {
           if (current.params.channelId && channel.channel_id !== current.params.channelId) return false;
-          return channel.peer_id === (current.params.peerId ?? current.params.openChannelParams?.peer_id);
+          return channel.peer_id === targetPeerId;
         });
 
-        if (match) {
-          if (
-            match.state.state_name === ChannelState.ChannelReady ||
-            match.state.state_name === 'CHANNEL_READY'
-          ) {
-            current = {
-              ...current,
-              state: 'channel_ready',
-              result: {
-                temporaryChannelId: opened.temporary_channel_id,
-                channelId: match.channel_id,
-                state: match.state.state_name,
-              },
-              updatedAt: Date.now(),
-            };
-            yield current;
+        const readyMatch = candidates.find((channel) =>
+          channel.state.state_name === ChannelState.ChannelReady ||
+          channel.state.state_name === 'CHANNEL_READY',
+        );
 
-            current = { ...current, state: 'succeeded', completedAt: Date.now(), updatedAt: Date.now() };
-            yield current;
-            return;
-          }
+        const activeMatch = candidates.find((channel) => !isClosed(channel.state.state_name));
 
-          if (match.state.state_name === ChannelState.Closed || match.state.state_name === 'CLOSED') {
-            current = {
-              ...current,
-              state: 'channel_closed',
-              result: {
-                temporaryChannelId: opened.temporary_channel_id,
-                channelId: match.channel_id,
-                state: match.state.state_name,
-              },
-              completedAt: Date.now(),
-              updatedAt: Date.now(),
-            };
-            yield current;
-            current = { ...current, state: 'failed', completedAt: Date.now(), updatedAt: Date.now() };
-            yield current;
-            return;
-          }
+        const closedMatch =
+          current.params.channelId && !activeMatch && candidates.length > 0
+            ? candidates.find((channel) => isTerminalClosed(channel.state.state_name))
+            : undefined;
+
+        if (readyMatch) {
+          current = {
+            ...current,
+            state: 'channel_ready',
+            result: {
+              temporaryChannelId,
+              channelId: readyMatch.channel_id,
+              state: readyMatch.state.state_name,
+            },
+            updatedAt: Date.now(),
+          };
+          yield current;
+
+          current = { ...current, state: 'succeeded', completedAt: Date.now(), updatedAt: Date.now() };
+          yield current;
+          return;
+        }
+
+        if (closedMatch) {
+          current = {
+            ...current,
+            state: 'channel_closed',
+            result: {
+              temporaryChannelId,
+              channelId: closedMatch.channel_id,
+              state: closedMatch.state.state_name,
+            },
+            completedAt: Date.now(),
+            updatedAt: Date.now(),
+          };
+          yield current;
+          current = { ...current, state: 'failed', completedAt: Date.now(), updatedAt: Date.now() };
+          yield current;
+          return;
         }
 
         current = { ...current, state: 'channel_awaiting_ready', updatedAt: Date.now() };
@@ -168,6 +221,20 @@ export async function* runChannelJob(
     throw new Error(`Unsupported channel action: ${(current.params as { action?: string }).action}`);
   } catch (error) {
     const classified = classifyPaymentError(error);
+    if (shouldRetry(classified, current.retryCount, policy)) {
+      const delay = computeRetryDelay(current.retryCount, policy);
+      current = {
+        ...current,
+        state: 'waiting_retry',
+        error: classified,
+        retryCount: current.retryCount + 1,
+        nextRetryAt: Date.now() + delay,
+        updatedAt: Date.now(),
+      };
+      yield current;
+      return;
+    }
+
     current = {
       ...current,
       state: 'failed',
@@ -195,4 +262,33 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       { once: true },
     );
   });
+}
+
+async function findTargetChannel(
+  rpc: FiberRpcClient,
+  peerId: string,
+  channelId?: `0x${string}`,
+) {
+  const channels = await rpc.listChannels({
+    peer_id: peerId,
+    include_closed: true,
+  });
+
+  return channels.channels.find((channel) => {
+    if (channelId && channel.channel_id !== channelId) return false;
+    return channel.peer_id === peerId;
+  });
+}
+
+function isClosed(stateName: string): boolean {
+  return (
+    stateName === ChannelState.Closed ||
+    stateName === 'CLOSED' ||
+    stateName === ChannelState.ShuttingDown ||
+    stateName === 'SHUTTING_DOWN'
+  );
+}
+
+function isTerminalClosed(stateName: string): boolean {
+  return stateName === ChannelState.Closed || stateName === 'CLOSED';
 }

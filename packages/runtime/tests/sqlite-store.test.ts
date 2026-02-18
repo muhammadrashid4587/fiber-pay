@@ -153,11 +153,16 @@ describe('SqliteJobStore', () => {
     it('returns only non-terminal jobs', () => {
       const j1 = store.createJob({ type: 'payment', state: 'queued', params: baseParams, retryCount: 0, maxRetries: 3, idempotencyKey: 'ip1' });
       const j2 = store.createJob({ type: 'payment', state: 'queued', params: baseParams, retryCount: 0, maxRetries: 3, idempotencyKey: 'ip2' });
+      const j3 = store.createJob({ type: 'invoice', state: 'invoice_active', params: baseParams, retryCount: 0, maxRetries: 3, idempotencyKey: 'ip3' });
+      const j4 = store.createJob({ type: 'channel', state: 'channel_opening', params: baseParams, retryCount: 0, maxRetries: 3, idempotencyKey: 'ip4' });
       store.updateJob(j2.id, { state: 'succeeded' });
 
       const inProgress = store.getInProgressJobs();
-      expect(inProgress.length).toBe(1);
-      expect(inProgress[0].id).toBe(j1.id);
+      const ids = inProgress.map((job) => job.id);
+      expect(ids).toContain(j1.id);
+      expect(ids).toContain(j3.id);
+      expect(ids).toContain(j4.id);
+      expect(ids).not.toContain(j2.id);
     });
   });
 });

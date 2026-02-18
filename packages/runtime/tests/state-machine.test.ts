@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { JobStateMachine, paymentStateMachine } from '../src/jobs/state-machine.js';
+import { JobStateMachine, channelStateMachine, invoiceStateMachine, paymentStateMachine } from '../src/jobs/state-machine.js';
 import type { JobState } from '../src/jobs/types.js';
 
 describe('JobStateMachine', () => {
@@ -42,5 +42,18 @@ describe('JobStateMachine', () => {
     for (const s of terminal) {
       expect(paymentStateMachine.transition(s, 'cancel')).toBeNull();
     }
+  });
+
+  it('supports invoice waiting_retry transitions', () => {
+    expect(invoiceStateMachine.transition('executing', 'payment_failed_retryable')).toBe('waiting_retry');
+    expect(invoiceStateMachine.transition('waiting_retry', 'retry_delay_elapsed')).toBe('executing');
+    expect(invoiceStateMachine.transition('waiting_retry', 'cancel')).toBe('cancelled');
+  });
+
+  it('supports channel waiting_retry transitions', () => {
+    expect(channelStateMachine.transition('executing', 'payment_failed_retryable')).toBe('waiting_retry');
+    expect(channelStateMachine.transition('channel_opening', 'payment_failed_retryable')).toBe('waiting_retry');
+    expect(channelStateMachine.transition('waiting_retry', 'retry_delay_elapsed')).toBe('executing');
+    expect(channelStateMachine.transition('waiting_retry', 'cancel')).toBe('cancelled');
   });
 });

@@ -78,7 +78,7 @@ export const defaultRuntimeConfig: RuntimeConfig = {
     maxAlertHistory: 5000,
   },
   jobs: {
-    enabled: false,
+    enabled: true,
     dbPath: resolve(process.cwd(), '.fiber-pay-jobs.db'),
     maxConcurrentJobs: 5,
     schedulerIntervalMs: 500,

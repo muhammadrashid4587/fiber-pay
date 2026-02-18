@@ -1,5 +1,6 @@
 import type { FiberRpcClient } from '@fiber-pay/sdk';
 import { classifyPaymentError } from '../error-classifier.js';
+import { computeRetryDelay, shouldRetry } from '../retry-policy.js';
 import type { InvoiceJob, RetryPolicy } from '../types.js';
 
 const DEFAULT_POLL_INTERVAL = 1_500;
@@ -7,13 +8,23 @@ const DEFAULT_POLL_INTERVAL = 1_500;
 export async function* runInvoiceJob(
   job: InvoiceJob,
   rpc: FiberRpcClient,
-  _policy: RetryPolicy,
+  policy: RetryPolicy,
   signal: AbortSignal,
 ): AsyncGenerator<InvoiceJob> {
   let current = { ...job };
 
   if (current.state === 'queued') {
     current = { ...current, state: 'executing', updatedAt: Date.now() };
+    yield current;
+  }
+
+  if (current.state === 'waiting_retry') {
+    current = {
+      ...current,
+      state: 'executing',
+      nextRetryAt: undefined,
+      updatedAt: Date.now(),
+    };
     yield current;
   }
 
@@ -226,6 +237,20 @@ export async function* runInvoiceJob(
     throw new Error(`Unsupported invoice action: ${(current.params as { action?: string }).action}`);
   } catch (error) {
     const classified = classifyPaymentError(error);
+    if (shouldRetry(classified, current.retryCount, policy)) {
+      const delay = computeRetryDelay(current.retryCount, policy);
+      current = {
+        ...current,
+        state: 'waiting_retry',
+        error: classified,
+        retryCount: current.retryCount + 1,
+        nextRetryAt: Date.now() + delay,
+        updatedAt: Date.now(),
+      };
+      yield current;
+      return;
+    }
+
     current = {
       ...current,
       state: 'failed',

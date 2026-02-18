@@ -32,9 +32,31 @@ describe('classifyPaymentError', () => {
     expect(r.retryable).toBe(true);
   });
 
+  it('classifies peer init handshake race as retryable peer_offline', () => {
+    const r = classifyPaymentError(
+      new Error(
+        "Invalid parameter: Peer PeerId(QmFoo)'s feature not found, waiting for peer to send Init message",
+      ),
+    );
+    expect(r.category).toBe('peer_offline');
+    expect(r.retryable).toBe(true);
+  });
+
   it('classifies timeout', () => {
     const r = classifyPaymentError(new Error('Request timed out'));
     expect(r.category).toBe('timeout');
+    expect(r.retryable).toBe(true);
+  });
+
+  it('classifies duplicated payment hash as non-retryable invalid_payment', () => {
+    const r = classifyPaymentError(new Error('payment hash already exists'));
+    expect(r.category).toBe('invalid_payment');
+    expect(r.retryable).toBe(false);
+  });
+
+  it('classifies duplicated channel as retryable temporary_failure', () => {
+    const r = classifyPaymentError(new Error('channel already exists for peer'));
+    expect(r.category).toBe('temporary_failure');
     expect(r.retryable).toBe(true);
   });
 

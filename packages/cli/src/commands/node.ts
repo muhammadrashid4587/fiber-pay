@@ -390,6 +390,10 @@ export function createNodeCommand(config: CliConfig): Command {
             storage: {
               stateFilePath: runtimeStateFilePath,
             },
+            jobs: {
+              enabled: true,
+              dbPath: join(config.dataDir, 'runtime-jobs.db'),
+            },
           });
 
           const runtimeStatus = runtime.service.getStatus();

@@ -113,6 +113,30 @@ Useful env overrides:
 - `CHANNEL_FUNDING_CKB`, `INVOICE_AMOUNT_CKB`, `DEPOSIT_AMOUNT_CKB`
 - `NODE_A_RPC_PORT`, `NODE_A_P2P_PORT`, `NODE_B_RPC_PORT`, `NODE_B_P2P_PORT`
 
+## E2E runtime orchestration script (job path)
+
+Reusable regression for runtime job orchestration (`/jobs/channel`, `/jobs/invoice`, `/jobs/payment`):
+
+```bash
+pnpm e2e:runtime-jobs
+```
+
+It validates this flow through runtime jobs: peer connect → channel open → invoice create → payment send → channel shutdown.
+
+Useful env overrides:
+
+- `PROFILE_A`, `PROFILE_B` (default `rt-a`, `rt-b`)
+- `PROXY_A_URL`, `PROXY_B_URL` (default `http://127.0.0.1:9729`, `http://127.0.0.1:9829`)
+- `CHANNEL_FUNDING_CKB`, `INVOICE_AMOUNT_CKB`, `INVOICE_CURRENCY`
+- `JOB_TIMEOUT_SEC`, `POLL_INTERVAL_MS`, `PEER_CONNECT_TIMEOUT_SEC`
+- `FIBER_PAY_BIN` (optional; by default script uses local `packages/cli/dist/cli.js` via current Node)
+
+Machine-readable output:
+
+```bash
+pnpm e2e:runtime-jobs -- --json
+```
+
 ## TODO
 
 - [x] alert new channel to accept and add funding (`new_inbound_channel_request`)

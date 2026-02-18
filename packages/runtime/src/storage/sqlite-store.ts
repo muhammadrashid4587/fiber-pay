@@ -223,7 +223,18 @@ export class SqliteJobStore {
     const rows = this.db
       .prepare(
         `SELECT * FROM jobs
-         WHERE state IN ('queued', 'executing', 'inflight', 'waiting_retry')
+         WHERE state IN (
+           'queued',
+           'executing',
+           'inflight',
+           'waiting_retry',
+           'invoice_created',
+           'invoice_active',
+           'invoice_received',
+           'channel_opening',
+           'channel_awaiting_ready',
+           'channel_closing'
+         )
          ORDER BY created_at ASC`,
       )
       .all() as DbRow[];

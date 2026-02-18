@@ -205,6 +205,10 @@ export function createRuntimeCommand(config: CliConfig): Command {
               : resolve(config.dataDir, 'runtime-state.json'),
             flushIntervalMs: parseIntegerOption(options.flushMs, 'flush-ms'),
           },
+          jobs: {
+            enabled: true,
+            dbPath: resolve(config.dataDir, 'runtime-jobs.db'),
+          },
         };
 
         const alerts: RuntimeConfigInput['alerts'] = [{ type: 'stdout' }];
