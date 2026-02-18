@@ -94,6 +94,22 @@ Notes:
 - `payment send --wait --json` uses runtime job orchestration when runtime proxy is active (default with `node start`).
 - `payment send` does not auto-open channels; open and verify `ChannelReady` first as shown above.
 
+### Runtime routing matrix (current)
+
+When runtime proxy is active (same profile + same RPC URL), CLI resolves RPC to proxy automatically.
+
+- **Job-first (writes)**
+	- `payment send` → `/jobs/payment` (fallback to direct `send_payment` if job endpoint unavailable)
+	- `invoice create|cancel|settle` → `/jobs/invoice` (fallback to direct RPC)
+	- `channel open|close|accept|abandon|update` → `/jobs/channel` (fallback to direct RPC)
+- **Proxy-forward RPC (no job record)**
+	- `invoice get|parse`
+	- `payment get|watch`
+	- `channel list|get|watch`
+	- `peer *`, `graph *`, `node info|status|ready`
+
+Tip: use `fiber-pay job list --type payment|invoice|channel --json` to inspect orchestration records and `fiber-pay job events <jobId> --json` for state transitions.
+
 Use `--json` when command output is consumed by scripts or agents.
 Non-stream commands emit a single envelope (`success + data|error`), while watch commands emit NDJSON events.
 JSON failures include stable fields (`error.code`, `error.message`) and may include `error.recoverable`, `error.suggestion`, `error.details`.

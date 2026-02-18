@@ -102,9 +102,8 @@ export async function* runChannelJob(
           return channel.peer_id === targetPeerId;
         });
 
-        const readyMatch = candidates.find((channel) =>
-          channel.state.state_name === ChannelState.ChannelReady ||
-          channel.state.state_name === 'CHANNEL_READY',
+        const readyMatch = candidates.find(
+          (channel) => String(channel.state.state_name).toUpperCase() === 'CHANNEL_READY',
         );
 
         const activeMatch = candidates.find((channel) => !isClosed(channel.state.state_name));
@@ -154,15 +153,16 @@ export async function* runChannelJob(
     }
 
     if (current.params.action === 'shutdown') {
-      if (!current.params.shutdownChannelParams) {
+      const shutdownParams = current.params.shutdownChannelParams;
+      if (!shutdownParams) {
         throw new Error('Channel shutdown job requires shutdownChannelParams');
       }
 
-      await rpc.shutdownChannel(current.params.shutdownChannelParams);
+      await rpc.shutdownChannel(shutdownParams);
       current = transitionJobState(current, channelStateMachine, 'channel_closing', {
         patch: {
           result: {
-            channelId: current.params.shutdownChannelParams.channel_id,
+            channelId: shutdownParams.channel_id,
             state: 'SHUTTING_DOWN',
           },
         },
@@ -183,13 +183,13 @@ export async function* runChannelJob(
         }
 
         const channels = await rpc.listChannels({ include_closed: true });
-        const match = channels.channels.find((channel) => channel.channel_id === current.params.shutdownChannelParams?.channel_id);
+        const match = channels.channels.find((channel) => channel.channel_id === shutdownParams.channel_id);
 
-        if (!match || match.state.state_name === ChannelState.Closed || match.state.state_name === 'CLOSED') {
+        if (!match || isTerminalClosed(String(match.state.state_name))) {
           current = transitionJobState(current, channelStateMachine, 'channel_closed', {
             patch: {
               result: {
-                channelId: current.params.shutdownChannelParams.channel_id,
+                channelId: shutdownParams.channel_id,
                 state: 'CLOSED',
               },
             },
@@ -202,6 +202,70 @@ export async function* runChannelJob(
 
         await sleep(pollIntervalMs, signal);
       }
+    }
+
+    if (current.params.action === 'accept') {
+      if (!current.params.acceptChannelParams) {
+        throw new Error('Channel accept job requires acceptChannelParams');
+      }
+
+      const accepted = await rpc.acceptChannel(current.params.acceptChannelParams);
+      current = transitionJobState(current, channelStateMachine, 'channel_accepting', {
+        patch: {
+          result: {
+            acceptedChannelId: accepted.channel_id,
+            channelId: accepted.channel_id,
+            state: 'ACCEPTED',
+          },
+        },
+      });
+      yield current;
+
+      current = transitionJobState(current, channelStateMachine, 'payment_success');
+      yield current;
+      return;
+    }
+
+    if (current.params.action === 'abandon') {
+      if (!current.params.abandonChannelParams) {
+        throw new Error('Channel abandon job requires abandonChannelParams');
+      }
+
+      await rpc.abandonChannel(current.params.abandonChannelParams);
+      current = transitionJobState(current, channelStateMachine, 'channel_abandoning', {
+        patch: {
+          result: {
+            channelId: current.params.abandonChannelParams.channel_id,
+            state: 'ABANDONED',
+          },
+        },
+      });
+      yield current;
+
+      current = transitionJobState(current, channelStateMachine, 'payment_success');
+      yield current;
+      return;
+    }
+
+    if (current.params.action === 'update') {
+      if (!current.params.updateChannelParams) {
+        throw new Error('Channel update job requires updateChannelParams');
+      }
+
+      await rpc.updateChannel(current.params.updateChannelParams);
+      current = transitionJobState(current, channelStateMachine, 'channel_updating', {
+        patch: {
+          result: {
+            channelId: current.params.updateChannelParams.channel_id,
+            state: 'UPDATED',
+          },
+        },
+      });
+      yield current;
+
+      current = transitionJobState(current, channelStateMachine, 'payment_success');
+      yield current;
+      return;
     }
 
     throw new Error(`Unsupported channel action: ${(current.params as { action?: string }).action}`);

@@ -232,6 +232,9 @@ export class SqliteJobStore {
            'invoice_active',
            'invoice_received',
            'channel_opening',
+           'channel_accepting',
+           'channel_abandoning',
+           'channel_updating',
            'channel_awaiting_ready',
            'channel_closing'
          )

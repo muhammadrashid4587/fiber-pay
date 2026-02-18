@@ -14,6 +14,9 @@ export type MachineEvent =
   | 'invoice_expired'
   | 'invoice_cancelled'
   | 'channel_opening'
+  | 'channel_accepting'
+  | 'channel_abandoning'
+  | 'channel_updating'
   | 'channel_closing'
   | 'channel_ready'
   | 'channel_closed'
@@ -75,9 +78,18 @@ const INVOICE_TRANSITIONS: Transition[] = [
 const CHANNEL_TRANSITIONS: Transition[] = [
   { from: 'queued', event: 'send_issued', to: 'executing' },
   { from: 'executing', event: 'channel_opening', to: 'channel_opening' },
+  { from: 'executing', event: 'channel_accepting', to: 'channel_accepting' },
+  { from: 'executing', event: 'channel_abandoning', to: 'channel_abandoning' },
+  { from: 'executing', event: 'channel_updating', to: 'channel_updating' },
   { from: 'channel_opening', event: 'payment_success', to: 'succeeded' },
+  { from: 'channel_accepting', event: 'payment_success', to: 'succeeded' },
+  { from: 'channel_abandoning', event: 'payment_success', to: 'succeeded' },
+  { from: 'channel_updating', event: 'payment_success', to: 'succeeded' },
   { from: 'executing', event: 'payment_failed_retryable', to: 'waiting_retry' },
   { from: 'channel_opening', event: 'payment_failed_retryable', to: 'waiting_retry' },
+  { from: 'channel_accepting', event: 'payment_failed_retryable', to: 'waiting_retry' },
+  { from: 'channel_abandoning', event: 'payment_failed_retryable', to: 'waiting_retry' },
+  { from: 'channel_updating', event: 'payment_failed_retryable', to: 'waiting_retry' },
   { from: 'channel_awaiting_ready', event: 'payment_failed_retryable', to: 'waiting_retry' },
   { from: 'channel_closing', event: 'payment_failed_retryable', to: 'waiting_retry' },
   { from: ['executing', 'channel_ready'], event: 'channel_closing', to: 'channel_closing' },
@@ -94,7 +106,7 @@ const CHANNEL_TRANSITIONS: Transition[] = [
   { from: ['channel_ready', 'channel_opening'], event: 'channel_failed', to: 'failed' },
   { from: ['channel_ready', 'channel_closed'], event: 'payment_success', to: 'succeeded' },
   {
-    from: ['queued', 'executing', 'waiting_retry', 'channel_opening', 'channel_awaiting_ready', 'channel_ready', 'channel_closing'],
+    from: ['queued', 'executing', 'waiting_retry', 'channel_opening', 'channel_accepting', 'channel_abandoning', 'channel_updating', 'channel_awaiting_ready', 'channel_ready', 'channel_closing'],
     event: 'cancel',
     to: 'cancelled',
   },

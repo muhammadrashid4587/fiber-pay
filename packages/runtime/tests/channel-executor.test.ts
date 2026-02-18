@@ -241,4 +241,95 @@ describe('runChannelJob', () => {
     expect(updates[updates.length - 1].state).toBe('succeeded');
     expect(updates.find((update) => update.state === 'channel_ready')?.result?.channelId).toBe('0xchan-ready');
   });
+
+  it('accept action transitions through channel_accepting to succeeded', async () => {
+    const rpc = {
+      acceptChannel: async () => ({ channel_id: '0xaccepted' }),
+    } as unknown as FiberRpcClient;
+
+    const updates: ChannelJob[] = [];
+    for await (const updated of runChannelJob(
+      baseJob({
+        params: {
+          action: 'accept',
+          acceptChannelParams: {
+            temporary_channel_id: '0xtmp',
+            funding_amount: '0x64',
+          },
+        },
+      }),
+      rpc,
+      defaultPaymentRetryPolicy,
+      new AbortController().signal,
+    )) {
+      updates.push(updated);
+    }
+
+    expect(updates.some((update) => update.state === 'channel_accepting')).toBe(true);
+    expect(updates[updates.length - 1].state).toBe('succeeded');
+    expect(updates.find((update) => update.state === 'channel_accepting')?.result?.channelId).toBe('0xaccepted');
+  });
+
+  it('abandon action transitions through channel_abandoning to succeeded', async () => {
+    let called = false;
+    const rpc = {
+      abandonChannel: async () => {
+        called = true;
+        return null;
+      },
+    } as unknown as FiberRpcClient;
+
+    const updates: ChannelJob[] = [];
+    for await (const updated of runChannelJob(
+      baseJob({
+        params: {
+          action: 'abandon',
+          abandonChannelParams: {
+            channel_id: '0xchan-abandon',
+          },
+        },
+      }),
+      rpc,
+      defaultPaymentRetryPolicy,
+      new AbortController().signal,
+    )) {
+      updates.push(updated);
+    }
+
+    expect(called).toBe(true);
+    expect(updates.some((update) => update.state === 'channel_abandoning')).toBe(true);
+    expect(updates[updates.length - 1].state).toBe('succeeded');
+  });
+
+  it('update action transitions through channel_updating to succeeded', async () => {
+    let called = false;
+    const rpc = {
+      updateChannel: async () => {
+        called = true;
+        return null;
+      },
+    } as unknown as FiberRpcClient;
+
+    const updates: ChannelJob[] = [];
+    for await (const updated of runChannelJob(
+      baseJob({
+        params: {
+          action: 'update',
+          updateChannelParams: {
+            channel_id: '0xchan-update',
+            enabled: true,
+          },
+        },
+      }),
+      rpc,
+      defaultPaymentRetryPolicy,
+      new AbortController().signal,
+    )) {
+      updates.push(updated);
+    }
+
+    expect(called).toBe(true);
+    expect(updates.some((update) => update.state === 'channel_updating')).toBe(true);
+    expect(updates[updates.length - 1].state).toBe('succeeded');
+  });
 });

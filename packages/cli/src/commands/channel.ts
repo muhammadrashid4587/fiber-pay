@@ -13,7 +13,8 @@ import {
   printJsonSuccess,
   truncateMiddle,
 } from '../lib/format.js';
-import { createReadyRpcClient } from '../lib/rpc.js';
+import { createReadyRpcClient, resolveRpcEndpoint } from '../lib/rpc.js';
+import { tryCreateRuntimeChannelJob } from '../lib/runtime-jobs.js';
 
 export function createChannelCommand(config: CliConfig): Command {
   const channel = new Command('channel').description('Channel lifecycle and status commands');
@@ -222,6 +223,7 @@ export function createChannelCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (options) => {
       const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
       const peerInput = options.peer as string;
       const fundingCkb = parseFloat(options.funding);
 
@@ -232,6 +234,45 @@ export function createChannelCommand(config: CliConfig): Command {
         if (peerIdMatch) peerId = peerIdMatch[1];
       }
 
+      const endpoint = resolveRpcEndpoint(config);
+      if (endpoint.target === 'runtime-proxy') {
+        const created = await tryCreateRuntimeChannelJob(endpoint.url, {
+          params: {
+            action: 'open',
+            peerId,
+            openChannelParams: {
+              peer_id: peerId,
+              funding_amount: ckbToShannons(fundingCkb),
+              public: !options.private,
+            },
+            waitForReady: false,
+          },
+          options: {
+            idempotencyKey: `open:peer:${peerId}`,
+          },
+        });
+
+        if (created) {
+          const payload = {
+            jobId: created.id,
+            jobState: created.state,
+            peer: peerId,
+            fundingCkb,
+          };
+
+          if (json) {
+            printJsonSuccess(payload);
+          } else {
+            console.log('Channel open job submitted');
+            console.log(`  Job:                  ${payload.jobId}`);
+            console.log(`  Job State:            ${payload.jobState}`);
+            console.log(`  Peer:                 ${payload.peer}`);
+            console.log(`  Funding:              ${payload.fundingCkb} CKB`);
+          }
+          return;
+        }
+      }
+
       const result = await rpc.openChannel({
         peer_id: peerId,
         funding_amount: ckbToShannons(fundingCkb),
@@ -239,7 +280,7 @@ export function createChannelCommand(config: CliConfig): Command {
       });
 
       const payload = { temporaryChannelId: result.temporary_channel_id, peer: peerId, fundingCkb };
-      if (options.json) {
+      if (json) {
         printJsonSuccess(payload);
       } else {
         console.log('Channel open initiated');
@@ -256,7 +297,44 @@ export function createChannelCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (temporaryChannelId, options) => {
       const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
       const fundingCkb = parseFloat(options.funding);
+
+      const endpoint = resolveRpcEndpoint(config);
+      if (endpoint.target === 'runtime-proxy') {
+        const created = await tryCreateRuntimeChannelJob(endpoint.url, {
+          params: {
+            action: 'accept',
+            acceptChannelParams: {
+              temporary_channel_id: temporaryChannelId as HexString,
+              funding_amount: ckbToShannons(fundingCkb),
+            },
+          },
+          options: {
+            idempotencyKey: `accept:temporary:${temporaryChannelId}`,
+          },
+        });
+
+        if (created) {
+          const payload = {
+            jobId: created.id,
+            jobState: created.state,
+            temporaryChannelId,
+            fundingCkb,
+          };
+
+          if (json) {
+            printJsonSuccess(payload);
+          } else {
+            console.log('Channel accept job submitted');
+            console.log(`  Job:                  ${payload.jobId}`);
+            console.log(`  Job State:            ${payload.jobState}`);
+            console.log(`  Temporary Channel ID: ${payload.temporaryChannelId}`);
+            console.log(`  Funding:              ${payload.fundingCkb} CKB`);
+          }
+          return;
+        }
+      }
 
       const result = await rpc.acceptChannel({
         temporary_channel_id: temporaryChannelId as HexString,
@@ -264,7 +342,7 @@ export function createChannelCommand(config: CliConfig): Command {
       });
 
       const payload = { channelId: result.channel_id, temporaryChannelId, fundingCkb };
-      if (options.json) {
+      if (json) {
         printJsonSuccess(payload);
       } else {
         console.log('Channel accepted');
@@ -281,6 +359,48 @@ export function createChannelCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (channelId, options) => {
       const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
+
+      const endpoint = resolveRpcEndpoint(config);
+      if (endpoint.target === 'runtime-proxy') {
+        const created = await tryCreateRuntimeChannelJob(endpoint.url, {
+          params: {
+            action: 'shutdown',
+            channelId: channelId as HexString,
+            shutdownChannelParams: {
+              channel_id: channelId as HexString,
+              force: Boolean(options.force),
+            },
+            waitForClosed: false,
+          },
+          options: {
+            idempotencyKey: `shutdown:channel:${channelId}`,
+          },
+        });
+
+        if (created) {
+          const payload = {
+            jobId: created.id,
+            jobState: created.state,
+            channelId,
+            force: Boolean(options.force),
+            message: options.force
+              ? 'Channel force close job submitted'
+              : 'Channel close job submitted',
+          };
+
+          if (json) {
+            printJsonSuccess(payload);
+          } else {
+            console.log(payload.message);
+            console.log(`  Job:        ${payload.jobId}`);
+            console.log(`  Job State:  ${payload.jobState}`);
+            console.log(`  Channel ID: ${payload.channelId}`);
+          }
+          return;
+        }
+      }
+
       await rpc.shutdownChannel({
         channel_id: channelId as HexString,
         force: Boolean(options.force),
@@ -290,7 +410,7 @@ export function createChannelCommand(config: CliConfig): Command {
         force: Boolean(options.force),
         message: options.force ? 'Channel force close initiated' : 'Channel close initiated',
       };
-      if (options.json) {
+      if (json) {
         printJsonSuccess(payload);
       } else {
         console.log(payload.message);
@@ -304,9 +424,45 @@ export function createChannelCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (channelId, options) => {
       const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
+
+      const endpoint = resolveRpcEndpoint(config);
+      if (endpoint.target === 'runtime-proxy') {
+        const created = await tryCreateRuntimeChannelJob(endpoint.url, {
+          params: {
+            action: 'abandon',
+            channelId: channelId as HexString,
+            abandonChannelParams: {
+              channel_id: channelId as HexString,
+            },
+          },
+          options: {
+            idempotencyKey: `abandon:channel:${channelId}`,
+          },
+        });
+
+        if (created) {
+          const payload = {
+            jobId: created.id,
+            jobState: created.state,
+            channelId,
+            message: 'Channel abandon job submitted.',
+          };
+          if (json) {
+            printJsonSuccess(payload);
+          } else {
+            console.log(payload.message);
+            console.log(`  Job:        ${payload.jobId}`);
+            console.log(`  Job State:  ${payload.jobState}`);
+            console.log(`  Channel ID: ${payload.channelId}`);
+          }
+          return;
+        }
+      }
+
       await rpc.abandonChannel({ channel_id: channelId as HexString });
       const payload = { channelId, message: 'Channel abandoned.' };
-      if (options.json) {
+      if (json) {
         printJsonSuccess(payload);
       } else {
         console.log(payload.message);
@@ -324,15 +480,50 @@ export function createChannelCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (channelId, options) => {
       const rpc = await createReadyRpcClient(config);
-      await rpc.updateChannel({
+      const json = Boolean(options.json);
+      const updateParams = {
         channel_id: channelId as HexString,
         enabled: options.enabled !== undefined ? options.enabled === 'true' : undefined,
         tlc_expiry_delta: options.tlcExpiryDelta,
         tlc_minimum_value: options.tlcMinimumValue,
         tlc_fee_proportional_millionths: options.tlcFeeProportionalMillionths,
-      });
+      };
+
+      const endpoint = resolveRpcEndpoint(config);
+      if (endpoint.target === 'runtime-proxy') {
+        const created = await tryCreateRuntimeChannelJob(endpoint.url, {
+          params: {
+            action: 'update',
+            channelId: channelId as HexString,
+            updateChannelParams: updateParams,
+          },
+          options: {
+            idempotencyKey: `update:channel:${channelId}`,
+          },
+        });
+
+        if (created) {
+          const payload = {
+            jobId: created.id,
+            jobState: created.state,
+            channelId,
+            message: 'Channel update job submitted.',
+          };
+          if (json) {
+            printJsonSuccess(payload);
+          } else {
+            console.log(payload.message);
+            console.log(`  Job:        ${payload.jobId}`);
+            console.log(`  Job State:  ${payload.jobState}`);
+            console.log(`  Channel ID: ${payload.channelId}`);
+          }
+          return;
+        }
+      }
+
+      await rpc.updateChannel(updateParams);
       const payload = { channelId, message: 'Channel updated.' };
-      if (options.json) {
+      if (json) {
         printJsonSuccess(payload);
       } else {
         console.log(payload.message);

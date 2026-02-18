@@ -322,6 +322,12 @@ function stateToEvent(state: JobState): import('./types.js').JobEventType {
       return 'invoice_cancelled';
     case 'channel_opening':
       return 'channel_opening';
+    case 'channel_accepting':
+      return 'channel_accepting';
+    case 'channel_abandoning':
+      return 'channel_abandoning';
+    case 'channel_updating':
+      return 'channel_updating';
     case 'channel_ready':
       return 'channel_ready';
     case 'channel_closed':

@@ -8,7 +8,8 @@ import {
   printJsonError,
   printJsonSuccess,
 } from '../lib/format.js';
-import { createReadyRpcClient } from '../lib/rpc.js';
+import { createReadyRpcClient, resolveRpcEndpoint } from '../lib/rpc.js';
+import { tryCreateRuntimeInvoiceJob, waitForRuntimeJobTerminal } from '../lib/runtime-jobs.js';
 
 export function createInvoiceCommand(config: CliConfig): Command {
   const invoice = new Command('invoice').description('Invoice lifecycle and status commands');
@@ -22,6 +23,7 @@ export function createInvoiceCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (amountArg, options) => {
       const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
 
       const amountCkb = options.amount
         ? parseFloat(options.amount)
@@ -45,6 +47,57 @@ export function createInvoiceCommand(config: CliConfig): Command {
       const expirySeconds = (options.expiry ? parseInt(options.expiry, 10) : 60) * 60;
       const currency = config.network === 'mainnet' ? 'Fibb' : 'Fibt';
 
+      const endpoint = resolveRpcEndpoint(config);
+      if (endpoint.target === 'runtime-proxy') {
+        const created = await tryCreateRuntimeInvoiceJob(endpoint.url, {
+          params: {
+            action: 'create',
+            newInvoiceParams: {
+              amount: ckbToShannons(amountCkb),
+              currency,
+              description: options.description,
+              expiry: toHex(expirySeconds),
+              payment_preimage: randomBytes32(),
+            },
+            waitForTerminal: false,
+          },
+        });
+
+        if (created) {
+          const job = await waitForRuntimeJobTerminal(endpoint.url, created.id, 60);
+          if (job.state !== 'succeeded') {
+            throw new Error(job.error?.message ?? `Invoice create job ${job.state}`);
+          }
+
+          const result = (job.result ?? {}) as {
+            invoiceAddress?: string;
+            paymentHash?: string;
+            status?: string;
+          };
+
+          const payload = {
+            jobId: job.id,
+            invoice: result.invoiceAddress,
+            paymentHash: result.paymentHash,
+            amountCkb,
+            expiresAt: new Date(Date.now() + expirySeconds * 1000).toISOString(),
+            status: (result.status ?? 'Open').toLowerCase(),
+          };
+
+          if (json) {
+            printJsonSuccess(payload);
+          } else {
+            console.log('Invoice created');
+            console.log(`  Job:          ${payload.jobId}`);
+            console.log(`  Payment Hash: ${payload.paymentHash ?? 'n/a'}`);
+            console.log(`  Amount:       ${payload.amountCkb} CKB`);
+            console.log(`  Expires At:   ${payload.expiresAt}`);
+            console.log(`  Invoice:      ${payload.invoice ?? 'n/a'}`);
+          }
+          return;
+        }
+      }
+
       const result = await rpc.newInvoice({
         amount: ckbToShannons(amountCkb),
         currency,
@@ -61,7 +114,7 @@ export function createInvoiceCommand(config: CliConfig): Command {
         status: 'open',
       };
 
-      if (options.json) {
+      if (json) {
         printJsonSuccess(payload);
       } else {
         console.log('Invoice created');
@@ -123,9 +176,54 @@ export function createInvoiceCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (paymentHash, options) => {
       const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
+
+      const endpoint = resolveRpcEndpoint(config);
+      if (endpoint.target === 'runtime-proxy') {
+        const created = await tryCreateRuntimeInvoiceJob(endpoint.url, {
+          params: {
+            action: 'cancel',
+            cancelInvoiceParams: { payment_hash: paymentHash as HexString },
+          },
+          options: {
+            idempotencyKey: paymentHash,
+          },
+        });
+
+        if (created) {
+          const job = await waitForRuntimeJobTerminal(endpoint.url, created.id, 60);
+          if (job.state !== 'succeeded') {
+            throw new Error(job.error?.message ?? `Invoice cancel job ${job.state}`);
+          }
+
+          const result = (job.result ?? {}) as {
+            status?: string;
+            invoiceAddress?: string;
+          };
+
+          const output = {
+            jobId: job.id,
+            paymentHash,
+            status: result.status ?? 'Cancelled',
+            invoice: result.invoiceAddress,
+          };
+
+          if (json) {
+            printJsonSuccess(output);
+          } else {
+            console.log('Invoice cancelled');
+            console.log(`  Job:          ${output.jobId}`);
+            console.log(`  Payment Hash: ${output.paymentHash}`);
+            console.log(`  Status:       ${output.status}`);
+            console.log(`  Invoice:      ${output.invoice ?? 'n/a'}`);
+          }
+          return;
+        }
+      }
+
       const result = await rpc.cancelInvoice({ payment_hash: paymentHash as HexString });
       const output = { paymentHash, status: result.status, invoice: result.invoice_address };
-      if (options.json) {
+      if (json) {
         printJsonSuccess(output);
       } else {
         console.log('Invoice cancelled');
@@ -142,12 +240,47 @@ export function createInvoiceCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (paymentHash, options) => {
       const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
+
+      const endpoint = resolveRpcEndpoint(config);
+      if (endpoint.target === 'runtime-proxy') {
+        const created = await tryCreateRuntimeInvoiceJob(endpoint.url, {
+          params: {
+            action: 'settle',
+            settleInvoiceParams: {
+              payment_hash: paymentHash as HexString,
+              payment_preimage: options.preimage as HexString,
+            },
+          },
+          options: {
+            idempotencyKey: paymentHash,
+          },
+        });
+
+        if (created) {
+          const job = await waitForRuntimeJobTerminal(endpoint.url, created.id, 60);
+          if (job.state !== 'succeeded') {
+            throw new Error(job.error?.message ?? `Invoice settle job ${job.state}`);
+          }
+
+          const output = { jobId: job.id, paymentHash, message: 'Invoice settled.' };
+          if (json) {
+            printJsonSuccess(output);
+          } else {
+            console.log(output.message);
+            console.log(`  Job:          ${output.jobId}`);
+            console.log(`  Payment Hash: ${output.paymentHash}`);
+          }
+          return;
+        }
+      }
+
       await rpc.settleInvoice({
         payment_hash: paymentHash as HexString,
         payment_preimage: options.preimage as HexString,
       });
 
-      if (options.json) {
+      if (json) {
         printJsonSuccess({ paymentHash, message: 'Invoice settled.' });
       } else {
         console.log('Invoice settled');

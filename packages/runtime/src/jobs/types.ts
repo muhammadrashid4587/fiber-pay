@@ -1,4 +1,7 @@
 import type {
+  AbandonChannelParams,
+  AcceptChannelParams,
+  AcceptChannelResult,
   CancelInvoiceParams,
   GetInvoiceResult,
   NewInvoiceParams,
@@ -7,6 +10,7 @@ import type {
   SendPaymentParams,
   SettleInvoiceParams,
   ShutdownChannelParams,
+  UpdateChannelParams,
 } from '@fiber-pay/sdk';
 
 // ─── Shared Job ──────────────────────────────────────────────────────────────
@@ -28,6 +32,9 @@ export type JobState =
   | 'invoice_cancelled'
   // Channel-specific lifecycle
   | 'channel_opening'
+  | 'channel_accepting'
+  | 'channel_abandoning'
+  | 'channel_updating'
   | 'channel_awaiting_ready'
   | 'channel_ready'
   | 'channel_closing'
@@ -67,6 +74,9 @@ export type JobEventType =
   | 'invoice_expired'
   | 'invoice_cancelled'
   | 'channel_opening'
+  | 'channel_accepting'
+  | 'channel_abandoning'
+  | 'channel_updating'
   | 'channel_ready'
   | 'channel_closed'
   | 'retry_scheduled'
@@ -132,12 +142,15 @@ export type InvoiceJob = Job<InvoiceJobParams, InvoiceJobResult, 'invoice'>;
 
 // ─── Channel Job ─────────────────────────────────────────────────────────────
 
-export type ChannelJobAction = 'open' | 'shutdown';
+export type ChannelJobAction = 'open' | 'shutdown' | 'accept' | 'abandon' | 'update';
 
 export interface ChannelJobParams {
   action: ChannelJobAction;
   openChannelParams?: OpenChannelParams;
   shutdownChannelParams?: ShutdownChannelParams;
+  acceptChannelParams?: AcceptChannelParams;
+  abandonChannelParams?: AbandonChannelParams;
+  updateChannelParams?: UpdateChannelParams;
   /** Optional peer filter for locating channel after open */
   peerId?: string;
   /** Optional channel id to wait for */
@@ -149,6 +162,7 @@ export interface ChannelJobParams {
 
 export interface ChannelJobResult {
   temporaryChannelId?: OpenChannelResult['temporary_channel_id'];
+  acceptedChannelId?: AcceptChannelResult['channel_id'];
   channelId?: `0x${string}`;
   state?: string;
 }

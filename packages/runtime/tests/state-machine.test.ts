@@ -53,7 +53,21 @@ describe('JobStateMachine', () => {
   it('supports channel waiting_retry transitions', () => {
     expect(channelStateMachine.transition('executing', 'payment_failed_retryable')).toBe('waiting_retry');
     expect(channelStateMachine.transition('channel_opening', 'payment_failed_retryable')).toBe('waiting_retry');
+    expect(channelStateMachine.transition('channel_accepting', 'payment_failed_retryable')).toBe('waiting_retry');
+    expect(channelStateMachine.transition('channel_abandoning', 'payment_failed_retryable')).toBe('waiting_retry');
+    expect(channelStateMachine.transition('channel_updating', 'payment_failed_retryable')).toBe('waiting_retry');
     expect(channelStateMachine.transition('waiting_retry', 'retry_delay_elapsed')).toBe('executing');
     expect(channelStateMachine.transition('waiting_retry', 'cancel')).toBe('cancelled');
+  });
+
+  it('supports channel accept/abandon/update success transitions', () => {
+    expect(channelStateMachine.transition('executing', 'channel_accepting')).toBe('channel_accepting');
+    expect(channelStateMachine.transition('channel_accepting', 'payment_success')).toBe('succeeded');
+
+    expect(channelStateMachine.transition('executing', 'channel_abandoning')).toBe('channel_abandoning');
+    expect(channelStateMachine.transition('channel_abandoning', 'payment_success')).toBe('succeeded');
+
+    expect(channelStateMachine.transition('executing', 'channel_updating')).toBe('channel_updating');
+    expect(channelStateMachine.transition('channel_updating', 'payment_success')).toBe('succeeded');
   });
 });
