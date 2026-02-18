@@ -55,6 +55,45 @@ fiber-pay payment send <invoice>
 fiber-pay job list
 ```
 
+## Minimal runtime-backed orchestration (single node, default config)
+
+Use this when you want the simplest CLI path with runtime job orchestration, without `--profile`.
+
+Terminal A (keep running):
+
+```bash
+fiber-pay binary download --version v0.6.1
+fiber-pay node start
+```
+
+Terminal B:
+
+```bash
+# 1) Connect to a reachable peer (replace with a real peer multiaddr)
+PEER_MULTIADDR="<peer-multiaddr>"
+fiber-pay peer connect "$PEER_MULTIADDR" --json
+
+# 2) Open channel and wait until ChannelReady
+fiber-pay channel open --peer "$PEER_MULTIADDR" --funding 200 --json
+fiber-pay channel watch --state ChannelReady --timeout 180 --on-timeout fail --json
+
+# 3) Preflight after channel is ready
+fiber-pay node ready --json
+
+# 4) Submit payment through runtime job path and wait for terminal state
+fiber-pay payment send <invoice> --wait --json
+
+# 5) Inspect orchestration result
+fiber-pay job list --type payment --json
+fiber-pay job get <jobId> --json
+fiber-pay job events <jobId> --json
+```
+
+Notes:
+
+- `payment send --wait --json` uses runtime job orchestration when runtime proxy is active (default with `node start`).
+- `payment send` does not auto-open channels; open and verify `ChannelReady` first as shown above.
+
 Use `--json` when command output is consumed by scripts or agents.
 Non-stream commands emit a single envelope (`success + data|error`), while watch commands emit NDJSON events.
 JSON failures include stable fields (`error.code`, `error.message`) and may include `error.recoverable`, `error.suggestion`, `error.details`.
