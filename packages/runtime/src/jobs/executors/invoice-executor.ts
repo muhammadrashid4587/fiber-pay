@@ -36,7 +36,7 @@ export async function* runInvoiceJob(
       }
       const created = await rpc.newInvoice(current.params.newInvoiceParams);
       const paymentHash = created.invoice.data.payment_hash;
-      const createdStatus = created.invoice.is_expired ? 'Expired' : 'Open';
+      const createdStatus = 'Open';
 
       current = {
         ...current,
@@ -142,6 +142,7 @@ export async function* runInvoiceJob(
       if (!current.params.getInvoicePaymentHash) {
         throw new Error('Invoice watch job requires getInvoicePaymentHash');
       }
+      const paymentHash = current.params.getInvoicePaymentHash;
       while (true) {
         if (signal.aborted) {
           current = transitionJobState(current, invoiceStateMachine, 'cancel');
@@ -149,7 +150,7 @@ export async function* runInvoiceJob(
           return;
         }
 
-        const invoice = await rpc.getInvoice({ payment_hash: current.params.getInvoicePaymentHash });
+        const invoice = await rpc.getInvoice({ payment_hash: paymentHash });
         current = {
           ...current,
           state:
@@ -163,7 +164,7 @@ export async function* runInvoiceJob(
                     ? 'invoice_expired'
                     : 'invoice_active',
           result: {
-            paymentHash: current.params.getInvoicePaymentHash,
+            paymentHash,
             invoiceAddress: invoice.invoice_address,
             status: invoice.status,
             invoice: invoice.invoice,

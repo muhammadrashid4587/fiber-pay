@@ -94,12 +94,7 @@ export function createPaymentCommand(config: CliConfig): Command {
             : created;
 
           const payload = {
-            paymentHash:
-              getJobPaymentHash(job) ??
-              (typeof paymentParams.payment_hash === 'string'
-                ? paymentParams.payment_hash
-                : undefined) ??
-              'unknown',
+            paymentHash: getJobPaymentHash(job) ?? 'unknown',
             status:
               job.state === 'succeeded'
                 ? 'success'

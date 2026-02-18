@@ -58,6 +58,34 @@ export class InvoiceTracker extends BaseMonitor {
               },
             });
           }
+
+          if (currentStatus === 'Expired') {
+            await this.alerts.emit({
+              type: 'invoice_expired',
+              priority: 'medium',
+              source: this.name,
+              data: {
+                paymentHash: invoice.paymentHash,
+                previousStatus,
+                currentStatus,
+                invoice: next,
+              },
+            });
+          }
+
+          if (currentStatus === 'Cancelled') {
+            await this.alerts.emit({
+              type: 'invoice_cancelled',
+              priority: 'medium',
+              source: this.name,
+              data: {
+                paymentHash: invoice.paymentHash,
+                previousStatus,
+                currentStatus,
+                invoice: next,
+              },
+            });
+          }
         }
       } catch (error) {
         if (isExpectedTrackerError(error)) {

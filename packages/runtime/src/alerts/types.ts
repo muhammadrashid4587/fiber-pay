@@ -8,6 +8,8 @@ export type AlertType =
   | 'channel_became_ready'
   | 'channel_closing'
   | 'incoming_payment_received'
+  | 'invoice_expired'
+  | 'invoice_cancelled'
   | 'outgoing_payment_completed'
   | 'outgoing_payment_failed'
   | 'channel_balance_changed'
@@ -20,7 +22,15 @@ export type AlertType =
   | 'payment_job_started'
   | 'payment_job_retrying'
   | 'payment_job_succeeded'
-  | 'payment_job_failed';
+  | 'payment_job_failed'
+  | 'invoice_job_started'
+  | 'invoice_job_retrying'
+  | 'invoice_job_succeeded'
+  | 'invoice_job_failed'
+  | 'channel_job_started'
+  | 'channel_job_retrying'
+  | 'channel_job_succeeded'
+  | 'channel_job_failed';
 
 export const alertTypeValues: AlertType[] = [
   'channel_state_changed',
@@ -28,6 +38,8 @@ export const alertTypeValues: AlertType[] = [
   'channel_became_ready',
   'channel_closing',
   'incoming_payment_received',
+  'invoice_expired',
+  'invoice_cancelled',
   'outgoing_payment_completed',
   'outgoing_payment_failed',
   'channel_balance_changed',
@@ -40,6 +52,14 @@ export const alertTypeValues: AlertType[] = [
   'payment_job_retrying',
   'payment_job_succeeded',
   'payment_job_failed',
+  'invoice_job_started',
+  'invoice_job_retrying',
+  'invoice_job_succeeded',
+  'invoice_job_failed',
+  'channel_job_started',
+  'channel_job_retrying',
+  'channel_job_succeeded',
+  'channel_job_failed',
 ];
 
 export const alertPriorityOrder: Record<AlertPriority, number> = {
@@ -133,6 +153,25 @@ export interface PaymentJobAlertData {
   retryCount: number;
   error?: string;
   fee?: string;
+}
+
+export interface InvoiceJobAlertData {
+  jobId: string;
+  idempotencyKey: string;
+  retryCount: number;
+  action?: string;
+  status?: string;
+  paymentHash?: `0x${string}`;
+  error?: string;
+}
+
+export interface ChannelJobAlertData {
+  jobId: string;
+  idempotencyKey: string;
+  retryCount: number;
+  action?: string;
+  channelId?: `0x${string}`;
+  error?: string;
 }
 
 export interface AlertBackend {

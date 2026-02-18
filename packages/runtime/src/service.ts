@@ -4,7 +4,15 @@ import { AlertManager } from './alerts/alert-manager.js';
 import { StdoutAlertBackend } from './alerts/backends/stdout.js';
 import { WebhookAlertBackend } from './alerts/backends/webhook.js';
 import { WebsocketAlertBackend } from './alerts/backends/websocket.js';
-import type { Alert, AlertBackend, AlertFilter } from './alerts/types.js';
+import type {
+  Alert,
+  AlertBackend,
+  AlertFilter,
+  AlertType,
+  ChannelJobAlertData,
+  InvoiceJobAlertData,
+  PaymentJobAlertData,
+} from './alerts/types.js';
 import { createRuntimeConfig, type RuntimeConfig, type RuntimeConfigInput } from './config.js';
 import { ChannelMonitor } from './monitors/channel-monitor.js';
 import { HealthMonitor } from './monitors/health-monitor.js';
@@ -16,6 +24,7 @@ import { RpcMonitorProxy } from './proxy/rpc-proxy.js';
 import { MemoryStore } from './storage/memory-store.js';
 import { SqliteJobStore } from './storage/sqlite-store.js';
 import { JobManager } from './jobs/job-manager.js';
+import type { ChannelJob, InvoiceJob, PaymentJob, RuntimeJob } from './jobs/types.js';
 
 export class FiberMonitorService extends EventEmitter {
   private readonly config: RuntimeConfig;
@@ -58,6 +67,8 @@ export class FiberMonitorService extends EventEmitter {
           retryPolicy: this.config.jobs.retryPolicy,
         })
       : null;
+
+    this.wireJobAlerts();
 
     const hooks = {};
 
@@ -239,5 +250,140 @@ export class FiberMonitorService extends EventEmitter {
         port: Number(portText),
       });
     });
+  }
+
+  private wireJobAlerts(): void {
+    if (!this.jobManager) {
+      return;
+    }
+
+    this.jobManager.on('job:created', (job) => {
+      this.emitJobAlert(job, 'started', 'low');
+      this.trackJobArtifacts(job);
+    });
+
+    this.jobManager.on('job:state_changed', (job) => {
+      this.trackJobArtifacts(job);
+      if (job.state === 'waiting_retry') {
+        this.emitJobAlert(job, 'retrying', 'medium');
+      }
+    });
+
+    this.jobManager.on('job:succeeded', (job) => {
+      this.trackJobArtifacts(job);
+      this.emitJobAlert(job, 'succeeded', 'medium');
+    });
+
+    this.jobManager.on('job:failed', (job) => {
+      this.trackJobArtifacts(job);
+      this.emitJobAlert(job, 'failed', 'high');
+    });
+  }
+
+  private emitJobAlert(
+    job: RuntimeJob,
+    lifecycle: 'started' | 'retrying' | 'succeeded' | 'failed',
+    priority: 'low' | 'medium' | 'high',
+  ): void {
+    const type = this.toJobAlertType(job.type, lifecycle);
+    const data = this.toJobAlertData(job);
+    void this.alerts.emit({
+      type,
+      priority,
+      source: 'job-manager',
+      data,
+    });
+  }
+
+  private toJobAlertType(
+    jobType: RuntimeJob['type'],
+    lifecycle: 'started' | 'retrying' | 'succeeded' | 'failed',
+  ): AlertType {
+    return `${jobType}_job_${lifecycle}` as AlertType;
+  }
+
+  private toJobAlertData(job: RuntimeJob): PaymentJobAlertData | InvoiceJobAlertData | ChannelJobAlertData {
+    const error = job.error?.message;
+
+    if (job.type === 'payment') {
+      const paymentJob = job as PaymentJob;
+      return {
+        jobId: paymentJob.id,
+        idempotencyKey: paymentJob.idempotencyKey,
+        retryCount: paymentJob.retryCount,
+        error,
+        fee: paymentJob.result?.fee,
+      };
+    }
+
+    if (job.type === 'invoice') {
+      const invoiceJob = job as InvoiceJob;
+      return {
+        jobId: invoiceJob.id,
+        idempotencyKey: invoiceJob.idempotencyKey,
+        retryCount: invoiceJob.retryCount,
+        action: invoiceJob.params.action,
+        status: invoiceJob.result?.status,
+        paymentHash: this.extractInvoiceHash(invoiceJob),
+        error,
+      };
+    }
+
+    const channelJob = job as ChannelJob;
+    return {
+      jobId: channelJob.id,
+      idempotencyKey: channelJob.idempotencyKey,
+      retryCount: channelJob.retryCount,
+      action: channelJob.params.action,
+      channelId: this.extractChannelId(channelJob),
+      error,
+    };
+  }
+
+  private trackJobArtifacts(job: RuntimeJob): void {
+    if (job.type === 'payment') {
+      const paymentHash = this.extractPaymentHash(job);
+      if (paymentHash) {
+        this.store.addTrackedPayment(paymentHash);
+      }
+      return;
+    }
+
+    if (job.type === 'invoice') {
+      const paymentHash = this.extractInvoiceHash(job);
+      if (paymentHash) {
+        this.store.addTrackedInvoice(paymentHash);
+      }
+    }
+  }
+
+  private extractPaymentHash(job: PaymentJob): `0x${string}` | undefined {
+    return this.normalizeHash(job.result?.paymentHash ?? job.params.sendPaymentParams.payment_hash);
+  }
+
+  private extractInvoiceHash(job: InvoiceJob): `0x${string}` | undefined {
+    return this.normalizeHash(
+      job.result?.paymentHash ??
+        job.params.getInvoicePaymentHash ??
+        job.params.cancelInvoiceParams?.payment_hash ??
+        job.params.settleInvoiceParams?.payment_hash ??
+        job.params.newInvoiceParams?.payment_hash,
+    );
+  }
+
+  private extractChannelId(job: ChannelJob): `0x${string}` | undefined {
+    return this.normalizeHash(
+      job.result?.channelId ??
+        job.result?.acceptedChannelId ??
+        job.params.channelId ??
+        job.params.shutdownChannelParams?.channel_id,
+    );
+  }
+
+  private normalizeHash(value: string | undefined): `0x${string}` | undefined {
+    if (!value || !value.startsWith('0x')) {
+      return undefined;
+    }
+    return value as `0x${string}`;
   }
 }
