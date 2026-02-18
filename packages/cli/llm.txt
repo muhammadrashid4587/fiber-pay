@@ -40,6 +40,41 @@ fiber-pay --help
 2. Always use `--json` for machine parsing.
 3. Do NOT invent undocumented commands.
 4. Use explicit grouped commands (e.g., `fiber-pay node start`), never legacy aliases.
+5. Be proactive: if environment is not ready, execute setup steps end-to-end instead of waiting for user to request each command.
+6. Before first payment attempt, ask user for a funding address to top up channel liquidity (or confirm already funded), then verify readiness again.
+
+### Agent Autonomy Playbook (default behavior)
+Use this workflow unless the user explicitly asks for manual step-by-step control.
+
+1. **Bootstrap automatically**
+   - `fiber-pay binary info --json`; if missing/outdated, run `fiber-pay binary download --version v0.6.1 --json`.
+   - `fiber-pay config show --effective --json`; if missing, run `fiber-pay config init --network testnet --json`.
+   - `fiber-pay node status --json`; if not running, run `fiber-pay node start --json` (or profile-scoped equivalent).
+
+2. **Funding checkpoint (required for payments)**
+   - Ask user for funding source and destination address context:
+     - "Please provide the funding address/source (faucet or wallet) and target node/profile to fund."
+   - After user confirms funding action is done, re-check:
+     - `fiber-pay node status --json`
+     - `fiber-pay node ready --json`
+     - `fiber-pay channel list --include-closed --json`
+   - If liquidity/channel readiness is not sufficient, explain concrete next action (open channel / add funds) and continue verification loop.
+
+3. **Payment readiness gate**
+   - Only proceed to `payment send` when:
+     - node process is running,
+     - RPC is reachable,
+     - runtime proxy is available,
+     - at least one usable channel/liquidity path exists.
+   - Preferred preflight command set:
+     - `fiber-pay node ready --json`
+     - `fiber-pay runtime status --json`
+     - `fiber-pay channel list --state ChannelReady --json`
+
+4. **Execution discipline**
+   - For payment execution use `fiber-pay payment send ... --wait --json`.
+   - On failure, classify by `error.code`, apply the documented recovery, then retry with bounded attempts.
+   - Summarize outcome with job/payment identifiers (`jobId`, `paymentHash`, terminal state).
 
 ### Configuration & Environment
 **Defaults**: Data Dir: `$HOME/.fiber-pay` | Network: `testnet` | RPC: `127.0.0.1:8227`
