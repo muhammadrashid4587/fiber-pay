@@ -52,6 +52,11 @@
       "agentAction": "Inspect start logs and config ports; avoid immediate retry loops"
     },
     {
+      "code": "NODE_RUNTIME_START_FAILED",
+      "meaning": "Node started but embedded runtime watcher/proxy failed to initialize",
+      "agentAction": "Retry with a free runtime proxy listen port or start node without --with-runtime"
+    },
+    {
       "code": "NODE_STOPPED_UNEXPECTEDLY",
       "meaning": "Running node exited unexpectedly",
       "agentAction": "Capture logs and restart after root-cause check"

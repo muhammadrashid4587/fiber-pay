@@ -8,11 +8,11 @@ import {
   getFiberBinaryInfo,
   ProcessManager,
 } from '@fiber-pay/node';
+import { startRuntimeService } from '@fiber-pay/runtime';
 import {
   buildMultiaddrFromNodeId,
   buildMultiaddrFromRpcUrl,
   ChannelState,
-  CorsProxy,
   createKeyManager,
   nodeIdToPeerId,
   type Script,
@@ -140,12 +140,83 @@ function getBinaryVersion(binaryPath: string): string {
   }
 }
 
+function getCliEntrypoint(): string {
+  const entrypoint = process.argv[1];
+  if (!entrypoint) {
+    throw new Error('Unable to resolve CLI entrypoint path');
+  }
+  return entrypoint;
+}
+
+function startRuntimeDaemonFromNode(params: {
+  dataDir: string;
+  rpcUrl: string;
+  proxyListen: string;
+  stateFilePath: string;
+}): { ok: true } | { ok: false; message: string } {
+  const cliEntrypoint = getCliEntrypoint();
+  const result = spawnSync(
+    process.execPath,
+    [
+      cliEntrypoint,
+      '--data-dir',
+      params.dataDir,
+      '--rpc-url',
+      params.rpcUrl,
+      'runtime',
+      'start',
+      '--daemon',
+      '--fiber-rpc-url',
+      params.rpcUrl,
+      '--proxy-listen',
+      params.proxyListen,
+      '--state-file',
+      params.stateFilePath,
+      '--json',
+    ],
+    { encoding: 'utf-8' },
+  );
+
+  if (result.status === 0) {
+    return { ok: true };
+  }
+
+  const stderr = (result.stderr ?? '').trim();
+  const stdout = (result.stdout ?? '').trim();
+  const details = stderr || stdout || `exit code ${result.status ?? 'unknown'}`;
+  return { ok: false, message: details };
+}
+
+function stopRuntimeDaemonFromNode(params: { dataDir: string; rpcUrl: string }): void {
+  const cliEntrypoint = getCliEntrypoint();
+  spawnSync(
+    process.execPath,
+    [
+      cliEntrypoint,
+      '--data-dir',
+      params.dataDir,
+      '--rpc-url',
+      params.rpcUrl,
+      'runtime',
+      'stop',
+      '--json',
+    ],
+    { encoding: 'utf-8' },
+  );
+}
+
 export function createNodeCommand(config: CliConfig): Command {
   const node = new Command('node').description('Node management');
 
   node
     .command('start')
-    .option('--cors-proxy [port]')
+    .option('--with-runtime', 'Start runtime watcher alongside node and expose runtime proxy')
+    .option('--runtime-daemon', 'Start runtime watcher as a detached daemon process')
+    .option(
+      '--runtime-proxy-listen <host:port>',
+      'Runtime monitor proxy listen address',
+      '127.0.0.1:8228',
+    )
     .option('--event-stream <format>', 'Event stream format for --json mode (jsonl)', 'jsonl')
     .option('--json')
     .action(async (options) => {
@@ -182,12 +253,24 @@ export function createNodeCommand(config: CliConfig): Command {
         process.exit(1);
       }
 
-      const corsProxyPort =
-        options.corsProxy === true
-          ? 28227
-          : options.corsProxy
-            ? parseInt(String(options.corsProxy), 10)
-            : undefined;
+      const withRuntime = Boolean(options.withRuntime);
+      const runtimeDaemon = Boolean(options.runtimeDaemon);
+      const runtimeProxyListen = String(options.runtimeProxyListen ?? '127.0.0.1:8228');
+
+      if (runtimeDaemon && !withRuntime) {
+        const message = '--runtime-daemon requires --with-runtime';
+        if (json) {
+          printJsonError({
+            code: 'NODE_RUNTIME_START_FAILED',
+            message,
+            recoverable: true,
+            suggestion: 'Use `fiber-pay node start --with-runtime --runtime-daemon`.',
+          });
+        } else {
+          console.error(`❌ ${message}`);
+        }
+        process.exit(1);
+      }
 
       const binaryPath = config.binaryPath || getDefaultBinaryPath();
       await ensureFiberBinary();
@@ -258,25 +341,7 @@ export function createNodeCommand(config: CliConfig): Command {
       }
       emitStage('process_started', 'ok', { pid: processId ?? null });
 
-      let corsProxy: CorsProxy | undefined;
-      if (corsProxyPort) {
-        corsProxy = new CorsProxy({
-          port: corsProxyPort,
-          targetUrl: config.rpcUrl,
-        });
-
-        try {
-          await corsProxy.start();
-          if (!json) {
-            console.log(`🌐 CORS proxy started on http://127.0.0.1:${corsProxyPort}`);
-          }
-        } catch (error) {
-          const message = `Failed to start CORS proxy: ${error instanceof Error ? error.message : String(error)}`;
-          if (!json) {
-            console.error(`⚠️  ${message}`);
-          }
-        }
-      }
+      let runtime: Awaited<ReturnType<typeof startRuntimeService>> | undefined;
 
       const rpc = createRpcClient(config);
       let rpcReady = true;
@@ -305,6 +370,62 @@ export function createNodeCommand(config: CliConfig): Command {
         }
         removePidFile(config.dataDir);
         process.exit(1);
+      }
+
+      if (withRuntime) {
+        try {
+          if (runtimeDaemon) {
+            const daemonStart = startRuntimeDaemonFromNode({
+              dataDir: config.dataDir,
+              rpcUrl: config.rpcUrl,
+              proxyListen: runtimeProxyListen,
+              stateFilePath: join(config.dataDir, 'runtime-state.json'),
+            });
+            if (!daemonStart.ok) {
+              throw new Error(daemonStart.message);
+            }
+          } else {
+            runtime = await startRuntimeService({
+              fiberRpcUrl: config.rpcUrl,
+              proxy: {
+                enabled: true,
+                listen: runtimeProxyListen,
+              },
+              storage: {
+                stateFilePath: join(config.dataDir, 'runtime-state.json'),
+              },
+            });
+          }
+          emitStage('runtime_started', 'ok', {
+            proxyListen: runtimeProxyListen,
+            daemon: runtimeDaemon,
+          });
+        } catch (error) {
+          const message = `Runtime failed to start: ${error instanceof Error ? error.message : String(error)}`;
+          emitStage('runtime_started', 'error', {
+            code: 'NODE_RUNTIME_START_FAILED',
+            message,
+            proxyListen: runtimeProxyListen,
+          });
+          if (json) {
+            printJsonError({
+              code: 'NODE_RUNTIME_START_FAILED',
+              message,
+              recoverable: true,
+              suggestion:
+                'Retry with a free --runtime-proxy-listen port or start node without --with-runtime.',
+              details: {
+                runtimeProxyListen,
+              },
+            });
+          } else {
+            console.error(`❌ ${message}`);
+          }
+
+          removePidFile(config.dataDir);
+          await processManager.stop().catch(() => undefined);
+          process.exit(1);
+        }
       }
 
       if (!rpcReady) {
@@ -379,13 +500,18 @@ export function createNodeCommand(config: CliConfig): Command {
           binaryPath,
           binaryVersion,
           pid: processId ?? null,
-          corsProxyUrl: corsProxy ? `http://127.0.0.1:${corsProxyPort}` : null,
+          runtimeEnabled: withRuntime,
+          runtimeDaemon: withRuntime ? runtimeDaemon : null,
+          proxyUrl: withRuntime ? `http://${runtimeProxyListen}` : null,
         });
       } else {
         console.log('✅ Fiber node started successfully!');
         console.log(`   RPC endpoint: ${config.rpcUrl}`);
-        if (corsProxy) {
-          console.log(`   CORS proxy:   http://127.0.0.1:${corsProxyPort} (browser-safe endpoint)`);
+        if (withRuntime) {
+          console.log(
+            `   Runtime proxy: http://${runtimeProxyListen} (browser-safe endpoint + monitoring)`,
+          );
+          console.log(`   Runtime mode:  ${runtimeDaemon ? 'daemon' : 'embedded'}`);
         }
         console.log('   Press Ctrl+C to stop.');
       }
@@ -397,8 +523,10 @@ export function createNodeCommand(config: CliConfig): Command {
         if (!json) {
           console.log('\n🛑 Shutting down...');
         }
-        if (corsProxy) {
-          await corsProxy.stop();
+        if (runtimeDaemon && withRuntime) {
+          stopRuntimeDaemonFromNode({ dataDir: config.dataDir, rpcUrl: config.rpcUrl });
+        } else if (runtime) {
+          await runtime.stop();
         }
         removePidFile(config.dataDir);
         await processManager.stop();
