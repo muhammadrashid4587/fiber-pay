@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { type Alert, formatRuntimeAlert } from '@fiber-pay/runtime';
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
 import { printJsonError, printJsonSuccess } from '../lib/format.js';
@@ -16,6 +17,34 @@ const ALLOWED_SOURCES = new Set<PersistedLogSourceOption>([
   'fnn-stdout',
   'fnn-stderr',
 ]);
+
+function parseRuntimeAlertLine(line: string): Alert | null {
+  try {
+    const parsed = JSON.parse(line) as Alert;
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function formatRuntimeAlertHuman(line: string): string {
+  const parsed = parseRuntimeAlertLine(line);
+  if (!parsed) {
+    return line;
+  }
+
+  return formatRuntimeAlert(parsed);
+}
+
+function coerceJsonLineForOutput(source: PersistedLogSourceOption, line: string): unknown {
+  if (source !== 'runtime') {
+    return line;
+  }
+  return parseRuntimeAlertLine(line) ?? line;
+}
 
 export function createLogsCommand(config: CliConfig): Command {
   return new Command('logs')
@@ -94,6 +123,7 @@ export function createLogsCommand(config: CliConfig): Command {
         exists: boolean;
         lineCount: number;
         lines: string[];
+        jsonLines: unknown[];
       }>;
 
       for (const target of targets) {
@@ -127,6 +157,7 @@ export function createLogsCommand(config: CliConfig): Command {
           exists,
           lineCount: lines.length,
           lines,
+          jsonLines: lines.map((line) => coerceJsonLineForOutput(target.source, line)),
         });
       }
 
@@ -134,7 +165,14 @@ export function createLogsCommand(config: CliConfig): Command {
         printJsonSuccess({
           source,
           tail,
-          entries,
+          entries: entries.map((entry) => ({
+            source: entry.source,
+            title: entry.title,
+            path: entry.path,
+            exists: entry.exists,
+            lineCount: entry.lineCount,
+            lines: entry.jsonLines,
+          })),
         });
         return;
       }
@@ -151,7 +189,8 @@ export function createLogsCommand(config: CliConfig): Command {
           continue;
         }
         for (const line of entry.lines) {
-          console.log(`  ${line}`);
+          const output = entry.source === 'runtime' ? formatRuntimeAlertHuman(line) : line;
+          console.log(`  ${output}`);
         }
       }
 
@@ -203,7 +242,8 @@ export function createLogsCommand(config: CliConfig): Command {
             }
 
             for (const line of newLines) {
-              console.log(`[${state.title}] ${line}`);
+              const output = target.source === 'runtime' ? formatRuntimeAlertHuman(line) : line;
+              console.log(`[${state.title}] ${output}`);
             }
             state.seenLines = total;
           }

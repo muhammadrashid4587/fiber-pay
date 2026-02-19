@@ -12,3 +12,4 @@ export { paymentStateMachine } from './jobs/state-machine.js';
 export { classifyRpcError } from './jobs/error-classifier.js';
 export { defaultPaymentRetryPolicy, shouldRetry, computeRetryDelay } from './jobs/retry-policy.js';
 export { alertPriorityOrder, alertTypeValues, isAlertPriority, isAlertType } from './alerts/types.js';
+export { formatRuntimeAlert } from './alerts/format.js';
