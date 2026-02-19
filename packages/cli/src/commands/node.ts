@@ -14,9 +14,10 @@ export function createNodeCommand(config: CliConfig): Command {
 
   node
     .command('start')
-    .option('--runtime-daemon', 'Start runtime watcher as a detached daemon process')
+    .option('--daemon', 'Start node in detached background mode (node + runtime)')
     .option('--runtime-proxy-listen <host:port>', 'Runtime monitor proxy listen address')
     .option('--event-stream <format>', 'Event stream format for --json mode (jsonl)', 'jsonl')
+    .option('--quiet-fnn', 'Do not mirror fnn stdout/stderr to console; keep file persistence')
     .option('--json')
     .action(async (options) => {
       await runNodeStartCommand(config, options);

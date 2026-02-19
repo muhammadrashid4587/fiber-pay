@@ -4,6 +4,7 @@ export type RuntimeJobRecord = {
   id: string;
   type?: string;
   state: string;
+  params?: Record<string, unknown>;
   idempotencyKey?: string;
   retryCount?: number;
   maxRetries?: number;

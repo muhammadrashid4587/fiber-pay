@@ -101,7 +101,7 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
       idempotencyKey,
     }) as PaymentJob;
 
-    this.store.addJobEvent(job.id, 'created', undefined, 'queued');
+    this.store.addJobEvent(job.id, 'created', undefined, 'queued', this.buildEventData(job));
     this.emit('job:created', job);
     this.schedule(job);
     return job;
@@ -143,7 +143,7 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
         state: 'cancelled',
         completedAt: Date.now(),
       }) as RuntimeJob;
-      this.store.addJobEvent(id, 'cancelled', job.state, 'cancelled');
+      this.store.addJobEvent(id, 'cancelled', job.state, 'cancelled', this.buildEventData(updated));
       this.emit('job:cancelled', updated);
     }
   }
@@ -203,7 +203,7 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
       idempotencyKey,
     }) as RuntimeJob;
 
-    this.store.addJobEvent(job.id, 'created', undefined, 'queued');
+    this.store.addJobEvent(job.id, 'created', undefined, 'queued', this.buildEventData(job));
     this.emit('job:created', job);
     this.schedule(job);
     return job;
@@ -271,7 +271,13 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
           const fromState = prev?.state ?? job.state;
 
           this.store.updateJob<unknown, unknown>(updated.id, updated as Partial<import('./types.js').Job>);
-          this.store.addJobEvent(updated.id, stateToEvent(updated.state), fromState, updated.state);
+          this.store.addJobEvent(
+            updated.id,
+            stateToEvent(updated.state),
+            fromState,
+            updated.state,
+            this.buildEventData(updated),
+          );
 
           this.emit('job:state_changed', updated, fromState);
 
@@ -285,6 +291,56 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
     })();
 
     this.active.set(job.id, { abortController, promise });
+  }
+
+  private buildEventData(job: RuntimeJob): Record<string, unknown> {
+    const base: Record<string, unknown> = {
+      type: job.type,
+      idempotencyKey: job.idempotencyKey,
+      retryCount: job.retryCount,
+      maxRetries: job.maxRetries,
+      nextRetryAt: job.nextRetryAt,
+    };
+
+    if (job.error) {
+      base.error = {
+        category: job.error.category,
+        retryable: job.error.retryable,
+        message: job.error.message,
+      };
+    }
+
+    if (job.type === 'payment') {
+      const paymentJob = job as PaymentJob;
+      return {
+        ...base,
+        invoice: paymentJob.params.invoice,
+        paymentHash: paymentJob.result?.paymentHash,
+        paymentStatus: paymentJob.result?.status,
+      };
+    }
+
+    if (job.type === 'invoice') {
+      const invoiceJob = job as InvoiceJob;
+      return {
+        ...base,
+        action: invoiceJob.params.action,
+        paymentHash: invoiceJob.result?.paymentHash ?? invoiceJob.params.getInvoicePaymentHash,
+        invoiceStatus: invoiceJob.result?.status,
+      };
+    }
+
+    const channelJob = job as ChannelJob;
+    return {
+      ...base,
+      action: channelJob.params.action,
+      channelId:
+        channelJob.params.channelId ??
+        channelJob.params.shutdownChannelParams?.channel_id ??
+        channelJob.result?.channelId,
+      peerId: channelJob.params.peerId ?? channelJob.params.openChannelParams?.peer_id,
+      channelState: channelJob.result?.state,
+    };
   }
 }
 
@@ -328,8 +384,12 @@ function stateToEvent(state: JobState): import('./types.js').JobEventType {
       return 'channel_abandoning';
     case 'channel_updating':
       return 'channel_updating';
+    case 'channel_awaiting_ready':
+      return 'channel_awaiting_ready';
     case 'channel_ready':
       return 'channel_ready';
+    case 'channel_closing':
+      return 'channel_closing';
     case 'channel_closed':
       return 'channel_closed';
     case 'waiting_retry':

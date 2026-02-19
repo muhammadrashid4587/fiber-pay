@@ -1,8 +1,11 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
 import { printJsonError, printJsonSuccess } from '../lib/format.js';
 import { resolveRpcEndpoint } from '../lib/rpc.js';
 import type { RuntimeJobEventRecord, RuntimeJobRecord } from '../lib/runtime-jobs.js';
+import { readRuntimeMeta } from '../lib/runtime-meta.js';
 
 export function createJobCommand(config: CliConfig): Command {
   const job = new Command('job').description('Runtime job management commands');
@@ -89,8 +92,83 @@ export function createJobCommand(config: CliConfig): Command {
     });
 
   job
+    .command('trace')
+    .argument('<jobId>')
+    .option('--tail <n>', 'Max lines to inspect per log file', '400')
+    .option('--json')
+    .action(async (jobId, options) => {
+      const json = Boolean(options.json);
+      const tailInput = Number.parseInt(String(options.tail ?? '400'), 10);
+      const tail = Number.isFinite(tailInput) && tailInput > 0 ? tailInput : 400;
+
+      const runtimeUrl = getRuntimeUrlOrExit(config, json);
+      const jobResponse = await fetch(`${runtimeUrl}/jobs/${jobId}`);
+      if (!jobResponse.ok) {
+        return handleHttpError(jobResponse, 'JOB_TRACE_GET_FAILED', json);
+      }
+
+      const eventsResponse = await fetch(`${runtimeUrl}/jobs/${jobId}/events`);
+      if (!eventsResponse.ok) {
+        return handleHttpError(eventsResponse, 'JOB_TRACE_EVENTS_FAILED', json);
+      }
+
+      const jobRecord = (await jobResponse.json()) as RuntimeJobRecord;
+      const eventsPayload = (await eventsResponse.json()) as { events: RuntimeJobEventRecord[] };
+      const tokens = collectTraceTokens(jobRecord, eventsPayload.events);
+
+      const meta = readRuntimeMeta(config.dataDir);
+      const logPaths = resolveTraceLogPaths(config.dataDir, meta);
+      const runtimeAlertMatches = collectRelatedLines(logPaths.runtimeAlerts, tokens, tail);
+      const fnnStdoutMatches = collectRelatedLines(logPaths.fnnStdout, tokens, tail);
+      const fnnStderrMatches = collectRelatedLines(logPaths.fnnStderr, tokens, tail);
+
+      const result = {
+        job: jobRecord,
+        events: eventsPayload.events,
+        trace: {
+          tokens,
+          logPaths,
+          matches: {
+            runtimeAlerts: runtimeAlertMatches,
+            fnnStdout: fnnStdoutMatches,
+            fnnStderr: fnnStderrMatches,
+          },
+        },
+      };
+
+      if (json) {
+        printJsonSuccess(result);
+        return;
+      }
+
+      console.log('Job trace');
+      console.log(`  Job ID:      ${jobRecord.id}`);
+      console.log(`  Type:        ${jobRecord.type}`);
+      console.log(`  State:       ${jobRecord.state}`);
+      if (jobRecord.idempotencyKey) {
+        console.log(`  Idempotency: ${jobRecord.idempotencyKey}`);
+      }
+      if (jobRecord.error?.message) {
+        console.log(`  Error:       ${jobRecord.error.message}`);
+      }
+      console.log(`  Events:      ${eventsPayload.events.length}`);
+
+      if (tokens.length > 0) {
+        console.log('  Tokens:');
+        for (const token of tokens) {
+          console.log(`    - ${token}`);
+        }
+      }
+
+      printTraceSection('runtime.alerts', logPaths.runtimeAlerts, runtimeAlertMatches);
+      printTraceSection('fnn.stdout', logPaths.fnnStdout, fnnStdoutMatches);
+      printTraceSection('fnn.stderr', logPaths.fnnStderr, fnnStderrMatches);
+    });
+
+  job
     .command('events')
     .argument('<jobId>')
+    .option('--with-data', 'Include event data payload in human-readable output')
     .option('--json')
     .action(async (jobId, options) => {
       const json = Boolean(options.json);
@@ -118,6 +196,9 @@ export function createJobCommand(config: CliConfig): Command {
           ? `${event.fromState ?? '(none)'} -> ${event.toState}`
           : (event.fromState ?? '(none)');
         console.log(`- ${timestamp} ${event.eventType} (${transition})`);
+        if (options.withData && event.data !== undefined) {
+          console.log(`  data: ${JSON.stringify(event.data)}`);
+        }
       }
     });
 
@@ -218,5 +299,110 @@ async function safeJson(response: Response): Promise<unknown> {
     return await response.json();
   } catch {
     return undefined;
+  }
+}
+
+function resolveTraceLogPaths(
+  dataDir: string,
+  meta: ReturnType<typeof readRuntimeMeta>,
+): { runtimeAlerts: string; fnnStdout: string; fnnStderr: string } {
+  return {
+    runtimeAlerts: meta?.alertLogFilePath ?? join(dataDir, 'logs', 'runtime.alerts.jsonl'),
+    fnnStdout: meta?.fnnStdoutLogPath ?? join(dataDir, 'logs', 'fnn.stdout.log'),
+    fnnStderr: meta?.fnnStderrLogPath ?? join(dataDir, 'logs', 'fnn.stderr.log'),
+  };
+}
+
+function collectTraceTokens(job: RuntimeJobRecord, events: RuntimeJobEventRecord[]): string[] {
+  const result = new Set<string>();
+  addTraceToken(result, job.id);
+  addTraceToken(result, job.idempotencyKey);
+
+  collectStructuredTokens(result, job.params);
+  collectStructuredTokens(result, job.result);
+  collectStructuredTokens(result, job.error);
+
+  for (const event of events) {
+    addTraceToken(result, event.id);
+    collectStructuredTokens(result, event.data);
+  }
+
+  return Array.from(result).slice(0, 20);
+}
+
+function addTraceToken(set: Set<string>, value: unknown): void {
+  if (typeof value !== 'string') {
+    return;
+  }
+  const normalized = value.trim();
+  if (!normalized || normalized.length < 6) {
+    return;
+  }
+  if (normalized.includes(' ')) {
+    return;
+  }
+  if (normalized.length <= 128) {
+    set.add(normalized);
+  }
+}
+
+function collectStructuredTokens(set: Set<string>, input: unknown, depth = 0): void {
+  if (depth > 3 || input === null || input === undefined) {
+    return;
+  }
+  if (typeof input === 'string') {
+    if (input.startsWith('0x') || input.includes('peer') || input.includes('channel')) {
+      addTraceToken(set, input);
+    }
+    return;
+  }
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      collectStructuredTokens(set, item, depth + 1);
+    }
+    return;
+  }
+  if (typeof input === 'object') {
+    for (const value of Object.values(input as Record<string, unknown>)) {
+      collectStructuredTokens(set, value, depth + 1);
+    }
+  }
+}
+
+function collectRelatedLines(filePath: string, tokens: string[], tail: number): string[] {
+  if (!existsSync(filePath)) {
+    return [];
+  }
+  const lines = readLastLines(filePath, tail);
+  if (tokens.length === 0) {
+    return lines.slice(-Math.min(30, lines.length));
+  }
+
+  const related = lines.filter((line) => tokens.some((token) => line.includes(token)));
+  if (related.length > 0) {
+    return related.slice(-Math.min(80, related.length));
+  }
+
+  return lines.slice(-Math.min(20, lines.length));
+}
+
+function readLastLines(filePath: string, maxLines: number): string[] {
+  const content = readFileSync(filePath, 'utf-8');
+  const lines = content.split(/\r?\n/).filter((line) => line.length > 0);
+  return lines.slice(-maxLines);
+}
+
+function printTraceSection(title: string, filePath: string, lines: string[]): void {
+  console.log(`\n${title}: ${filePath}`);
+  if (!existsSync(filePath)) {
+    console.log('  (file not found)');
+    return;
+  }
+  if (lines.length === 0) {
+    console.log('  (no related lines)');
+    return;
+  }
+  for (const line of lines.slice(-20)) {
+    console.log(`  ${line}`);
   }
 }

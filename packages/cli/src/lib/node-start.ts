@@ -1,3 +1,5 @@
+import { spawn } from 'node:child_process';
+import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   ensureFiberBinary,
@@ -20,9 +22,10 @@ import { createRpcClient } from './rpc.js';
 import { removeRuntimeFiles, writeRuntimeMeta, writeRuntimePid } from './runtime-meta.js';
 
 export interface NodeStartOptions {
-  runtimeDaemon?: boolean;
+  daemon?: boolean;
   runtimeProxyListen?: string;
   eventStream?: string;
+  quietFnn?: boolean;
   json?: boolean;
 }
 
@@ -31,10 +34,27 @@ export async function runNodeStartCommand(
   options: NodeStartOptions,
 ): Promise<void> {
   const json = Boolean(options.json);
+  const daemon = Boolean(options.daemon);
+  const isNodeChild = process.env.FIBER_NODE_CHILD === '1';
+  const quietFnn = Boolean(options.quietFnn);
   const eventStream = String(options.eventStream ?? 'jsonl').toLowerCase();
   const emitStage = (stage: string, status: 'ok' | 'error', data: Record<string, unknown>) => {
     if (!json) return;
     printJsonEvent('startup_stage', { stage, status, ...data });
+  };
+  const emitFnnLog = (stream: 'stdout' | 'stderr', text: string) => {
+    if (quietFnn) {
+      return;
+    }
+
+    if (json) {
+      printJsonEvent('fnn_log', { stream, text });
+      return;
+    }
+
+    const target = stream === 'stderr' ? process.stderr : process.stdout;
+    const payload = text.endsWith('\n') ? text : `${text}\n`;
+    target.write(`[fnn:${stream}] ${payload}`);
   };
   if (json && eventStream !== 'jsonl') {
     printJsonError({
@@ -46,6 +66,65 @@ export async function runNodeStartCommand(
     });
     process.exit(1);
   }
+
+  if (daemon && !isNodeChild) {
+    const cliEntrypoint = process.argv[1];
+    if (!cliEntrypoint) {
+      const message = 'Unable to resolve CLI entrypoint path for --daemon mode';
+      if (json) {
+        printJsonError({
+          code: 'NODE_DAEMON_START_FAILED',
+          message,
+          recoverable: true,
+          suggestion: 'Retry without --daemon or check CLI invocation method.',
+        });
+      } else {
+        console.error(`❌ ${message}`);
+      }
+      process.exit(1);
+    }
+
+    const childArgs = process.argv.slice(2).filter((arg) => arg !== '--daemon');
+    const child = spawn(process.execPath, [cliEntrypoint, ...childArgs], {
+      detached: true,
+      stdio: 'ignore',
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        FIBER_NODE_CHILD: '1',
+        FIBER_NODE_RUNTIME_DAEMON: '1',
+      },
+    });
+    child.unref();
+
+    const childPid = child.pid;
+    if (!childPid) {
+      const message = 'Failed to spawn node daemon process';
+      if (json) {
+        printJsonError({
+          code: 'NODE_DAEMON_START_FAILED',
+          message,
+          recoverable: true,
+          suggestion: 'Retry node start and inspect system process limits.',
+        });
+      } else {
+        console.error(`❌ ${message}`);
+      }
+      process.exit(1);
+    }
+
+    if (json) {
+      printJsonEvent('node_daemon_starting', {
+        pid: childPid,
+        runtimeDaemon: true,
+      });
+    } else {
+      console.log(`Node daemon starting (PID: ${childPid})`);
+      console.log('Use `fiber-pay node status --json` to verify readiness.');
+    }
+    return;
+  }
+
   emitStage('init', 'ok', { rpcUrl: config.rpcUrl, dataDir: config.dataDir });
   const existingPid = readPidFile(config.dataDir);
   if (existingPid && isProcessRunning(existingPid)) {
@@ -63,7 +142,7 @@ export async function runNodeStartCommand(
     process.exit(1);
   }
 
-  const runtimeDaemon = Boolean(options.runtimeDaemon);
+  const runtimeDaemon = process.env.FIBER_NODE_RUNTIME_DAEMON === '1';
   const runtimeProxyListen = String(
     options.runtimeProxyListen ?? config.runtimeProxyListen ?? '127.0.0.1:8229',
   );
@@ -73,6 +152,11 @@ export async function runNodeStartCommand(
       ? 'profile'
       : 'default';
   const runtimeStateFilePath = join(config.dataDir, 'runtime-state.json');
+  const logsDir = join(config.dataDir, 'logs');
+  const fnnStdoutLogPath = join(logsDir, 'fnn.stdout.log');
+  const fnnStderrLogPath = join(logsDir, 'fnn.stderr.log');
+  const runtimeAlertLogPath = join(logsDir, 'runtime.alerts.jsonl');
+  mkdirSync(logsDir, { recursive: true });
 
   const binaryPath = config.binaryPath || getDefaultBinaryPath();
   await ensureFiberBinary();
@@ -133,6 +217,14 @@ export async function runNodeStartCommand(
     earlyStop = { code, signal };
     removePidFile(config.dataDir);
   });
+  processManager.on('stdout', (text) => {
+    appendFileSync(fnnStdoutLogPath, text, 'utf-8');
+    emitFnnLog('stdout', text);
+  });
+  processManager.on('stderr', (text) => {
+    appendFileSync(fnnStderrLogPath, text, 'utf-8');
+    emitFnnLog('stderr', text);
+  });
   await processManager.start();
   const processManagerState = processManager as unknown as {
     process?: { pid?: number };
@@ -187,6 +279,7 @@ export async function runNodeStartCommand(
         rpcUrl: config.rpcUrl,
         proxyListen: runtimeProxyListen,
         stateFilePath: runtimeStateFilePath,
+        alertLogFile: runtimeAlertLogPath,
       });
       if (!daemonStart.ok) {
         throw new Error(daemonStart.message);
@@ -201,6 +294,7 @@ export async function runNodeStartCommand(
         storage: {
           stateFilePath: runtimeStateFilePath,
         },
+        alerts: [{ type: 'stdout' }, { type: 'file', path: runtimeAlertLogPath }],
         jobs: {
           enabled: true,
           dbPath: join(config.dataDir, 'runtime-jobs.db'),
@@ -215,6 +309,9 @@ export async function runNodeStartCommand(
         fiberRpcUrl: runtimeStatus.targetUrl,
         proxyListen: runtimeStatus.proxyListen,
         stateFilePath: runtimeStateFilePath,
+        alertLogFilePath: runtimeAlertLogPath,
+        fnnStdoutLogPath,
+        fnnStderrLogPath,
         daemon: false,
       });
     }
@@ -330,8 +427,14 @@ export async function runNodeStartCommand(
       pid: processId ?? null,
       runtimeEnabled: true,
       runtimeDaemon,
+      quietFnn,
       proxyUrl: `http://${runtimeProxyListen}`,
       proxyListenSource,
+      logs: {
+        fnnStdout: fnnStdoutLogPath,
+        fnnStderr: fnnStderrLogPath,
+        runtimeAlerts: runtimeAlertLogPath,
+      },
     });
   } else {
     console.log('✅ Fiber node started successfully!');
@@ -340,6 +443,7 @@ export async function runNodeStartCommand(
       `   Runtime proxy: http://${runtimeProxyListen} (browser-safe endpoint + monitoring)`,
     );
     console.log(`   Runtime mode:  ${runtimeDaemon ? 'daemon' : 'embedded'}`);
+    console.log(`   Log files:     ${logsDir}`);
     console.log('   Press Ctrl+C to stop.');
   }
 

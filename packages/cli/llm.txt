@@ -122,7 +122,7 @@ Config files in this repo:
 *All commands support `--json` for structured output.*
 
 #### Lifecycle (`node`)
-*   `start [--runtime-daemon] [--runtime-proxy-listen <host:port>] [--json]`: Start node (foreground) with runtime watcher + proxy; `--runtime-daemon` runs watcher detached.
+*   `start [--daemon] [--runtime-proxy-listen <host:port>] [--json]`: Start node with runtime watcher + proxy; `--daemon` runs node + runtime detached.
 *   `stop [--json]`: Stop node (and runtime daemon if running).
 *   `status [--json]`: Unified status (process/rpc identity + diagnostics + balance).
 *   `ready [--json]`: Aggregated automation readiness (node/rpc/channel/liquidity).
@@ -282,7 +282,7 @@ fiber-pay job list --json
 - Channel open → usable takes time; `open` success ≠ immediate `ChannelReady`.
   Use `waitForChannelReady()` (SDK) or `channel watch --json` (CLI).
 - Long-running commands (`node start`, `watch`) are blocking foreground processes;
-  run in a dedicated terminal or use `--runtime-daemon`.
+  run in a dedicated terminal or use `--daemon`.
 - `watch --json` emits NDJSON stream, not a single JSON document.
 - Runtime proxy has no auth/TLS — bind to localhost only in production.
 

@@ -40,6 +40,10 @@ fiber-pay --help
 fiber-pay --profile local-a binary download
 # foreground process (run in its own terminal)
 fiber-pay --profile local-a node start
+# detached background mode (also enables runtime daemon)
+fiber-pay --profile local-a node start --daemon
+# suppress fnn stream mirroring while keeping logs persisted to files
+fiber-pay --profile local-a node start --quiet-fnn
 fiber-pay --profile local-a node status
 fiber-pay --profile local-a node ready --json
 ```
@@ -109,6 +113,16 @@ When runtime proxy is active (same profile + same RPC URL), CLI resolves RPC to 
 	- `peer *`, `graph *`, `node info|status|ready`
 
 Tip: use `fiber-pay job list --type payment|invoice|channel --json` to inspect orchestration records and `fiber-pay job events <jobId> --json` for state transitions.
+Use `fiber-pay job trace <jobId>` to aggregate job status, timeline, and related persisted logs in one view.
+
+Debug tip (black-box channel open/close):
+
+- `fiber-pay job events <jobId> --with-data` shows per-step runtime context (action/channelId/peerId/retry/error).
+- `fiber-pay` now persists logs under `<data-dir>/logs/`:
+	- `fnn.stdout.log`
+	- `fnn.stderr.log`
+	- `runtime.alerts.jsonl`
+- `runtime.meta.json` includes these log file paths for agent/file-based diagnostics.
 
 Use `--json` when command output is consumed by scripts or agents.
 Non-stream commands emit a single envelope (`success + data|error`), while watch commands emit NDJSON events.

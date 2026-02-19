@@ -18,7 +18,16 @@ export interface WebsocketAlertConfig {
   listen: string;
 }
 
-export type AlertBackendConfig = StdoutAlertConfig | WebhookAlertConfig | WebsocketAlertConfig;
+export interface FileAlertConfig {
+  type: 'file';
+  path: string;
+}
+
+export type AlertBackendConfig =
+  | StdoutAlertConfig
+  | WebhookAlertConfig
+  | WebsocketAlertConfig
+  | FileAlertConfig;
 
 export interface RuntimeConfig {
   fiberRpcUrl: string;

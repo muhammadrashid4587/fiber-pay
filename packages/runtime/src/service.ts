@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { FiberRpcClient } from '@fiber-pay/sdk';
 import { AlertManager } from './alerts/alert-manager.js';
+import { JsonlFileAlertBackend } from './alerts/backends/file-jsonl.js';
 import { StdoutAlertBackend } from './alerts/backends/stdout.js';
 import { WebhookAlertBackend } from './alerts/backends/webhook.js';
 import { WebsocketAlertBackend } from './alerts/backends/websocket.js';
@@ -243,6 +244,9 @@ export class FiberMonitorService extends EventEmitter {
           timeoutMs: alertConfig.timeoutMs,
           headers: alertConfig.headers,
         });
+      }
+      if (alertConfig.type === 'file') {
+        return new JsonlFileAlertBackend(alertConfig.path);
       }
       const [host, portText] = alertConfig.listen.split(':');
       return new WebsocketAlertBackend({

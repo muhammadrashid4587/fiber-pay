@@ -88,6 +88,18 @@ JOB_TIMEOUT_SEC=420 CHANNEL_CLEANUP_TIMEOUT_SEC=120 pnpm e2e:runtime-jobs -- --j
 ```bash
 fiber-pay job list --json
 fiber-pay job get <jobId> --json
+fiber-pay job trace <jobId>
 fiber-pay job events <jobId> --json
+fiber-pay job events <jobId> --with-data
 fiber-pay job cancel <jobId> --json
 ```
+
+## Persistent logs (for agent debugging)
+
+When started from `fiber-pay node start` or `fiber-pay runtime start`, runtime/fnn logs are persisted to:
+
+- `<data-dir>/logs/fnn.stdout.log`
+- `<data-dir>/logs/fnn.stderr.log`
+- `<data-dir>/logs/runtime.alerts.jsonl`
+
+`<data-dir>/runtime.meta.json` stores these paths so agents can read files directly during troubleshooting.

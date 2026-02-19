@@ -144,6 +144,7 @@ export function createRuntimeCommand(config: CliConfig): Command {
     .option('--include-closed <bool>', 'Monitor closed channels (true|false)')
     .option('--completed-ttl-seconds <seconds>', 'TTL for completed invoices/payments in tracker')
     .option('--state-file <path>', 'State file path for snapshots and history')
+    .option('--alert-log-file <path>', 'Path to runtime alert JSONL log file')
     .option('--flush-ms <ms>', 'State flush interval in milliseconds')
     .option('--webhook <url>', 'Webhook URL to receive alert POST payloads')
     .option('--websocket <host:port>', 'WebSocket alert broadcast listen address')
@@ -242,7 +243,12 @@ export function createRuntimeCommand(config: CliConfig): Command {
           },
         };
 
+        const alertLogFile = options.alertLogFile
+          ? resolve(String(options.alertLogFile))
+          : resolve(config.dataDir, 'logs', 'runtime.alerts.jsonl');
+
         const alerts: RuntimeConfigInput['alerts'] = [{ type: 'stdout' }];
+        alerts.push({ type: 'file', path: alertLogFile });
         if (options.webhook) {
           alerts.push({ type: 'webhook', url: String(options.webhook) });
         }
@@ -275,6 +281,7 @@ export function createRuntimeCommand(config: CliConfig): Command {
           fiberRpcUrl: status.targetUrl,
           proxyListen: status.proxyListen,
           stateFilePath: runtimeConfig.storage?.stateFilePath,
+          alertLogFilePath: alertLogFile,
           daemon: daemon || isRuntimeChild,
         });
 
@@ -296,12 +303,14 @@ export function createRuntimeCommand(config: CliConfig): Command {
             fiberRpcUrl: status.targetUrl,
             proxyListen: status.proxyListen,
             stateFilePath: runtimeConfig.storage?.stateFilePath,
+            alertLogFile,
           });
           printJsonEvent('runtime_started', status);
         } else {
           console.log(`Fiber RPC:    ${status.targetUrl}`);
           console.log(`Proxy listen: ${status.proxyListen}`);
           console.log(`State file:   ${runtimeConfig.storage?.stateFilePath}`);
+          console.log(`Alert log:    ${alertLogFile}`);
           console.log('Runtime monitor is running. Press Ctrl+C to stop.');
         }
 

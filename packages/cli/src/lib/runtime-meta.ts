@@ -7,6 +7,9 @@ export interface RuntimeMeta {
   fiberRpcUrl: string;
   proxyListen: string;
   stateFilePath?: string;
+  alertLogFilePath?: string;
+  fnnStdoutLogPath?: string;
+  fnnStderrLogPath?: string;
   daemon: boolean;
 }
 
