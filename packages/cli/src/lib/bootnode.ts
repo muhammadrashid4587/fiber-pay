@@ -1,23 +1,16 @@
 import { existsSync, readFileSync } from 'node:fs';
 import type { FiberRpcClient } from '@fiber-pay/sdk';
+import { parse as parseYaml } from 'yaml';
 
 export function extractBootnodeAddrs(configFilePath: string): string[] {
   if (!existsSync(configFilePath)) return [];
 
   try {
     const content = readFileSync(configFilePath, 'utf-8');
-    const addrs: string[] = [];
-    const regex = /^\s*-\s*["']?(\/ip4\/[^"'\s]+)["']?\s*$/gm;
-    const sectionMatch = content.match(/bootnode_addrs:\s*\n((?:\s*-\s*.+\n?)+)/);
-
-    if (sectionMatch) {
-      const section = sectionMatch[1];
-      for (const match of section.matchAll(regex)) {
-        addrs.push(match[1]);
-      }
-    }
-
-    return addrs;
+    const doc = parseYaml(content);
+    const addrs = doc?.fiber?.bootnode_addrs;
+    if (!Array.isArray(addrs)) return [];
+    return addrs.filter((a): a is string => typeof a === 'string' && a.startsWith('/ip'));
   } catch {
     return [];
   }

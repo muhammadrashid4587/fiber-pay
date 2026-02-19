@@ -400,7 +400,7 @@ export function createConfigCommand(_config: CliConfig): Command {
       const parsedValue = parseTypedValue(value, valueType);
 
       doc.setIn(segments as (string | number)[], parsedValue);
-      writeFileSync(configPath, doc.toString(), 'utf-8');
+      writeFileSync(configPath, doc.toString({ lineWidth: 0 }), 'utf-8');
 
       if (json) {
         printJsonSuccess({ path: resolvedPath, value: parsedValue, configPath });
@@ -440,7 +440,7 @@ export function createConfigCommand(_config: CliConfig): Command {
         process.exit(1);
       }
 
-      writeFileSync(configPath, doc.toString(), 'utf-8');
+      writeFileSync(configPath, doc.toString({ lineWidth: 0 }), 'utf-8');
 
       if (json) {
         printJsonSuccess({ path: resolvedPath, removed: true, configPath });
