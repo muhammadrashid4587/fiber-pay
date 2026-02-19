@@ -143,6 +143,22 @@ function ensureConfigFileOrExit(configPath: string, json: boolean): void {
   }
 }
 
+function normalizeHexScalarsForMutation(content: string): string {
+  return content.replace(
+    /^(\s*)(code_hash|tx_hash|args):\s*(0x[0-9a-fA-F]+)(\s*(#.*))?$/gm,
+    (_match, indent: string, key: string, value: string, tail = '') =>
+      `${indent}${key}: "${value}"${tail}`,
+  );
+}
+
+function parseConfigDocumentForMutation(configPath: string) {
+  const raw = readFileSync(configPath, 'utf-8');
+  const normalized = normalizeHexScalarsForMutation(raw);
+  return parseDocument(normalized, {
+    keepSourceTokens: true,
+  });
+}
+
 function collectConfigPaths(value: unknown, prefix = ''): string[] {
   if (value === null || value === undefined) {
     return prefix ? [prefix] : [];
@@ -322,7 +338,7 @@ export function createConfigCommand(_config: CliConfig): Command {
       const configPath = effective.config.configPath;
       ensureConfigFileOrExit(configPath, json);
 
-      const doc = parseDocument(readFileSync(configPath, 'utf-8'));
+      const doc = parseConfigDocumentForMutation(configPath);
       const segments = parseConfigPath(path);
       const value = doc.getIn(segments as (string | number)[]);
 
@@ -378,7 +394,7 @@ export function createConfigCommand(_config: CliConfig): Command {
         process.exit(1);
       }
 
-      const doc = parseDocument(readFileSync(configPath, 'utf-8'));
+      const doc = parseConfigDocumentForMutation(configPath);
       const resolvedPath = resolveConfigPathAlias(path);
       const segments = parseConfigPath(path);
       const parsedValue = parseTypedValue(value, valueType);
@@ -404,7 +420,7 @@ export function createConfigCommand(_config: CliConfig): Command {
       const configPath = effective.config.configPath;
       ensureConfigFileOrExit(configPath, json);
 
-      const doc = parseDocument(readFileSync(configPath, 'utf-8'));
+      const doc = parseConfigDocumentForMutation(configPath);
       const resolvedPath = resolveConfigPathAlias(path);
       const segments = parseConfigPath(path);
       const removed = doc.deleteIn(segments as (string | number)[]);
@@ -444,7 +460,7 @@ export function createConfigCommand(_config: CliConfig): Command {
       const configPath = effective.config.configPath;
       ensureConfigFileOrExit(configPath, json);
 
-      const doc = parseDocument(readFileSync(configPath, 'utf-8'));
+      const doc = parseConfigDocumentForMutation(configPath);
       const prefix = options.prefix ? resolveConfigPathAlias(String(options.prefix)) : undefined;
 
       let rootValue: unknown = doc.toJSON();
