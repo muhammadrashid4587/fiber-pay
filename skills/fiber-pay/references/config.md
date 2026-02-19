@@ -90,7 +90,7 @@ All values are set via `fiber-pay config set <path> <value>`.
 
 | Key | Type | Description |
 |-----|------|-------------|
-| `fiber.scripts` | array | FundingLock and CommitmentLock configs. See `configs/fnn.testnet.yml` or `configs/fnn.mainnet.yml` for network-specific values |
+| `fiber.scripts` | array | FundingLock and CommitmentLock configs. See `configs/fnn.reference.yml` for full key documentation |
 
 Each entry: `{ name, script: { code_hash, hash_type, args }, cell_deps: [...] }`
 

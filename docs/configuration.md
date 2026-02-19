@@ -2,8 +2,6 @@
 
 This repo now keeps Fiber config artifacts in `configs/`:
 
-- `configs/fnn.testnet.yml` — baseline testnet config
-- `configs/fnn.mainnet.yml` — baseline mainnet config
 - `configs/fnn.reference.yml` — full commented reference (all known keys)
 
 ## Runtime source of truth

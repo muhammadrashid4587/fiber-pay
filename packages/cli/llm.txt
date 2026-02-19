@@ -116,8 +116,6 @@ fiber-pay --profile rt-b node status --json
 Prefer profile-scoped commands over ad-hoc `source .env.*` switching.
 
 Config files in this repo:
-- `configs/fnn.testnet.yml`
-- `configs/fnn.mainnet.yml`
 - `configs/fnn.reference.yml` (full commented reference)
 
 ### Command Surface
