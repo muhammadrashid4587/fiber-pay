@@ -84,7 +84,7 @@ export function createPaymentCommand(config: CliConfig): Command {
             sendPaymentParams: paymentParams,
           },
           options: {
-            idempotencyKey: invoice,
+            idempotencyKey: invoice ? `payment:invoice:${invoice}` : undefined,
           },
         });
 
