@@ -18,31 +18,37 @@ Primary layers in active scope:
 
 When executing real tasks, follow this order:
 
-1. `packages/cli/llm.txt` (canonical CLI behavior and command contracts)
-2. code in `packages/cli/src/**` and `packages/sdk/src/**`
+1. `skills/fiber-pay/SKILL.md` and `skills/fiber-pay/references/**` (canonical workflow, architecture, and contracts)
+2. code in `packages/cli/src/**` and `packages/sdk/src/**` (authoritative command and behavior details)
 3. intent docs in `docs/plans/**`
 
-If docs and code disagree, treat `packages/cli/llm.txt` + current code as authoritative.
+If docs and code disagree, treat current code as authoritative and update skills docs accordingly.
 
 ## Operating rules for coding agents
 
-1. Read `packages/cli/llm.txt` before running any `fiber-pay` commands.
+1. Read `skills/fiber-pay/SKILL.md` before running `fiber-pay` workflows.
 2. Use grouped commands only: `node`, `channel`, `invoice`, `payment`, `peer`, `binary`, `balance`.
 3. Use `--json` whenever output is consumed by tools/scripts.
 4. Default to single-node startup unless multi-node/custom ports are explicitly requested.
-5. Do not invent undocumented flags, command aliases, or response schemas.
+5. For exact syntax and flags, use progressive CLI help (`fiber-pay -h`, subgroup `-h`) and command source code.
+6. Do not invent undocumented flags, command aliases, or response schemas.
 
 ## Copy-paste bootstrap prompt (for external agents)
 
 ```text
-Use this Fiber CLI source-of-truth document:
-https://raw.githubusercontent.com/RetricSu/fiber-pay/main/packages/cli/llm.txt
+Use this Fiber skill source-of-truth document:
+https://raw.githubusercontent.com/RetricSu/fiber-pay/main/skills/fiber-pay/SKILL.md
 
-Read that URL first and treat it as the command/runtime source of truth.
+Read that URL first and treat it as workflow/architecture source of truth.
+
+For exact command syntax and flags, learn progressively with CLI help:
+- fiber-pay -h
+- fiber-pay <group> -h
+- fiber-pay <group> <cmd> -h
 
 Then equip yourself with fiber-pay behavior:
-- obey the Agent Entry Protocol in llm.txt,
-- use grouped commands only (node/channel/invoice/payment/peer/binary/balance),
+- obey the readiness gates and contracts in SKILL references,
+- use grouped commands only (node/channel/invoice/payment/peer/binary/config/graph/runtime/job),
 - prefer --json for automation,
 - use single-node quick start by default unless I ask otherwise.
 
@@ -71,7 +77,7 @@ For CLI changes:
 
 1. update command implementation in `packages/cli/src/commands/**`
 2. keep output policy consistent (human default + `--json`)
-3. update `packages/cli/llm.txt` for behavior/flag/output changes
+3. update `skills/fiber-pay/SKILL.md` and related `skills/fiber-pay/references/**` docs for workflow/contract changes
 4. run:
 
 ```bash

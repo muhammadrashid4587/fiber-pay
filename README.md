@@ -11,12 +11,13 @@ Fiber target: `v0.6.1`
 - `@fiber-pay/sdk`: typed building blocks for Fiber RPC, verification, and policy logic
 - `@fiber-pay/cli`: stable operator + automation interface with machine-readable output
 - `@fiber-pay/node`: local runtime substrate for managing the `fnn` binary lifecycle
+- `@fiber-pay/runtime`: orchestration runtime for jobs, monitoring, retries, and proxy-facing automation loops
 
-This repository currently emphasizes SDK + CLI quality and agent usability through clear command contracts.
+This repository currently emphasizes SDK + CLI + runtime quality and agent usability through clear command contracts.
 
 ## Why this repo is AI-friendly
 
-- Canonical CLI guide for agents: `packages/cli/llm.txt`
+- Canonical skill guide for agents: `skills/fiber-pay/SKILL.md`
 - Predictable grouped commands (`node/channel/invoice/payment/job/peer/binary/config/graph/runtime`)
 - Uniform `--json` envelopes for reliable parsing and tool chaining
 - NDJSON stream events for `watch --json` commands
@@ -35,117 +36,73 @@ pnpm build
 cd packages/cli && pnpm link --global
 ```
 
+Install reference (canonical): `skills/fiber-pay/references/install.md`
+
+## Command truth and learning model
+
+- Stable knowledge (workflow, architecture, contracts): `skills/fiber-pay/SKILL.md` + `skills/fiber-pay/references/**`
+- Exact command syntax and latest flags: CLI progressive help + command source
+
 ```bash
-fiber-pay --help
-fiber-pay --profile local-a binary download
-# foreground process (run in its own terminal)
-fiber-pay --profile local-a node start
-# detached background mode (also enables runtime daemon)
-fiber-pay --profile local-a node start --daemon
-# suppress fnn stream mirroring while keeping logs persisted to files
-fiber-pay --profile local-a node start --quiet-fnn
-fiber-pay --profile local-a node status
-fiber-pay --profile local-a node ready --json
+fiber-pay -h
+fiber-pay <group> -h
+fiber-pay <group> <cmd> -h
 ```
 
-Common workflows:
+Implementation source for command behavior:
+
+- `packages/cli/src/commands/**`
+
+## Core smoke workflow (runtime-backed)
+
+Use this as the canonical end-to-end operator flow:
 
 ```bash
-fiber-pay node status
-fiber-pay runtime start --daemon
-fiber-pay channel list
-fiber-pay invoice create --amount 10 --description "service"
-fiber-pay payment send <invoice>
-fiber-pay job list
-```
-
-## Minimal runtime-backed orchestration (single node, default config)
-
-Use this when you want the simplest CLI path with runtime job orchestration, without `--profile`.
-
-Terminal A (keep running):
-
-```bash
-fiber-pay binary download --version v0.6.1
-fiber-pay node start
-```
-
-Terminal B:
-
-```bash
-# 1) Connect to a reachable peer (replace with a real peer multiaddr)
-PEER_MULTIADDR="<peer-multiaddr>"
-fiber-pay peer connect "$PEER_MULTIADDR" --json
-
-# 2) Open channel and wait until ChannelReady
-fiber-pay channel open --peer "$PEER_MULTIADDR" --funding 200 --json
-fiber-pay channel watch --state ChannelReady --timeout 180 --on-timeout fail --json
-
-# 3) Preflight after channel is ready
+fiber-pay node start --daemon
 fiber-pay node ready --json
-
-# 4) Submit payment through runtime job path and wait for terminal state
+fiber-pay peer connect <peer-multiaddr> --json
+fiber-pay channel open --peer <peer-multiaddr> --funding <ckb> --json
+fiber-pay channel watch --state ChannelReady --timeout 180 --on-timeout fail --json
 fiber-pay payment send <invoice> --wait --json
-
-# 5) Inspect orchestration result
-fiber-pay job list --type payment --json
-fiber-pay job get <jobId> --json
-fiber-pay job events <jobId> --json
+fiber-pay job list --json
 ```
 
 Notes:
 
-- `payment send --wait --json` uses runtime job orchestration when runtime proxy is active (default with `node start`).
-- `payment send` does not auto-open channels; open and verify `ChannelReady` first as shown above.
+- `payment send` does not auto-open channels; verify channel readiness first.
+- Use `--json` for automation and agent parsing.
+- Use `job get/events/trace` and `logs` for diagnosis.
 
-### Runtime routing matrix (current)
+## Contracts and runtime architecture
 
-When runtime proxy is active (same profile + same RPC URL), CLI resolves RPC to proxy automatically.
+For stable machine-facing behavior, use these references:
 
-- **Job-first (writes)**
-	- `payment send` → `/jobs/payment` (fallback to direct `send_payment` if job endpoint unavailable)
-	- `invoice create|cancel|settle` → `/jobs/invoice` (fallback to direct RPC)
-	- `channel open|close|accept|abandon|update` → `/jobs/channel` (fallback to direct RPC)
-- **Proxy-forward RPC (no job record)**
-	- `invoice get|parse`
-	- `payment get|watch`
-	- `channel list|get|watch`
-	- `peer *`, `graph *`, `node info|status|ready`
+- Output + stream contracts: `skills/fiber-pay/references/contracts.md`
+- Runtime proxy model: `skills/fiber-pay/references/runtime-api.md`
+- Profile/multi-node model: `skills/fiber-pay/references/profile.md`
+- Logs troubleshooting: `skills/fiber-pay/references/logs-troubleshooting.md`
+- Full fnn config keys: `skills/fiber-pay/references/config.md`
 
-Tip: use `fiber-pay job list --type payment|invoice|channel --json` to inspect orchestration records and `fiber-pay job events <jobId> --json` for state transitions.
-Use `fiber-pay job trace <jobId>` to aggregate job status, timeline, and related persisted logs in one view.
-Use `fiber-pay logs --source all --tail 80` (or `fiber-pay log`) to inspect persisted logs directly without `cat`.
-Use `fiber-pay logs --source runtime --follow` for live tailing in terminal.
+Machine-readable error catalog:
 
-Debug tip (black-box channel open/close):
-
-- `fiber-pay job events <jobId> --with-data` shows per-step runtime context (action/channelId/peerId/retry/error).
-- `fiber-pay` now persists logs under `<data-dir>/logs/`:
-	- `fnn.stdout.log`
-	- `fnn.stderr.log`
-	- `runtime.alerts.jsonl`
-- quick view: `fiber-pay logs --source runtime|fnn-stdout|fnn-stderr|all --tail 80`
-- live follow: `fiber-pay logs --source runtime --follow --interval-ms 1000`
-- `runtime.meta.json` includes these log file paths for agent/file-based diagnostics.
-
-Use `--json` when command output is consumed by scripts or agents.
-Non-stream commands emit a single envelope (`success + data|error`), while watch commands emit NDJSON events.
-JSON failures include stable fields (`error.code`, `error.message`) and may include `error.recoverable`, `error.suggestion`, `error.details`.
-`fiber-pay node start --json` emits staged NDJSON lifecycle events before `node_started` for deterministic automation.
-For automation, long-running watchers support timeout policies such as `--on-timeout success`.
-Machine-readable error code catalog is available at `packages/cli/error-codes.json`.
+- `packages/cli/error-codes.json`
 
 ## Copy-paste prompt for your coding agent
 
 Use this prompt in Cursor/Claude/Copilot/other agents:
 
 ```text
-Follow this document https://raw.githubusercontent.com/RetricSu/fiber-pay/master/packages/cli/llm.txt to equip yourself with a p2p payment system.
+Follow this document https://raw.githubusercontent.com/RetricSu/fiber-pay/main/skills/fiber-pay/SKILL.md to equip yourself with a p2p payment system.
+For exact command syntax and flags, use:
+- fiber-pay -h
+- fiber-pay <group> -h
+- fiber-pay <group> <cmd> -h
 ```
 
 ## Source of truth
 
-- CLI behavior + command reference: `packages/cli/llm.txt`
+- Skill knowledge and workflow contracts: `skills/fiber-pay/SKILL.md` + `skills/fiber-pay/references/**`
+- Command behavior and latest flags: `packages/cli/src/commands/**` and `fiber-pay ... -h`
 - Maintainer alignment notes: `AGENT.md`
 - Intent docs: `docs/plans/ai-payment-layer-intent.md`
 - Config docs: `docs/configuration.md`
@@ -165,6 +122,7 @@ Package-scoped checks:
 pnpm --filter @fiber-pay/sdk test
 pnpm --filter @fiber-pay/cli typecheck
 pnpm --filter @fiber-pay/cli build
+pnpm --filter @fiber-pay/runtime test
 ```
 
 ## E2E dual-node script
