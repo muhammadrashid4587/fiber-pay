@@ -511,7 +511,6 @@ export function createChannelCommand(config: CliConfig): Command {
             updateChannelParams: updateParams,
           },
           options: {
-            idempotencyKey: `update:channel:${channelId}`,
             reuseTerminal: false,
           },
         });

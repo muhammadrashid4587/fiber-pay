@@ -419,7 +419,8 @@ function deriveChannelKey(params: ChannelJobParams): string | undefined {
     return `channel:abandon:${params.abandonChannelParams.channel_id}`;
   }
   if (params.action === 'update' && params.updateChannelParams?.channel_id) {
-    return `channel:update:${params.updateChannelParams.channel_id}`;
+    const fingerprint = stableStringify(params.updateChannelParams);
+    return `channel:update:${params.updateChannelParams.channel_id}:${fingerprint}`;
   }
   if (params.channelId) return `channel:${params.action}:${params.channelId}`;
   return undefined;
