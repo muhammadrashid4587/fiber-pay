@@ -101,3 +101,89 @@ fiber-pay --data-dir ~/.fiber-pay-smoke logs --source all --tail 120
 fiber-pay --data-dir ~/.fiber-pay-smoke node status --json
 fiber-pay --data-dir ~/.fiber-pay-smoke node stop --json
 ```
+
+## 7) Agent debugging micro-habits (logs-first)
+
+These are small, high-leverage habits for external agents that don't yet know local operator context.
+
+### 7.1 Use `--json` and a job-id driven troubleshooting chain
+
+Always use machine-readable output and pivot from job id:
+
+```bash
+fiber-pay job list --json
+fiber-pay job get <jobId> --json
+fiber-pay job events <jobId> --with-data
+fiber-pay job trace <jobId>
+```
+
+### 7.2 Minimal checks for possible "false success"
+
+When a command returns success too quickly, verify all three:
+
+1. whether `jobId` is being reused
+2. whether `updatedAt` moved forward
+3. whether key `result` fields changed (for example `temporaryChannelId`, `channelId`)
+
+If these do not change, treat it as possible terminal-result reuse and investigate idempotency behavior before trusting the outcome.
+
+### 7.3 Log source priority
+
+Use this order for faster triage:
+
+1. `fnn-stderr` (fatal startup/config issues)
+2. `runtime` (orchestration/monitoring layer)
+3. `fnn-stdout` (state context, usually noisier)
+
+### 7.4 Prefer CLI log aggregation first
+
+Do not open raw files first. Start with CLI logs:
+
+```bash
+fiber-pay logs --source fnn-stderr --tail 200
+fiber-pay logs --source runtime --tail 200
+fiber-pay logs --source fnn-stdout --tail 200
+```
+
+Use `--follow` only when continuous observation is needed.
+
+### 7.5 Runtime alerts are high-value signals
+
+`runtime.alerts.jsonl` fields (`type`, `priority`, `source`) are useful for fast classification of disconnect/retry/failure patterns.
+
+### 7.6 Startup triage fixed three-check sequence
+
+When startup is suspicious, always run:
+
+```bash
+fiber-pay node status --json
+fiber-pay runtime status --json
+fiber-pay logs --source fnn-stderr --tail 200
+```
+
+This quickly separates "process not started" from "process started but unhealthy".
+
+### 7.7 Keep startup and diagnostics separated
+
+- Default to daemon/background mode for automation stability.
+- Use foreground startup only when you need live startup logs.
+- After diagnosis, switch back to daemon mode.
+
+### 7.8 Validate profile identity before drawing conclusions
+
+In multi-profile workflows, always confirm that logs and status belong to the intended profile:
+
+```bash
+fiber-pay --profile <name> node info --json
+fiber-pay --profile <name> runtime status --json
+```
+
+Do not compare outcomes across profiles unless peer IDs are explicitly verified.
+
+### 7.9 Use isolated smoke directories for repeatable debugging
+
+Use `--data-dir ~/.fiber-pay-smoke` for reproducible smoke tests without polluting default profile logs and runtime state.
+
+### 7.10 Use clean execution contexts when shell noise appears
+
+If terminal hooks/plugins pollute output, run commands in a fresh non-interactive session and keep `--json` parsing strict. Otherwise, log conclusions can be wrong even when command behavior is correct.
