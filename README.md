@@ -114,6 +114,8 @@ When runtime proxy is active (same profile + same RPC URL), CLI resolves RPC to 
 
 Tip: use `fiber-pay job list --type payment|invoice|channel --json` to inspect orchestration records and `fiber-pay job events <jobId> --json` for state transitions.
 Use `fiber-pay job trace <jobId>` to aggregate job status, timeline, and related persisted logs in one view.
+Use `fiber-pay logs --source all --tail 80` (or `fiber-pay log`) to inspect persisted logs directly without `cat`.
+Use `fiber-pay logs --source runtime --follow` for live tailing in terminal.
 
 Debug tip (black-box channel open/close):
 
@@ -122,6 +124,8 @@ Debug tip (black-box channel open/close):
 	- `fnn.stdout.log`
 	- `fnn.stderr.log`
 	- `runtime.alerts.jsonl`
+- quick view: `fiber-pay logs --source runtime|fnn-stdout|fnn-stderr|all --tail 80`
+- live follow: `fiber-pay logs --source runtime --follow --interval-ms 1000`
 - `runtime.meta.json` includes these log file paths for agent/file-based diagnostics.
 
 Use `--json` when command output is consumed by scripts or agents.

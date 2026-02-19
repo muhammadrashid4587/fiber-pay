@@ -133,6 +133,9 @@ Config files in this repo:
 *   `status [--json]`: Runtime process & proxy health.
 *   `stop [--json]`: Stop runtime process.
 
+#### Logs (`logs`)
+*   `logs [--source <all|runtime|fnn-stdout|fnn-stderr>] [--tail <n>] [--follow] [--interval-ms <ms>] [--json]`: Read persisted runtime/fnn logs from `<data-dir>/logs` without manually `cat`-ing files. `--follow` streams appended lines in human mode. Alias: `log`.
+
 #### Job Orchestration (`job`)
 *Requires runtime proxy. Auto-started by `node start` or `runtime start`.*
 *   `job list [--state <state>] [--type <payment|invoice|channel>] [--limit <n>] [--offset <n>] [--json]`: List runtime jobs.

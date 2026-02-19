@@ -6,6 +6,7 @@ import { createConfigCommand } from './commands/config.js';
 import { createGraphCommand } from './commands/graph.js';
 import { createInvoiceCommand } from './commands/invoice.js';
 import { createJobCommand } from './commands/job.js';
+import { createLogsCommand } from './commands/logs.js';
 import { createNodeCommand } from './commands/node.js';
 import { createPaymentCommand } from './commands/payment.js';
 import { createPeerCommand } from './commands/peer.js';
@@ -161,6 +162,7 @@ async function main(): Promise<void> {
   program.addCommand(createInvoiceCommand(config));
   program.addCommand(createPaymentCommand(config));
   program.addCommand(createJobCommand(config));
+  program.addCommand(createLogsCommand(config));
   program.addCommand(createPeerCommand(config));
   program.addCommand(createGraphCommand(config));
   program.addCommand(createBinaryCommand(config));

@@ -1,8 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
 import { printJsonError, printJsonSuccess } from '../lib/format.js';
+import { readLastLines, resolvePersistedLogPaths } from '../lib/log-files.js';
 import { resolveRpcEndpoint } from '../lib/rpc.js';
 import type { RuntimeJobEventRecord, RuntimeJobRecord } from '../lib/runtime-jobs.js';
 import { readRuntimeMeta } from '../lib/runtime-meta.js';
@@ -117,7 +117,7 @@ export function createJobCommand(config: CliConfig): Command {
       const tokens = collectTraceTokens(jobRecord, eventsPayload.events);
 
       const meta = readRuntimeMeta(config.dataDir);
-      const logPaths = resolveTraceLogPaths(config.dataDir, meta);
+      const logPaths = resolvePersistedLogPaths(config.dataDir, meta);
       const runtimeAlertMatches = collectRelatedLines(logPaths.runtimeAlerts, tokens, tail);
       const fnnStdoutMatches = collectRelatedLines(logPaths.fnnStdout, tokens, tail);
       const fnnStderrMatches = collectRelatedLines(logPaths.fnnStderr, tokens, tail);
@@ -302,17 +302,6 @@ async function safeJson(response: Response): Promise<unknown> {
   }
 }
 
-function resolveTraceLogPaths(
-  dataDir: string,
-  meta: ReturnType<typeof readRuntimeMeta>,
-): { runtimeAlerts: string; fnnStdout: string; fnnStderr: string } {
-  return {
-    runtimeAlerts: meta?.alertLogFilePath ?? join(dataDir, 'logs', 'runtime.alerts.jsonl'),
-    fnnStdout: meta?.fnnStdoutLogPath ?? join(dataDir, 'logs', 'fnn.stdout.log'),
-    fnnStderr: meta?.fnnStderrLogPath ?? join(dataDir, 'logs', 'fnn.stderr.log'),
-  };
-}
-
 function collectTraceTokens(job: RuntimeJobRecord, events: RuntimeJobEventRecord[]): string[] {
   const result = new Set<string>();
   addTraceToken(result, job.id);
@@ -384,12 +373,6 @@ function collectRelatedLines(filePath: string, tokens: string[], tail: number): 
   }
 
   return lines.slice(-Math.min(20, lines.length));
-}
-
-function readLastLines(filePath: string, maxLines: number): string[] {
-  const content = readFileSync(filePath, 'utf-8');
-  const lines = content.split(/\r?\n/).filter((line) => line.length > 0);
-  return lines.slice(-maxLines);
 }
 
 function printTraceSection(title: string, filePath: string, lines: string[]): void {

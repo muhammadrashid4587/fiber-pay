@@ -115,6 +115,26 @@
       "code": "RUNTIME_START_FAILED",
       "meaning": "Runtime failed to start due to config, RPC, or port issues",
       "agentAction": "Verify RPC reachability and runtime options, then retry"
+    },
+    {
+      "code": "LOG_SOURCE_INVALID",
+      "meaning": "Unsupported logs source option was provided",
+      "agentAction": "Retry with --source all|runtime|fnn-stdout|fnn-stderr"
+    },
+    {
+      "code": "LOG_FILE_NOT_FOUND",
+      "meaning": "Requested log source does not have a persisted log file yet",
+      "agentAction": "Start node/runtime or generate activity, then retry log query"
+    },
+    {
+      "code": "LOG_READ_FAILED",
+      "meaning": "CLI failed to read persisted log content",
+      "agentAction": "Check file permissions/path in data dir and retry"
+    },
+    {
+      "code": "LOG_FOLLOW_JSON_UNSUPPORTED",
+      "meaning": "Streaming follow mode cannot be combined with single-envelope JSON output",
+      "agentAction": "Use --follow without --json, or remove --follow for JSON output"
     }
   ]
 }

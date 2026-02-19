@@ -92,6 +92,9 @@ fiber-pay job trace <jobId>
 fiber-pay job events <jobId> --json
 fiber-pay job events <jobId> --with-data
 fiber-pay job cancel <jobId> --json
+fiber-pay logs --source all --tail 80
+fiber-pay logs --source runtime --tail 50
+fiber-pay logs --source runtime --follow
 ```
 
 ## Persistent logs (for agent debugging)
@@ -103,3 +106,5 @@ When started from `fiber-pay node start` or `fiber-pay runtime start`, runtime/f
 - `<data-dir>/logs/runtime.alerts.jsonl`
 
 `<data-dir>/runtime.meta.json` stores these paths so agents can read files directly during troubleshooting.
+
+You can view these files directly via CLI without `cat` using `fiber-pay logs` (alias: `fiber-pay log`).
