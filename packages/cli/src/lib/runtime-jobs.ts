@@ -58,6 +58,7 @@ export type RuntimeChannelJobRequest = {
   options?: {
     idempotencyKey?: string;
     maxRetries?: number;
+    reuseTerminal?: boolean;
   };
 };
 

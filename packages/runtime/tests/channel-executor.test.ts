@@ -270,6 +270,37 @@ describe('runChannelJob', () => {
     expect(updates.find((update) => update.state === 'channel_accepting')?.result?.channelId).toBe('0xaccepted');
   });
 
+  it('accept action marks failed when temporary channel id is missing', async () => {
+    const rpc = {
+      acceptChannel: async () => {
+        throw new Error('Invalid parameter: No channel with temp id Hash256(0xdeadbeef) found');
+      },
+    } as unknown as FiberRpcClient;
+
+    const updates: ChannelJob[] = [];
+    for await (const updated of runChannelJob(
+      baseJob({
+        maxRetries: 0,
+        params: {
+          action: 'accept',
+          acceptChannelParams: {
+            temporary_channel_id: '0xdeadbeef',
+            funding_amount: '0x64',
+          },
+        },
+      }),
+      rpc,
+      defaultPaymentRetryPolicy,
+      new AbortController().signal,
+    )) {
+      updates.push(updated);
+    }
+
+    expect(updates[updates.length - 1].state).toBe('failed');
+    expect(updates[updates.length - 1].error?.retryable).toBe(false);
+    expect(updates[updates.length - 1].error?.message).toContain('No channel with temp id');
+  });
+
   it('abandon action transitions through channel_abandoning to succeeded', async () => {
     let called = false;
     const rpc = {

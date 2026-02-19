@@ -109,18 +109,18 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
 
   async manageInvoice(
     params: InvoiceJobParams,
-    options: { idempotencyKey?: string; maxRetries?: number } = {},
+    options: { idempotencyKey?: string; maxRetries?: number; reuseTerminal?: boolean } = {},
   ): Promise<InvoiceJob> {
     const idempotencyKey = options.idempotencyKey ?? deriveInvoiceKey(params) ?? randomUUID();
-    return this.createOrReuseJob<InvoiceJobParams, InvoiceJob['result']>('invoice', params, idempotencyKey, options.maxRetries) as Promise<InvoiceJob>;
+    return this.createOrReuseJob<InvoiceJobParams, InvoiceJob['result']>('invoice', params, idempotencyKey, options.maxRetries, options.reuseTerminal) as Promise<InvoiceJob>;
   }
 
   async manageChannel(
     params: ChannelJobParams,
-    options: { idempotencyKey?: string; maxRetries?: number } = {},
+    options: { idempotencyKey?: string; maxRetries?: number; reuseTerminal?: boolean } = {},
   ): Promise<ChannelJob> {
     const idempotencyKey = options.idempotencyKey ?? deriveChannelKey(params) ?? randomUUID();
-    return this.createOrReuseJob<ChannelJobParams, ChannelJob['result']>('channel', params, idempotencyKey, options.maxRetries) as Promise<ChannelJob>;
+    return this.createOrReuseJob<ChannelJobParams, ChannelJob['result']>('channel', params, idempotencyKey, options.maxRetries, options.reuseTerminal) as Promise<ChannelJob>;
   }
 
   getJob(id: string): RuntimeJob | undefined {
@@ -172,10 +172,26 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
     params: P,
     idempotencyKey: string,
     maxRetries?: number,
+    reuseTerminal?: boolean,
   ): Promise<RuntimeJob> {
     const existing = this.store.getJobByIdempotencyKey<P, R>(idempotencyKey);
     if (existing?.type === type) {
       if (existing.state === 'succeeded' || existing.state === 'cancelled') {
+        if (reuseTerminal === false) {
+          const reset = this.store.updateJob<P, R>(existing.id, {
+            state: 'queued',
+            params,
+            result: undefined,
+            error: undefined,
+            retryCount: 0,
+            nextRetryAt: undefined,
+            completedAt: undefined,
+          } as unknown as Partial<import('./types.js').Job<P, R>>);
+          this.store.addJobEvent(existing.id, 'created', existing.state, 'queued', this.buildEventData(reset as RuntimeJob));
+          this.emit('job:created', reset as RuntimeJob);
+          this.schedule(reset as RuntimeJob);
+          return reset as RuntimeJob;
+        }
         return existing as RuntimeJob;
       }
       if (!TERMINAL_JOB_STATES.has(existing.state) || existing.state === 'failed') {

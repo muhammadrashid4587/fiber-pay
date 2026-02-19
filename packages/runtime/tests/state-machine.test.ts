@@ -60,6 +60,16 @@ describe('JobStateMachine', () => {
     expect(channelStateMachine.transition('waiting_retry', 'cancel')).toBe('cancelled');
   });
 
+  it('supports channel permanent failure transitions from active channel states', () => {
+    expect(channelStateMachine.transition('executing', 'payment_failed_permanent')).toBe('failed');
+    expect(channelStateMachine.transition('channel_opening', 'payment_failed_permanent')).toBe('failed');
+    expect(channelStateMachine.transition('channel_accepting', 'payment_failed_permanent')).toBe('failed');
+    expect(channelStateMachine.transition('channel_abandoning', 'payment_failed_permanent')).toBe('failed');
+    expect(channelStateMachine.transition('channel_updating', 'payment_failed_permanent')).toBe('failed');
+    expect(channelStateMachine.transition('channel_awaiting_ready', 'payment_failed_permanent')).toBe('failed');
+    expect(channelStateMachine.transition('channel_closing', 'payment_failed_permanent')).toBe('failed');
+  });
+
   it('supports channel accept/abandon/update success transitions', () => {
     expect(channelStateMachine.transition('executing', 'channel_accepting')).toBe('channel_accepting');
     expect(channelStateMachine.transition('channel_accepting', 'payment_success')).toBe('succeeded');

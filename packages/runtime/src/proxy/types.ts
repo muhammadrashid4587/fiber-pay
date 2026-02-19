@@ -22,7 +22,7 @@ export interface RpcMonitorProxyDeps {
   getStatus: () => RpcMonitorProxyStatus;
   createPaymentJob?: (params: PaymentJobParams, options?: { idempotencyKey?: string; maxRetries?: number }) => Promise<RuntimeJob>;
   createInvoiceJob?: (params: InvoiceJobParams, options?: { idempotencyKey?: string; maxRetries?: number }) => Promise<RuntimeJob>;
-  createChannelJob?: (params: ChannelJobParams, options?: { idempotencyKey?: string; maxRetries?: number }) => Promise<RuntimeJob>;
+  createChannelJob?: (params: ChannelJobParams, options?: { idempotencyKey?: string; maxRetries?: number; reuseTerminal?: boolean }) => Promise<RuntimeJob>;
   getJob?: (id: string) => RuntimeJob | undefined;
   listJobs?: (filter?: JobFilter) => RuntimeJob[];
   cancelJob?: (id: string) => void;

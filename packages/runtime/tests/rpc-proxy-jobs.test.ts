@@ -123,4 +123,37 @@ describe('RpcMonitorProxy jobs endpoints', () => {
     expect(response.status).toBe(204);
     expect(cancelJob).toHaveBeenCalledWith('job-cancel-1');
   });
+
+  it('passes reuseTerminal option to createChannelJob', async () => {
+    const created = makeJob({ id: 'job-reuse-1', type: 'channel' });
+    const createChannelJob = vi.fn(async () => created);
+
+    const { proxy, baseUrl } = await makeProxy({
+      createChannelJob,
+    });
+    running.push(proxy);
+
+    const response = await fetch(`${baseUrl}/jobs/channel`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        params: {
+          action: 'open',
+          openChannelParams: { peer_id: 'peer-1', funding_amount: '0x64' },
+        },
+        options: {
+          idempotencyKey: 'open:peer:peer-1',
+          reuseTerminal: false,
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as RuntimeJob;
+    expect(payload.id).toBe('job-reuse-1');
+    expect(createChannelJob).toHaveBeenCalledWith(
+      { action: 'open', openChannelParams: { peer_id: 'peer-1', funding_amount: '0x64' } },
+      { idempotencyKey: 'open:peer:peer-1', reuseTerminal: false },
+    );
+  });
 });

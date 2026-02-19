@@ -249,6 +249,7 @@ export function createChannelCommand(config: CliConfig): Command {
           },
           options: {
             idempotencyKey: `open:peer:${peerId}`,
+            reuseTerminal: false,
           },
         });
 
@@ -499,6 +500,7 @@ export function createChannelCommand(config: CliConfig): Command {
           },
           options: {
             idempotencyKey: `update:channel:${channelId}`,
+            reuseTerminal: false,
           },
         });
 

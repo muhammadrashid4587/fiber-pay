@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JobManager } from '../src/jobs/job-manager.js';
 import { SqliteJobStore } from '../src/storage/sqlite-store.js';
-import type { PaymentJobParams } from '../src/jobs/types.js';
+import type { PaymentJobParams, ChannelJobParams } from '../src/jobs/types.js';
 import type { FiberRpcClient } from '@fiber-pay/sdk';
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
@@ -286,6 +286,111 @@ describe('JobManager', () => {
         await slowManager.stop();
         slowStore.close();
         rmSync(dbPath.replace('.db', '-slow.db'), { force: true });
+      }
+    });
+  });
+
+  describe('reuseTerminal', () => {
+    it('returns stale succeeded job when reuseTerminal is not set (default)', async () => {
+      const channelParams: ChannelJobParams = {
+        action: 'open',
+        openChannelParams: { peer_id: 'peer-1', funding_amount: '0x64' },
+        waitForReady: true,
+      };
+
+      const job1 = await manager.manageChannel(channelParams, { idempotencyKey: 'reuse-default' });
+      // Wait for job to succeed
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          const j = manager.getJob(job1.id);
+          if (j?.state === 'succeeded') { resolve(); return; }
+          setTimeout(check, 20);
+        };
+        check();
+      });
+
+      // Same key, default reuseTerminal (undefined) → returns stale succeeded job
+      const job2 = await manager.manageChannel(channelParams, { idempotencyKey: 'reuse-default' });
+      expect(job2.id).toBe(job1.id);
+      expect(job2.state).toBe('succeeded');
+    });
+
+    it('resets succeeded job when reuseTerminal is false', async () => {
+      const channelParams: ChannelJobParams = {
+        action: 'open',
+        openChannelParams: { peer_id: 'peer-1', funding_amount: '0x64' },
+        waitForReady: true,
+      };
+
+      const job1 = await manager.manageChannel(channelParams, { idempotencyKey: 'reuse-false' });
+      // Wait for job to succeed
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          const j = manager.getJob(job1.id);
+          if (j?.state === 'succeeded') { resolve(); return; }
+          setTimeout(check, 20);
+        };
+        check();
+      });
+
+      const succeededJob = manager.getJob(job1.id);
+      expect(succeededJob?.state).toBe('succeeded');
+
+      // Same key, reuseTerminal: false → job should be reset to queued
+      const job2 = await manager.manageChannel(channelParams, {
+        idempotencyKey: 'reuse-false',
+        reuseTerminal: false,
+      });
+      expect(job2.id).toBe(job1.id);
+      expect(job2.state).toBe('queued');
+
+      // Wait for re-execution
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          const j = manager.getJob(job2.id);
+          if (j?.state === 'succeeded') { resolve(); return; }
+          setTimeout(check, 20);
+        };
+        check();
+      });
+
+      const final = manager.getJob(job2.id);
+      expect(final?.state).toBe('succeeded');
+    });
+
+    it('still deduplicates non-terminal jobs even when reuseTerminal is false', async () => {
+      // Don't start manager so jobs stay in queued state (non-terminal)
+      const noStartStore = new SqliteJobStore(dbPath.replace('.db', '-nostart.db'));
+      const noStartManager = new JobManager(successRpc, noStartStore, {
+        schedulerIntervalMs: 10_000,
+      });
+      // Deliberately not calling start() — jobs will stay queued
+
+      try {
+        const channelParams: ChannelJobParams = {
+          action: 'open',
+          openChannelParams: { peer_id: 'peer-dedup', funding_amount: '0x64' },
+          waitForReady: false,
+        };
+
+        const job1 = await noStartManager.manageChannel(channelParams, {
+          idempotencyKey: 'reuse-inflight',
+          reuseTerminal: false,
+        });
+        expect(job1.state).toBe('queued');
+
+        // Second call with same key while job is still queued → should return same job (dedup)
+        const job2 = await noStartManager.manageChannel(channelParams, {
+          idempotencyKey: 'reuse-inflight',
+          reuseTerminal: false,
+        });
+
+        expect(job2.id).toBe(job1.id);
+        expect(job2.state).toBe('queued');
+      } finally {
+        await noStartManager.stop();
+        noStartStore.close();
+        rmSync(dbPath.replace('.db', '-nostart.db'), { force: true });
       }
     });
   });
