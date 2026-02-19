@@ -6,6 +6,7 @@
  * payments on the CKB Lightning Network (Fiber Network).
  */
 
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { DownloadProgress } from '@fiber-pay/node';
 import { ensureFiberBinary, ProcessManager } from '@fiber-pay/node';
@@ -494,7 +495,7 @@ export class FiberPay {
             sendPaymentParams: paymentParams,
           },
           {
-            idempotencyKey: params.invoice,
+            idempotencyKey: params.invoice ? `payment:invoice:${params.invoice}` : undefined,
           },
         );
         const terminal = await this.waitForRuntimeJobTerminal(job.id, 120_000);
@@ -842,9 +843,7 @@ export class FiberPay {
         funding_amount: fundingHex,
         public: params.isPublic ?? true,
       };
-      const idempotencyKey =
-        params.idempotencyKey ??
-        `open:${openParams.peer_id}:${openParams.funding_amount}:${openParams.public}`;
+      const idempotencyKey = params.idempotencyKey ?? `open:${openParams.peer_id}:${randomUUID()}`;
 
       let temporaryChannelId: string;
       if (this.runtimeJobManager) {
@@ -926,7 +925,7 @@ export class FiberPay {
             },
             waitForClosed: false,
           },
-          { idempotencyKey: params.channelId },
+          { idempotencyKey: `channel:shutdown:${params.channelId}` },
         );
         const terminal = await this.waitForRuntimeJobTerminal(job.id, 120_000);
         if (terminal.type !== 'channel' || terminal.state !== 'succeeded') {
@@ -1187,7 +1186,7 @@ export class FiberPay {
             newInvoiceParams: holdInvoiceParams,
             waitForTerminal: false,
           },
-          { idempotencyKey: params.paymentHash },
+          { idempotencyKey: `invoice:create:${params.paymentHash}` },
         );
         const terminal = await this.waitForRuntimeJobTerminal(job.id, 120_000);
         if (
@@ -1259,7 +1258,7 @@ export class FiberPay {
               payment_preimage: params.preimage as HexString,
             },
           },
-          { idempotencyKey: params.paymentHash },
+          { idempotencyKey: `invoice:settle:${params.paymentHash}` },
         );
         const terminal = await this.waitForRuntimeJobTerminal(job.id, 120_000);
         if (terminal.type !== 'invoice' || terminal.state !== 'succeeded') {

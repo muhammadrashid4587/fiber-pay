@@ -199,6 +199,22 @@ describe('JobManager', () => {
       const created = await createdPromise;
       expect((created as { state: string }).state).toBe('queued');
     });
+
+    it('throws when reusing same idempotency key with different payment params', async () => {
+      await manager.ensurePayment(testParams, { idempotencyKey: 'pay-collision-1' });
+
+      await expect(
+        manager.ensurePayment(
+          {
+            sendPaymentParams: {
+              invoice: 'different-invoice',
+              payment_hash: '0xabc123' as `0x${string}`,
+            },
+          },
+          { idempotencyKey: 'pay-collision-1' },
+        ),
+      ).rejects.toThrow(/Idempotency key collision/i);
+    });
   });
 
   describe('getJob', () => {
@@ -239,6 +255,29 @@ describe('JobManager', () => {
       await new Promise((r) => setTimeout(r, 100));
       const final = manager.getJob(job.id);
       expect(final?.state).toBe('succeeded');
+    });
+
+    it('throws when same idempotency key is reused for a different invoice action', async () => {
+      await manager.manageInvoice(
+        {
+          action: 'cancel',
+          cancelInvoiceParams: { payment_hash: '0xinv123' as `0x${string}` },
+        },
+        { idempotencyKey: 'invoice-collision-1' },
+      );
+
+      await expect(
+        manager.manageInvoice(
+          {
+            action: 'settle',
+            settleInvoiceParams: {
+              payment_hash: '0xinv123' as `0x${string}`,
+              payment_preimage: '0x01' as `0x${string}`,
+            },
+          },
+          { idempotencyKey: 'invoice-collision-1' },
+        ),
+      ).rejects.toThrow(/Idempotency key collision/i);
     });
   });
 

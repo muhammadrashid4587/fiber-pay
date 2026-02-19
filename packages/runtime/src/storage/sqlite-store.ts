@@ -137,6 +137,7 @@ export class SqliteJobStore {
       .prepare(
         `UPDATE jobs SET
           state         = @state,
+          params        = @params,
           result        = @result,
           error         = @error,
           retry_count   = @retry_count,
@@ -148,6 +149,7 @@ export class SqliteJobStore {
       .run({
         id: merged.id,
         state: merged.state,
+        params: JSON.stringify(merged.params),
         result: merged.result !== undefined ? JSON.stringify(merged.result) : null,
         error: merged.error !== undefined ? JSON.stringify(merged.error) : null,
         retry_count: merged.retryCount,

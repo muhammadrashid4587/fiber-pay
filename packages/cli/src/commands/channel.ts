@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { type ChannelState, ckbToShannons, type HexString } from '@fiber-pay/sdk';
 import { Command } from 'commander';
 import { sleep } from '../lib/async.js';
@@ -220,6 +221,10 @@ export function createChannelCommand(config: CliConfig): Command {
     .requiredOption('--peer <peerIdOrMultiaddr>')
     .requiredOption('--funding <ckb>')
     .option('--private')
+    .option(
+      '--idempotency-key <key>',
+      'Reuse this key only when retrying the exact same open intent',
+    )
     .option('--json')
     .action(async (options) => {
       const rpc = await createReadyRpcClient(config);
@@ -233,6 +238,11 @@ export function createChannelCommand(config: CliConfig): Command {
         const peerIdMatch = peerInput.match(/\/p2p\/([^/]+)/);
         if (peerIdMatch) peerId = peerIdMatch[1];
       }
+
+      const idempotencyKey =
+        typeof options.idempotencyKey === 'string' && options.idempotencyKey.trim().length > 0
+          ? options.idempotencyKey.trim()
+          : `open:${peerId}:${randomUUID()}`;
 
       const endpoint = resolveRpcEndpoint(config);
       if (endpoint.target === 'runtime-proxy') {
@@ -248,7 +258,7 @@ export function createChannelCommand(config: CliConfig): Command {
             waitForReady: false,
           },
           options: {
-            idempotencyKey: `open:peer:${peerId}`,
+            idempotencyKey,
             reuseTerminal: false,
           },
         });
@@ -259,6 +269,7 @@ export function createChannelCommand(config: CliConfig): Command {
             jobState: created.state,
             peer: peerId,
             fundingCkb,
+            idempotencyKey,
           };
 
           if (json) {
@@ -269,6 +280,7 @@ export function createChannelCommand(config: CliConfig): Command {
             console.log(`  Job State:            ${payload.jobState}`);
             console.log(`  Peer:                 ${payload.peer}`);
             console.log(`  Funding:              ${payload.fundingCkb} CKB`);
+            console.log(`  Idempotency Key:      ${payload.idempotencyKey}`);
           }
           return;
         }
@@ -499,7 +511,6 @@ export function createChannelCommand(config: CliConfig): Command {
             updateChannelParams: updateParams,
           },
           options: {
-            idempotencyKey: `update:channel:${channelId}`,
             reuseTerminal: false,
           },
         });

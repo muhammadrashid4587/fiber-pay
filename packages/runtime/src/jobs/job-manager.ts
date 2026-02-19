@@ -20,6 +20,23 @@ import { runInvoiceJob } from './executors/invoice-executor.js';
 import { runChannelJob } from './executors/channel-executor.js';
 import type { SqliteJobStore } from '../storage/sqlite-store.js';
 
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, nested]) => `${JSON.stringify(key)}:${stableStringify(nested)}`);
+  return `{${entries.join(',')}}`;
+}
+
+function haveSameParams(left: unknown, right: unknown): boolean {
+  return stableStringify(left) === stableStringify(right);
+}
+
 export interface JobManagerEvents {
   'job:created': [job: RuntimeJob];
   'job:state_changed': [job: RuntimeJob, from: JobState];
@@ -73,6 +90,11 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
 
     const existing = this.store.getJobByIdempotencyKey<PaymentJobParams, PaymentJob['result']>(idempotencyKey);
     if (existing?.type === 'payment') {
+      if (!haveSameParams(existing.params, params)) {
+        throw new Error(
+          `Idempotency key collision with different payment params: ${idempotencyKey}. Use a new idempotency key for a new payment intent.`,
+        );
+      }
       if (existing.state === 'succeeded' || existing.state === 'cancelled') {
         return existing as PaymentJob;
       }
@@ -80,6 +102,8 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
         if (existing.state === 'failed' && !this.active.has(existing.id)) {
           const reset = this.store.updateJob<PaymentJobParams, PaymentJob['result']>(existing.id, {
             state: 'queued',
+            params,
+            result: undefined,
             error: undefined,
             retryCount: 0,
             nextRetryAt: undefined,
@@ -176,6 +200,11 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
   ): Promise<RuntimeJob> {
     const existing = this.store.getJobByIdempotencyKey<P, R>(idempotencyKey);
     if (existing?.type === type) {
+      if (!haveSameParams(existing.params, params)) {
+        throw new Error(
+          `Idempotency key collision with different ${type} params: ${idempotencyKey}. Use a new idempotency key for a new ${type} intent.`,
+        );
+      }
       if (existing.state === 'succeeded' || existing.state === 'cancelled') {
         if (reuseTerminal === false) {
           const reset = this.store.updateJob<P, R>(existing.id, {
@@ -198,6 +227,8 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
         if (existing.state === 'failed' && !this.active.has(existing.id)) {
           const reset = this.store.updateJob<P, R>(existing.id, {
             state: 'queued',
+            params,
+            result: undefined,
             error: undefined,
             retryCount: 0,
             nextRetryAt: undefined,
@@ -361,18 +392,37 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
 }
 
 function deriveInvoiceKey(params: InvoiceJobParams): string | undefined {
-  if (params.getInvoicePaymentHash) return params.getInvoicePaymentHash;
-  if (params.cancelInvoiceParams?.payment_hash) return params.cancelInvoiceParams.payment_hash;
-  if (params.settleInvoiceParams?.payment_hash) return params.settleInvoiceParams.payment_hash;
-  if (params.newInvoiceParams?.payment_hash) return params.newInvoiceParams.payment_hash;
+  if (params.action === 'watch' && params.getInvoicePaymentHash) {
+    return `invoice:watch:${params.getInvoicePaymentHash}`;
+  }
+  if (params.action === 'cancel' && params.cancelInvoiceParams?.payment_hash) {
+    return `invoice:cancel:${params.cancelInvoiceParams.payment_hash}`;
+  }
+  if (params.action === 'settle' && params.settleInvoiceParams?.payment_hash) {
+    return `invoice:settle:${params.settleInvoiceParams.payment_hash}`;
+  }
+  if (params.action === 'create' && params.newInvoiceParams?.payment_hash) {
+    return `invoice:create:${params.newInvoiceParams.payment_hash}`;
+  }
   return undefined;
 }
 
 function deriveChannelKey(params: ChannelJobParams): string | undefined {
-  if (params.channelId) return params.channelId;
-  if (params.shutdownChannelParams?.channel_id) return params.shutdownChannelParams.channel_id;
-  if (params.peerId) return `peer:${params.peerId}`;
-  if (params.openChannelParams?.peer_id) return `peer:${params.openChannelParams.peer_id}`;
+  if (params.action === 'open') return undefined;
+  if (params.acceptChannelParams?.temporary_channel_id) {
+    return `channel:accept:${params.acceptChannelParams.temporary_channel_id}`;
+  }
+  if (params.action === 'shutdown' && params.shutdownChannelParams?.channel_id) {
+    return `channel:shutdown:${params.shutdownChannelParams.channel_id}`;
+  }
+  if (params.action === 'abandon' && params.abandonChannelParams?.channel_id) {
+    return `channel:abandon:${params.abandonChannelParams.channel_id}`;
+  }
+  if (params.action === 'update' && params.updateChannelParams?.channel_id) {
+    const fingerprint = stableStringify(params.updateChannelParams);
+    return `channel:update:${params.updateChannelParams.channel_id}:${fingerprint}`;
+  }
+  if (params.channelId) return `channel:${params.action}:${params.channelId}`;
   return undefined;
 }
 

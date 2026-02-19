@@ -186,7 +186,7 @@ export function createInvoiceCommand(config: CliConfig): Command {
             cancelInvoiceParams: { payment_hash: paymentHash as HexString },
           },
           options: {
-            idempotencyKey: paymentHash,
+            idempotencyKey: `invoice:cancel:${paymentHash}`,
           },
         });
 
@@ -253,7 +253,7 @@ export function createInvoiceCommand(config: CliConfig): Command {
             },
           },
           options: {
-            idempotencyKey: paymentHash,
+            idempotencyKey: `invoice:settle:${paymentHash}`,
           },
         });
 
