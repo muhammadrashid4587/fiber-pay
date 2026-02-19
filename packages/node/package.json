@@ -1,6 +1,6 @@
 {
   "name": "@fiber-pay/node",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "description": "Fiber Network node binary management and process lifecycle",
   "type": "module",
   "main": "./dist/index.js",
@@ -30,6 +30,9 @@
     "nervos"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   }

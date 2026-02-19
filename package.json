@@ -15,6 +15,7 @@
     "lint:fix": "biome check --write packages/sdk/src packages/cli/src packages/node/src packages/agent/src",
     "format": "biome format --write packages/sdk/src packages/cli/src packages/node/src packages/agent/src",
     "format:check": "biome format packages/sdk/src packages/cli/src packages/node/src packages/agent/src",
+    "release:bump": "node scripts/bump-release-version.mjs",
     "e2e:testnet": "node scripts/e2e-testnet-dual-node.mjs",
     "e2e:runtime-jobs": "node scripts/e2e-runtime-orchestration.mjs",
     "prepare": "husky"

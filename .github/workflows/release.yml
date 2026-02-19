@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: publish-npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+          scope: "@fiber-pay"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate tag and package versions
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const tag = process.env.TAG;
+            if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag)) {
+              console.error(`Invalid tag format: ${tag}. Expected vX.Y.Z or vX.Y.Z-prerelease`);
+              process.exit(1);
+            }
+            const version = tag.slice(1);
+            const pkgPaths = [
+              "packages/sdk/package.json",
+              "packages/node/package.json",
+              "packages/runtime/package.json",
+              "packages/agent/package.json",
+              "packages/cli/package.json"
+            ];
+            const pkgVersions = pkgPaths.map((pkgPath) => {
+              const fullPath = path.join(process.cwd(), pkgPath);
+              const pkg = JSON.parse(fs.readFileSync(fullPath, "utf8"));
+              return { name: pkg.name, version: pkg.version, path: pkgPath };
+            });
+            const mismatched = pkgVersions.filter((pkg) => pkg.version !== version);
+            if (mismatched.length > 0) {
+              console.error("Version mismatch with git tag:");
+              for (const pkg of mismatched) {
+                console.error(`- ${pkg.name} (${pkg.path}) => ${pkg.version}, expected ${version}`);
+              }
+              process.exit(1);
+            }
+            console.log(`All package versions match tag ${tag}`);
+          '
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test
+
+      - name: Resolve npm dist-tag
+        id: dist_tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          VERSION="${TAG#v}"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "value=next" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish @fiber-pay packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [[ -z "$NODE_AUTH_TOKEN" ]]; then
+            echo "NPM_TOKEN is not configured"
+            exit 1
+          fi
+          pnpm -r \
+            --filter @fiber-pay/sdk \
+            --filter @fiber-pay/node \
+            --filter @fiber-pay/runtime \
+            --filter @fiber-pay/agent \
+            --filter @fiber-pay/cli \
+            publish --access public --no-git-checks --tag "${{ steps.dist_tag.outputs.value }}"

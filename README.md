@@ -125,6 +125,52 @@ pnpm --filter @fiber-pay/cli build
 pnpm --filter @fiber-pay/runtime test
 ```
 
+## Release to npm (multi-package)
+
+This repo publishes all `@fiber-pay/*` packages in lockstep via Git tag.
+
+### Tag rules
+
+- Stable release: `vX.Y.Z` -> npm dist-tag `latest`
+- Pre-release: `vX.Y.Z-rc.N` / `vX.Y.Z-beta.N` -> npm dist-tag `next`
+
+### Publish flow
+
+- Bump versions in all publishable packages to the same version:
+
+```bash
+pnpm release:bump 0.1.1
+```
+
+This updates:
+
+- `packages/sdk/package.json`
+- `packages/node/package.json`
+- `packages/runtime/package.json`
+- `packages/agent/package.json`
+- `packages/cli/package.json`
+
+- Push commit to `main`.
+- Create and push tag:
+
+```bash
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+For pre-release:
+
+```bash
+git tag v0.1.2-rc.1
+git push origin v0.1.2-rc.1
+```
+
+### Required GitHub secret
+
+- `NPM_TOKEN`: npm automation token with publish permission for `@fiber-pay/*`
+
+Workflow file: `.github/workflows/release.yml`
+
 ## E2E dual-node script
 
 Run:

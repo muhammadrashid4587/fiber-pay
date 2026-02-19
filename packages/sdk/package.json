@@ -1,6 +1,6 @@
 {
   "name": "@fiber-pay/sdk",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "description": "Core SDK for building Fiber Network applications on CKB Lightning",
   "type": "module",
   "main": "./dist/index.js",
@@ -34,6 +34,9 @@
     "sdk"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },
