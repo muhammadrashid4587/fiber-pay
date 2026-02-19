@@ -11,6 +11,7 @@ import { createNodeCommand } from './commands/node.js';
 import { createPaymentCommand } from './commands/payment.js';
 import { createPeerCommand } from './commands/peer.js';
 import { createRuntimeCommand } from './commands/runtime.js';
+import { createTuiCommand } from './commands/tui.js';
 import { createVersionCommand } from './commands/version.js';
 import { CLI_COMMIT, CLI_VERSION } from './lib/build-info.js';
 import { getEffectiveConfig } from './lib/config.js';
@@ -168,6 +169,7 @@ async function main(): Promise<void> {
   program.addCommand(createBinaryCommand(config));
   program.addCommand(createConfigCommand(config));
   program.addCommand(createRuntimeCommand(config));
+  program.addCommand(createTuiCommand(config));
   program.addCommand(createVersionCommand());
 
   await program.parseAsync(process.argv);

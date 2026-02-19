@@ -31,6 +31,7 @@
     "@fiber-pay/node": "workspace:*",
     "@fiber-pay/runtime": "workspace:*",
     "@fiber-pay/sdk": "workspace:*",
+    "@fiber-pay/tui": "workspace:*",
     "commander": "^13.1.0",
     "yaml": "^2.8.2"
   }
