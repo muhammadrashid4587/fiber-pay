@@ -59,6 +59,8 @@ fiber-pay invoice get <paymentHash> --json
 fiber-pay channel list --json
 fiber-pay job list --json
 fiber-pay job get <jobId> --json
+fiber-pay logs --source all --tail 80
+fiber-pay logs --source runtime --follow
 ```
 
 ## Output convention

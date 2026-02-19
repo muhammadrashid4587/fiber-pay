@@ -22,6 +22,20 @@ Runtime metadata file:
 
 - `<data-dir>/runtime.meta.json` (contains runtime/log paths)
 
+Prefer CLI log access first (no manual `cat` needed):
+
+```bash
+fiber-pay logs --source all --tail 80
+fiber-pay logs --source runtime --tail 120
+fiber-pay logs --source fnn-stderr --tail 120
+fiber-pay logs --source runtime --follow
+```
+
+Notes:
+
+- `logs` has alias `log`
+- `--follow` is human-output mode (do not combine with `--json`)
+
 ## 2) Quick health triage
 
 Run in order:
@@ -59,9 +73,10 @@ What to look at:
 
 If `node start` exits early:
 
-1. Read `fnn.stderr.log` first
-2. Then `fnn.stdout.log`
-3. Then runtime alerts (`runtime.alerts.jsonl`)
+1. `fiber-pay logs --source fnn-stderr --tail 200`
+2. `fiber-pay logs --source fnn-stdout --tail 200`
+3. `fiber-pay logs --source runtime --tail 200`
+4. for live retry loops, run `fiber-pay logs --source all --follow`
 
 Common symptom:
 
@@ -82,6 +97,7 @@ Avoid contaminating default profile while debugging:
 fiber-pay --data-dir ~/.fiber-pay-smoke config init --network testnet --force --json
 fiber-pay --data-dir ~/.fiber-pay-smoke binary download --json
 fiber-pay --data-dir ~/.fiber-pay-smoke node start --json
+fiber-pay --data-dir ~/.fiber-pay-smoke logs --source all --tail 120
 fiber-pay --data-dir ~/.fiber-pay-smoke node status --json
 fiber-pay --data-dir ~/.fiber-pay-smoke node stop --json
 ```
