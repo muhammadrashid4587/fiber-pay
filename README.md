@@ -105,8 +105,8 @@ For exact command syntax and flags, use:
 - Command behavior and latest flags: `packages/cli/src/commands/**` and `fiber-pay ... -h`
 - Maintainer alignment notes: `AGENT.md`
 - Intent docs: `docs/plans/ai-payment-layer-intent.md`
-- Config docs: `docs/configuration.md`
-- Config artifact: `configs/fnn.reference.yml` (full commented reference)
+- Fiber-pay Config docs: `skills/fiber-pay/references/configuration.md`
+- fnn config artifact: `skills/fiber-pay/references/fnn.reference.yml` (full commented reference)
 
 ## Development
 

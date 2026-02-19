@@ -1,8 +1,8 @@
 # Fiber Config Reference
 
-This repo now keeps Fiber config artifacts in `configs/`:
+This repo keeps Fiber config artifacts in `skills/fiber-pay/references/`:
 
-- `configs/fnn.reference.yml` — full commented reference (all known keys)
+- `skills/fiber-pay/references/fnn.reference.yml` — full commented reference (all known keys)
 
 ## Runtime source of truth
 
@@ -50,4 +50,4 @@ The reference file includes useful operational notes:
 - `FIBER_SECRET_KEY_PASSWORD` protects key encryption/decryption.
 - `fnn --config /path/to/config.yml` and `fnn --dir /path/to/base_dir` are supported runtime entry patterns.
 
-Use `configs/fnn.reference.yml` when exploring advanced keys that are not yet exposed as first-class CLI flags.
+Use `skills/fiber-pay/references/fnn.reference.yml` when exploring advanced keys that are not yet exposed as first-class CLI flags.
