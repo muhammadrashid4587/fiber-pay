@@ -26,7 +26,7 @@ Fiber target: `v0.6.1`
 Use this prompt in Cursor/Claude/Copilot/other agents:
 
 ```text
-Follow this document https://raw.githubusercontent.com/RetricSu/fiber-pay/main/skills/fiber-pay/SKILL.md to equip yourself with a p2p payment system.
+Follow this document https://raw.githubusercontent.com/RetricSu/fiber-pay/refs/heads/master/skills/fiber-pay/SKILL.md to equip yourself with a p2p payment system.
 ```
 
 ## Development
