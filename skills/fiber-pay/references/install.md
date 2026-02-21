@@ -9,7 +9,7 @@ You can install from npm (recommended for consumers) or from source (recommended
 ## Install from npm
 
 ```bash
-npm install -g @fiber-pay/cli
+npm install -g @fiber-pay/cli@next
 ```
 
 ## Install from source
