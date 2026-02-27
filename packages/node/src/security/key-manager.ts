@@ -4,23 +4,10 @@
  * Keys are isolated from LLM context for security
  */
 
-import { createDecipheriv, createHash, randomBytes, scryptSync } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import type { HexString, KeyConfig, KeyInfo } from '../types/index.js';
-
-// =============================================================================
-// Constants
-// =============================================================================
-
-const SCRYPT_N = 2 ** 14;
-const SCRYPT_R = 8;
-const SCRYPT_P = 1;
-const KEY_LENGTH = 32;
-const SALT_LENGTH = 32;
-const IV_LENGTH = 16;
-const AUTH_TAG_LENGTH = 16;
-const ENCRYPTED_MAGIC = Buffer.from('FIBERENC');
+import type { KeyConfig, KeyInfo } from '@fiber-pay/sdk';
+import { decryptKey, derivePublicKey, generatePrivateKey, isEncryptedKey } from '@fiber-pay/sdk';
 
 // =============================================================================
 // Key Manager
@@ -80,16 +67,16 @@ export class KeyManager {
     }
 
     // Generate 32 random bytes
-    const privateKey = randomBytes(32);
+    const privateKey = generatePrivateKey();
 
     // The fiber node expects different formats:
     // - fiber/sk: raw 32 bytes
     // - ckb/key: hex string (64 characters)
-    let keyData: string | Buffer;
+    let keyData: string | Uint8Array;
     if (type === 'fiber') {
       keyData = privateKey;
     } else {
-      keyData = privateKey.toString('hex');
+      keyData = Buffer.from(privateKey).toString('hex');
     }
 
     // Write key file with restricted permissions
@@ -110,11 +97,11 @@ export class KeyManager {
     }
 
     const keyData = readFileSync(keyPath);
-    const encrypted = this.isEncrypted(keyData);
+    const encrypted = isEncryptedKey(keyData);
 
     // Get private key to derive public key
     const privateKey = await this.loadPrivateKey(type);
-    const publicKey = this.derivePublicKey(privateKey);
+    const publicKey = await derivePublicKey(privateKey);
 
     return {
       publicKey,
@@ -128,25 +115,25 @@ export class KeyManager {
    * Load and decrypt a private key (for internal use only)
    * This should NEVER be exposed to the LLM context
    */
-  private async loadPrivateKey(type: 'fiber' | 'ckb'): Promise<Buffer> {
+  private async loadPrivateKey(type: 'fiber' | 'ckb'): Promise<Uint8Array> {
     const keyPath = type === 'fiber' ? this.fiberKeyPath : this.ckbKeyPath;
     const keyData = readFileSync(keyPath);
 
-    if (this.isEncrypted(keyData)) {
+    if (isEncryptedKey(keyData)) {
       if (!this.config.encryptionPassword) {
         throw new Error('Key is encrypted but no password provided');
       }
-      return this.decryptKey(keyData, this.config.encryptionPassword);
+      return await decryptKey(keyData, this.config.encryptionPassword);
     }
 
     // The fiber node stores keys in different formats:
     // - fiber/sk: raw 32 bytes
     // - ckb/key: hex string (64 characters)
     if (type === 'fiber') {
-      return keyData;
+      return new Uint8Array(keyData);
     } else {
       const hexString = keyData.toString('utf-8').trim();
-      return Buffer.from(hexString, 'hex');
+      return new Uint8Array(Buffer.from(hexString, 'hex'));
     }
   }
 
@@ -158,56 +145,6 @@ export class KeyManager {
     return {
       password: this.config.encryptionPassword,
     };
-  }
-
-  /**
-   * Check if key data is encrypted
-   */
-  private isEncrypted(data: Buffer): boolean {
-    return (
-      data.length >= ENCRYPTED_MAGIC.length &&
-      data.subarray(0, ENCRYPTED_MAGIC.length).equals(ENCRYPTED_MAGIC)
-    );
-  }
-
-  /**
-   * Decrypt a key
-   */
-  private decryptKey(data: Buffer, password: string): Buffer {
-    // Parse encrypted format
-    let offset = ENCRYPTED_MAGIC.length;
-    const salt = data.subarray(offset, offset + SALT_LENGTH);
-    offset += SALT_LENGTH;
-    const iv = data.subarray(offset, offset + IV_LENGTH);
-    offset += IV_LENGTH;
-    const authTag = data.subarray(offset, offset + AUTH_TAG_LENGTH);
-    offset += AUTH_TAG_LENGTH;
-    const encrypted = data.subarray(offset);
-
-    // Derive key using scrypt
-    const derivedKey = scryptSync(password, salt, KEY_LENGTH, {
-      N: SCRYPT_N,
-      r: SCRYPT_R,
-      p: SCRYPT_P,
-    });
-
-    // Decrypt using AES-256-GCM
-    const decipher = createDecipheriv('aes-256-gcm', derivedKey, iv);
-    decipher.setAuthTag(authTag);
-
-    return Buffer.concat([decipher.update(encrypted), decipher.final()]);
-  }
-
-  /**
-   * Derive public key from private key (secp256k1)
-   * This is a simplified version - in production, use a proper secp256k1 library
-   */
-  private derivePublicKey(privateKey: Buffer): HexString {
-    // For now, return a placeholder - actual implementation would use
-    // @noble/secp256k1 or similar library
-    // The actual public key derivation requires elliptic curve math
-    const hash = createHash('sha256').update(privateKey).digest();
-    return `0x${hash.toString('hex')}` as HexString;
   }
 }
 

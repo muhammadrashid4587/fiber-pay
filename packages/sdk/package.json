@@ -9,10 +9,6 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
-    },
-    "./browser": {
-      "import": "./dist/browser.js",
-      "types": "./dist/browser.d.ts"
     }
   },
   "files": [
@@ -41,6 +37,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@noble/hashes": "^2.0.1",
     "zod": "^4.3.6"
   }
 }
