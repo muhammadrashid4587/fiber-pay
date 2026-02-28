@@ -42,6 +42,30 @@ Every commit must pass local hook checks:
 
 CI remains the remote enforcement gate and must stay aligned with local checks.
 
+### PR risk summary gate
+
+Every pull request is evaluated by a deterministic risk summary workflow:
+
+- workflow: `.github/workflows/pr-change-summary.yml`
+- script: `scripts/pr-change-summary.mjs`
+- outputs: PR comment + workflow summary + JSON artifact (`pr-change-summary.json`)
+
+The report includes: affected packages, changed file count, interface signals, and risk level with reasons.
+
+Risk rubric:
+
+| Level | Typical examples |
+|-------|------------------|
+| low | docs-only, tests-only, internal refactors without public surface changes |
+| medium | public entrypoint touched without removals, package manifest change, workflow change, multi-package PR |
+| high | removed exports in entrypoints, public entrypoint removed/renamed, CLI command file removed/renamed |
+
+Required actions by risk:
+
+- `low` — standard review flow.
+- `medium` — reviewer must acknowledge risk reasons.
+- `high` — maintainer approval required; rollback notes must be in PR description.
+
 ## Change-scope command matrix
 
 - Docs-only changes: `pnpm format:check`
