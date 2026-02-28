@@ -124,6 +124,15 @@ export class BinaryManager {
   }
 
   /**
+   * Get the path where the fnn-migrate binary should be installed
+   */
+  getMigrateBinaryPath(): string {
+    const { platform } = this.getPlatformInfo();
+    const binaryName = platform === 'win32' ? 'fnn-migrate.exe' : 'fnn-migrate';
+    return join(this.installDir, binaryName);
+  }
+
+  /**
    * Check if the binary is installed and get its info
    */
   async getBinaryInfo(): Promise<BinaryInfo> {
@@ -401,10 +410,7 @@ export class BinaryManager {
 
     // Find the binary in extracted files
     const files = await readdir(tempDir, { recursive: true });
-    const binaryFile = files.find((f) => {
-      const name = String(f);
-      return name.endsWith('fnn') || name.endsWith('fnn.exe');
-    });
+    const binaryFile = this.findBinaryInExtractedFiles(files, 'fnn');
 
     if (binaryFile) {
       const sourcePath = join(tempDir, String(binaryFile));
@@ -417,6 +423,35 @@ export class BinaryManager {
       );
       if (possibleBinary) {
         await rename(join(tempDir, possibleBinary), targetPath);
+      }
+    }
+
+    // Also extract fnn-migrate if present in the archive
+    const migrateFile = this.findBinaryInExtractedFiles(files, 'fnn-migrate');
+
+    if (migrateFile) {
+      const migrateSourcePath = join(tempDir, String(migrateFile));
+      const migrateTargetPath = this.getMigrateBinaryPath();
+      try {
+        // Proactively remove existing fnn-migrate so rename doesn't fail
+        if (existsSync(migrateTargetPath)) {
+          try {
+            unlinkSync(migrateTargetPath);
+          } catch {
+            // If we can't remove the existing file, the rename will likely fail below
+          }
+        }
+        await rename(migrateSourcePath, migrateTargetPath);
+        const { platform } = this.getPlatformInfo();
+        if (platform !== 'win32') {
+          chmodSync(migrateTargetPath, 0o755);
+        }
+      } catch (error) {
+        // fnn-migrate is optional; don't fail the main install, but warn
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `Warning: failed to install fnn-migrate helper. Migrations may be unavailable or stale. Error: ${message}`,
+        );
       }
     }
 
@@ -450,13 +485,38 @@ export class BinaryManager {
 
     // Find and move the binary
     const files = await readdir(tempDir, { recursive: true });
-    const binaryFile = files.find((f) => {
-      const name = String(f);
-      return name.endsWith('fnn') || name.endsWith('fnn.exe');
-    });
+    const binaryFile = this.findBinaryInExtractedFiles(files, 'fnn');
 
     if (binaryFile) {
       await rename(join(tempDir, String(binaryFile)), targetPath);
+    }
+
+    // Also extract fnn-migrate if present
+    const migrateFile = this.findBinaryInExtractedFiles(files, 'fnn-migrate');
+
+    if (migrateFile) {
+      const migrateTargetPath = this.getMigrateBinaryPath();
+      try {
+        // Proactively remove existing fnn-migrate so rename doesn't fail
+        if (existsSync(migrateTargetPath)) {
+          try {
+            unlinkSync(migrateTargetPath);
+          } catch {
+            // If we can't remove the existing file, the rename will likely fail below
+          }
+        }
+        await rename(join(tempDir, String(migrateFile)), migrateTargetPath);
+        const { platform } = this.getPlatformInfo();
+        if (platform !== 'win32') {
+          chmodSync(migrateTargetPath, 0o755);
+        }
+      } catch (error) {
+        // fnn-migrate is optional; don't fail the main install, but warn
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(
+          `Warning: failed to install fnn-migrate helper. Migrations may be unavailable or stale. Error: ${message}`,
+        );
+      }
     }
 
     await rm(tempDir, { recursive: true, force: true });
@@ -470,6 +530,24 @@ export class BinaryManager {
     if (existsSync(binaryPath)) {
       unlinkSync(binaryPath);
     }
+  }
+
+  /**
+   * Find a named binary in a list of extracted file paths.
+   */
+  private findBinaryInExtractedFiles(
+    files: (string | Buffer)[],
+    binaryName: 'fnn' | 'fnn-migrate',
+  ): string | Buffer | undefined {
+    return files.find((f) => {
+      const name = String(f);
+      return (
+        name.endsWith(`/${binaryName}`) ||
+        name === binaryName ||
+        name.endsWith(`\\${binaryName}`) ||
+        name.endsWith(`${binaryName}.exe`)
+      );
+    });
   }
 }
 

@@ -12,6 +12,7 @@ import { startRuntimeService } from '@fiber-pay/runtime';
 import { autoConnectBootnodes, extractBootnodeAddrs } from './bootnode.js';
 import { type CliConfig, ensureNodeConfigFile } from './config.js';
 import { printJsonError, printJsonEvent } from './format.js';
+import { runMigrationGuard } from './node-migration.js';
 import {
   getBinaryVersion,
   startRuntimeDaemonFromNode,
@@ -171,6 +172,21 @@ export async function runNodeStartCommand(
   if (!json) {
     console.log(`🧩 Binary: ${binaryPath}`);
     console.log(`🧩 Version: ${binaryVersion}`);
+  }
+
+  // Check if database migration is needed before starting the node
+  const guardResult = await runMigrationGuard({ dataDir: config.dataDir, binaryPath, json });
+  if (guardResult.checked) {
+    emitStage('migration_check', 'ok', {
+      storePath: `${config.dataDir}/store`,
+      needed: false,
+    });
+  } else {
+    emitStage('migration_check', 'ok', {
+      storePath: `${config.dataDir}/store`,
+      skipped: true,
+      reason: guardResult.skippedReason,
+    });
   }
 
   const nodeConfig: FiberNodeConfig = {

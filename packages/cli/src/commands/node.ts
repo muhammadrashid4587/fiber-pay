@@ -1,13 +1,12 @@
 import { nodeIdToPeerId, scriptToAddress } from '@fiber-pay/sdk';
 import { Command } from 'commander';
 import type { CliConfig } from '../lib/config.js';
-import { printJsonError, printJsonSuccess, printNodeInfoHuman } from '../lib/format.js';
-import { stopRuntimeDaemonFromNode } from '../lib/node-runtime-daemon.js';
+import { printJsonSuccess, printNodeInfoHuman } from '../lib/format.js';
 import { runNodeStartCommand } from '../lib/node-start.js';
 import { runNodeReadyCommand, runNodeStatusCommand } from '../lib/node-status.js';
-import { isProcessRunning, readPidFile, removePidFile } from '../lib/pid.js';
+import { runNodeStopCommand } from '../lib/node-stop.js';
+import { runNodeUpgradeCommand } from '../lib/node-upgrade.js';
 import { createReadyRpcClient } from '../lib/rpc.js';
-import { readRuntimeMeta, readRuntimePid, removeRuntimeFiles } from '../lib/runtime-meta.js';
 
 export function createNodeCommand(config: CliConfig): Command {
   const node = new Command('node').description('Node management');
@@ -27,66 +26,7 @@ export function createNodeCommand(config: CliConfig): Command {
     .command('stop')
     .option('--json')
     .action(async (options) => {
-      const json = Boolean(options.json);
-      const runtimeMeta = readRuntimeMeta(config.dataDir);
-      const runtimePid = readRuntimePid(config.dataDir);
-      if (runtimeMeta?.daemon && runtimePid && isProcessRunning(runtimePid)) {
-        stopRuntimeDaemonFromNode({ dataDir: config.dataDir, rpcUrl: config.rpcUrl });
-      }
-      removeRuntimeFiles(config.dataDir);
-
-      const pid = readPidFile(config.dataDir);
-      if (!pid) {
-        if (json) {
-          printJsonError({
-            code: 'NODE_NOT_RUNNING',
-            message: 'No PID file found. Node may not be running.',
-            recoverable: true,
-            suggestion: 'Run `fiber-pay node start` first if you intend to stop a node.',
-          });
-        } else {
-          console.log('❌ No PID file found. Node may not be running.');
-        }
-        process.exit(1);
-      }
-
-      if (!isProcessRunning(pid)) {
-        if (json) {
-          printJsonError({
-            code: 'NODE_NOT_RUNNING',
-            message: `Process ${pid} is not running. Cleaning up PID file.`,
-            recoverable: true,
-            suggestion: 'Start the node again if needed; stale PID has been cleaned.',
-            details: { pid, stalePidFileCleaned: true },
-          });
-        } else {
-          console.log(`❌ Process ${pid} is not running. Cleaning up PID file.`);
-        }
-        removePidFile(config.dataDir);
-        process.exit(1);
-      }
-
-      if (!json) {
-        console.log(`🛑 Stopping node (PID: ${pid})...`);
-      }
-      process.kill(pid, 'SIGTERM');
-
-      let attempts = 0;
-      while (isProcessRunning(pid) && attempts < 30) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        attempts++;
-      }
-
-      if (isProcessRunning(pid)) {
-        process.kill(pid, 'SIGKILL');
-      }
-
-      removePidFile(config.dataDir);
-      if (json) {
-        printJsonSuccess({ pid, stopped: true });
-      } else {
-        console.log('✅ Node stopped.');
-      }
+      await runNodeStopCommand(config, options);
     });
 
   node
@@ -130,6 +70,18 @@ export function createNodeCommand(config: CliConfig): Command {
       } else {
         printNodeInfoHuman(output);
       }
+    });
+
+  node
+    .command('upgrade')
+    .description('Upgrade the Fiber node binary and migrate the database if needed')
+    .option('--version <version>', 'Target Fiber version (default: latest)')
+    .option('--no-backup', 'Skip creating a store backup before migration')
+    .option('--check-only', 'Only check if migration is needed, do not migrate')
+    .option('--force', 'Force re-download the binary even if same version')
+    .option('--json')
+    .action(async (options) => {
+      await runNodeUpgradeCommand(config, options);
     });
 
   return node;
