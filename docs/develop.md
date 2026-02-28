@@ -42,29 +42,9 @@ Every commit must pass local hook checks:
 
 CI remains the remote enforcement gate and must stay aligned with local checks.
 
-### PR risk summary gate
+### Changeset CI check
 
-Every pull request is evaluated by a deterministic risk summary workflow:
-
-- workflow: `.github/workflows/pr-change-summary.yml`
-- script: `scripts/pr-change-summary.mjs`
-- outputs: PR comment + workflow summary + JSON artifact (`pr-change-summary.json`)
-
-The report includes: affected packages, changed file count, interface signals, and risk level with reasons.
-
-Risk rubric:
-
-| Level | Typical examples |
-|-------|------------------|
-| low | docs-only, tests-only, internal refactors without public surface changes |
-| medium | public entrypoint touched without removals, package manifest change, workflow change, multi-package PR |
-| high | removed exports in entrypoints, public entrypoint removed/renamed, CLI command file removed/renamed |
-
-Required actions by risk:
-
-- `low` — standard review flow.
-- `medium` — reviewer must acknowledge risk reasons.
-- `high` — maintainer approval required; rollback notes must be in PR description.
+Every pull request is checked for a changeset file by `.github/workflows/changeset-check.yml`. See the [Changeset enforcement](#changeset-enforcement) section for details on when this check applies and how to bypass it.
 
 ## Change-scope command matrix
 
@@ -90,6 +70,14 @@ This repo uses `changesets` to manage lockstep versioning and auto-generate pack
 
 - All publishable `@fiber-pay/*` packages are in a fixed group (same version).
 - Changelogs are generated automatically during `changeset version`.
+
+### Changeset enforcement
+
+A CI check (`.github/workflows/changeset-check.yml`) runs on every PR:
+
+- **Fails** if the PR touches package code but contains no `.changeset/*.md` file.
+- Posts a bot comment reminding the author to run `pnpm changeset`.
+- For docs-only, CI, or chore PRs that need no version bump, add the `skip-changeset` label to bypass the check.
 
 ### Release flow
 
