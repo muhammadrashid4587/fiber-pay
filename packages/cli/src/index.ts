@@ -12,6 +12,7 @@ import { createPaymentCommand } from './commands/payment.js';
 import { createPeerCommand } from './commands/peer.js';
 import { createRuntimeCommand } from './commands/runtime.js';
 import { createVersionCommand } from './commands/version.js';
+import { isTopLevelVersionRequest } from './lib/argv.js';
 import { CLI_COMMIT, CLI_VERSION } from './lib/build-info.js';
 import { getEffectiveConfig } from './lib/config.js';
 import { printJsonError } from './lib/format.js';
@@ -130,14 +131,20 @@ function printFatal(error: unknown): void {
 }
 
 async function main(): Promise<void> {
-  applyGlobalOverrides(process.argv);
+  const argv = process.argv;
+
+  if (isTopLevelVersionRequest(argv)) {
+    console.log(`${CLI_VERSION} (${CLI_COMMIT})`);
+    return;
+  }
+
+  applyGlobalOverrides(argv);
   const config = getEffectiveConfig(explicitFlags).config;
 
   const program = new Command();
   program
     .name('fiber-pay')
     .description('AI Agent Payment SDK for CKB Lightning Network')
-    .version(`${CLI_VERSION} (${CLI_COMMIT})`, '-v, --version', 'Show version and commit id')
     .option('--profile <name>', 'Use profile at ~/.fiber-pay/profiles/<name>')
     .option('--data-dir <path>', 'Override data directory for all commands')
     .option('--rpc-url <url>', 'Override RPC URL for all commands')
@@ -170,7 +177,7 @@ async function main(): Promise<void> {
   program.addCommand(createRuntimeCommand(config));
   program.addCommand(createVersionCommand());
 
-  await program.parseAsync(process.argv);
+  await program.parseAsync(argv);
 }
 
 main().catch((error) => {
