@@ -94,7 +94,31 @@ fiber-pay logs --source runtime --follow
 
 For deeper black-box diagnosis, use `references/logs-troubleshooting.md`.
 
-## 7) Runtime-first operations (recommended)
+## 7) Rebalance channel liquidity
+
+When one channel is outbound-heavy and another is inbound-heavy, use circular self-payment rebalance.
+
+Auto route mode (recommended first):
+
+```bash
+fiber-pay payment rebalance --amount <CKB> --max-fee <CKB> --dry-run --json
+fiber-pay payment rebalance --amount <CKB> --max-fee <CKB> --json
+```
+
+Manual route mode (pin preferred hops):
+
+```bash
+fiber-pay payment rebalance --amount <CKB> --hops <peerA_pubkey>,<peerB_pubkey> --dry-run --json
+fiber-pay payment rebalance --amount <CKB> --hops <peerA_pubkey>,<peerB_pubkey> --json
+```
+
+If you already built a route, you can explicitly allow self payment in route send mode:
+
+```bash
+fiber-pay payment send-route --router '<router_json>' --keysend --allow-self-payment --json
+```
+
+## 8) Runtime-first operations (recommended)
 
 In runtime-active scenarios, treat write operations as job-driven:
 
@@ -105,7 +129,7 @@ In runtime-active scenarios, treat write operations as job-driven:
 
 This keeps automation deterministic and auditable.
 
-## 8) Minimal end-to-end checklist
+## 9) Minimal end-to-end checklist
 
 1. `node start --daemon`
 2. `node ready`

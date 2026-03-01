@@ -152,6 +152,181 @@ export function createPaymentCommand(config: CliConfig): Command {
     });
 
   payment
+    .command('rebalance')
+    .description('Rebalance channel liquidity via circular self-payment')
+    .requiredOption('--amount <ckb>', 'Amount in CKB to rebalance')
+    .option('--max-fee <ckb>', 'Maximum fee in CKB (auto mode only)')
+    .option(
+      '--hops <pubkeys>',
+      'Comma-separated peer pubkeys for manual route mode (self pubkey appended automatically)',
+    )
+    .option('--dry-run', 'Simulate route/payment and return estimated result')
+    .option('--json')
+    .action(async (options) => {
+      const rpc = await createReadyRpcClient(config);
+      const json = Boolean(options.json);
+      const amountCkb = parseFloat(String(options.amount));
+      const maxFeeCkb =
+        options.maxFee !== undefined ? parseFloat(String(options.maxFee)) : undefined;
+      const manualHops =
+        typeof options.hops === 'string'
+          ? options.hops
+              .split(',')
+              .map((item: string) => item.trim())
+              .filter(Boolean)
+          : [];
+
+      if (!Number.isFinite(amountCkb) || amountCkb <= 0) {
+        const message = 'Invalid --amount value. Expected a positive CKB amount.';
+        if (json) {
+          printJsonError({
+            code: 'PAYMENT_REBALANCE_INPUT_INVALID',
+            message,
+            recoverable: true,
+            suggestion: 'Provide a positive number, e.g. `--amount 10`.',
+            details: { amount: options.amount },
+          });
+        } else {
+          console.error(`Error: ${message}`);
+        }
+        process.exit(1);
+      }
+
+      if (
+        maxFeeCkb !== undefined &&
+        (!Number.isFinite(maxFeeCkb) || maxFeeCkb < 0 || manualHops.length > 0)
+      ) {
+        const message =
+          manualHops.length > 0
+            ? '--max-fee is only supported in auto rebalance mode (without --hops).'
+            : 'Invalid --max-fee value. Expected a non-negative CKB amount.';
+        if (json) {
+          printJsonError({
+            code: 'PAYMENT_REBALANCE_INPUT_INVALID',
+            message,
+            recoverable: true,
+            suggestion:
+              manualHops.length > 0
+                ? 'Remove `--max-fee` or run auto mode without `--hops`.'
+                : 'Provide a non-negative number, e.g. `--max-fee 0.01`.',
+            details: { maxFee: options.maxFee, hasManualHops: manualHops.length > 0 },
+          });
+        } else {
+          console.error(`Error: ${message}`);
+        }
+        process.exit(1);
+      }
+
+      const selfPubkey = (await rpc.nodeInfo()).node_id as HexString;
+      const amount = ckbToShannons(amountCkb);
+
+      if (manualHops.length > 0) {
+        const hopsInfo = [
+          ...manualHops.map((pubkey: string) => ({ pubkey: pubkey as HexString })),
+          ...(manualHops[manualHops.length - 1] === selfPubkey
+            ? []
+            : [{ pubkey: selfPubkey as HexString }]),
+        ];
+
+        const route = await rpc.buildRouter({
+          amount,
+          hops_info: hopsInfo,
+        });
+
+        const result = await rpc.sendPaymentWithRouter({
+          router: route.router_hops,
+          keysend: true,
+          allow_self_payment: true,
+          dry_run: options.dryRun ? true : undefined,
+        });
+
+        const payload = {
+          mode: 'manual',
+          selfPubkey,
+          amountCkb,
+          paymentHash: result.payment_hash,
+          status:
+            result.status === 'Success'
+              ? 'success'
+              : result.status === 'Failed'
+                ? 'failed'
+                : 'pending',
+          feeCkb: shannonsToCkb(result.fee),
+          failureReason: result.failed_error,
+          dryRun: Boolean(options.dryRun),
+          routeHopCount: route.router_hops.length,
+        };
+
+        if (json) {
+          printJsonSuccess(payload);
+        } else {
+          console.log(
+            options.dryRun
+              ? 'Rebalance dry-run complete (manual route)'
+              : 'Rebalance sent (manual route)',
+          );
+          console.log(`  Self:   ${payload.selfPubkey}`);
+          console.log(`  Amount: ${payload.amountCkb} CKB`);
+          console.log(`  Hops:   ${payload.routeHopCount}`);
+          console.log(`  Hash:   ${payload.paymentHash}`);
+          console.log(`  Status: ${payload.status}`);
+          console.log(`  Fee:    ${payload.feeCkb} CKB`);
+          if (payload.failureReason) {
+            console.log(`  Error:  ${payload.failureReason}`);
+          }
+        }
+        return;
+      }
+
+      const result = await rpc.sendPayment({
+        target_pubkey: selfPubkey,
+        amount,
+        keysend: true,
+        allow_self_payment: true,
+        max_fee_amount: maxFeeCkb !== undefined ? ckbToShannons(maxFeeCkb) : undefined,
+        dry_run: options.dryRun ? true : undefined,
+      });
+
+      const payload = {
+        mode: 'auto',
+        selfPubkey,
+        amountCkb,
+        maxFeeCkb,
+        paymentHash: result.payment_hash,
+        status:
+          result.status === 'Success'
+            ? 'success'
+            : result.status === 'Failed'
+              ? 'failed'
+              : 'pending',
+        feeCkb: shannonsToCkb(result.fee),
+        failureReason: result.failed_error,
+        dryRun: Boolean(options.dryRun),
+      };
+
+      if (json) {
+        printJsonSuccess(payload);
+      } else {
+        console.log(
+          options.dryRun
+            ? 'Rebalance dry-run complete (auto route)'
+            : 'Rebalance sent (auto route)',
+        );
+        console.log(`  Self:   ${payload.selfPubkey}`);
+        console.log(`  Amount: ${payload.amountCkb} CKB`);
+        console.log(`  Hash:   ${payload.paymentHash}`);
+        console.log(`  Status: ${payload.status}`);
+        console.log(`  Fee:    ${payload.feeCkb} CKB`);
+        if (payload.maxFeeCkb !== undefined) {
+          console.log(`  MaxFee: ${payload.maxFeeCkb} CKB`);
+        }
+        if (payload.failureReason) {
+          console.log(`  Error:  ${payload.failureReason}`);
+        }
+      }
+    });
+
+  payment
     .command('get')
     .argument('<paymentHash>')
     .option('--json')
@@ -368,6 +543,7 @@ export function createPaymentCommand(config: CliConfig): Command {
     .option('--invoice <invoice>', 'Invoice to pay')
     .option('--payment-hash <hash>', 'Payment hash (for keysend)')
     .option('--keysend', 'Keysend mode')
+    .option('--allow-self-payment', 'Allow self-payment for circular route rebalancing')
     .option('--dry-run', 'Simulate—do not actually send')
     .option('--json')
     .action(async (options) => {
@@ -397,6 +573,7 @@ export function createPaymentCommand(config: CliConfig): Command {
         invoice: options.invoice as string | undefined,
         payment_hash: options.paymentHash as HexString | undefined,
         keysend: options.keysend ? true : undefined,
+        allow_self_payment: options.allowSelfPayment ? true : undefined,
         dry_run: options.dryRun ? true : undefined,
       });
 
