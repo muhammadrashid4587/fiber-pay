@@ -158,6 +158,7 @@ describe('FiberRpcClient - New Methods', () => {
           },
         ],
         keysend: true,
+        allow_self_payment: true,
       };
 
       const result = await client.sendPaymentWithRouter(params);
@@ -167,6 +168,7 @@ describe('FiberRpcClient - New Methods', () => {
 
       const body = JSON.parse(fetchMock.mock.calls[0][1].body);
       expect(body.method).toBe('send_payment_with_router');
+      expect(body.params[0].allow_self_payment).toBe(true);
     });
   });
 

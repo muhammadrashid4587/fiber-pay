@@ -16,6 +16,7 @@ import {
   tryCreateRuntimePaymentJob,
   waitForRuntimeJobTerminal,
 } from '../lib/runtime-jobs.js';
+import { registerPaymentRebalanceCommand } from './rebalance.js';
 
 export function createPaymentCommand(config: CliConfig): Command {
   const payment = new Command('payment').description('Payment lifecycle and status commands');
@@ -150,6 +151,8 @@ export function createPaymentCommand(config: CliConfig): Command {
         }
       }
     });
+
+  registerPaymentRebalanceCommand(payment, config);
 
   payment
     .command('get')
@@ -368,6 +371,7 @@ export function createPaymentCommand(config: CliConfig): Command {
     .option('--invoice <invoice>', 'Invoice to pay')
     .option('--payment-hash <hash>', 'Payment hash (for keysend)')
     .option('--keysend', 'Keysend mode')
+    .option('--allow-self-payment', 'Allow self-payment for circular route rebalancing')
     .option('--dry-run', 'Simulate—do not actually send')
     .option('--json')
     .action(async (options) => {
@@ -397,6 +401,7 @@ export function createPaymentCommand(config: CliConfig): Command {
         invoice: options.invoice as string | undefined,
         payment_hash: options.paymentHash as HexString | undefined,
         keysend: options.keysend ? true : undefined,
+        allow_self_payment: options.allowSelfPayment ? true : undefined,
         dry_run: options.dryRun ? true : undefined,
       });
 

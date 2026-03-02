@@ -94,7 +94,26 @@ fiber-pay logs --source runtime --follow
 
 For deeper black-box diagnosis, use `references/logs-troubleshooting.md`.
 
-## 7) Runtime-first operations (recommended)
+## 7) Rebalance channel liquidity
+
+Use high-level channel command:
+
+```bash
+fiber-pay channel rebalance --amount <CKB> --max-fee <CKB> --dry-run --json
+fiber-pay channel rebalance --amount <CKB> --max-fee <CKB> --json
+fiber-pay channel rebalance --amount <CKB> --from-channel <channelA_id> --to-channel <channelB_id> --json
+```
+
+Direction quick rule:
+
+- Increase local balance on channel `X` => set `--to-channel X`
+- Decrease local balance on channel `X` => set `--from-channel X`
+
+For detailed concepts, route modes, and operator checklist, read:
+
+- `references/rebalance.md`
+
+## 8) Runtime-first operations (recommended)
 
 In runtime-active scenarios, treat write operations as job-driven:
 
@@ -105,7 +124,7 @@ In runtime-active scenarios, treat write operations as job-driven:
 
 This keeps automation deterministic and auditable.
 
-## 8) Minimal end-to-end checklist
+## 9) Minimal end-to-end checklist
 
 1. `node start --daemon`
 2. `node ready`

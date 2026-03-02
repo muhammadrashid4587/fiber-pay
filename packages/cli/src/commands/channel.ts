@@ -16,6 +16,7 @@ import {
 } from '../lib/format.js';
 import { createReadyRpcClient, resolveRpcEndpoint } from '../lib/rpc.js';
 import { tryCreateRuntimeChannelJob } from '../lib/runtime-jobs.js';
+import { registerChannelRebalanceCommand } from './rebalance.js';
 
 export function createChannelCommand(config: CliConfig): Command {
   const channel = new Command('channel').description('Channel lifecycle and status commands');
@@ -482,6 +483,8 @@ export function createChannelCommand(config: CliConfig): Command {
         console.log(`  Channel ID: ${payload.channelId}`);
       }
     });
+
+  registerChannelRebalanceCommand(channel, config);
 
   channel
     .command('update')

@@ -495,6 +495,7 @@ export interface SendPaymentWithRouterParams {
   invoice?: string;
   custom_records?: PaymentCustomRecords;
   keysend?: boolean;
+  allow_self_payment?: boolean;
   udt_type_script?: Script;
   dry_run?: boolean;
 }
