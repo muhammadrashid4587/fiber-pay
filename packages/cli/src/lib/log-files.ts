@@ -109,10 +109,14 @@ export function resolvePersistedLogPaths(
   }
 
   if (meta?.alertLogFilePath || meta?.fnnStdoutLogPath || meta?.fnnStderrLogPath) {
+    const defaultDir = resolveLogDirForDateWithOptions(dataDir, undefined, {
+      logsBaseDir,
+      ensureExists: false,
+    });
     return {
-      runtimeAlerts: meta.alertLogFilePath ?? join(dataDir, 'logs', 'runtime.alerts.jsonl'),
-      fnnStdout: meta.fnnStdoutLogPath ?? join(dataDir, 'logs', 'fnn.stdout.log'),
-      fnnStderr: meta.fnnStderrLogPath ?? join(dataDir, 'logs', 'fnn.stderr.log'),
+      runtimeAlerts: meta.alertLogFilePath ?? join(defaultDir, 'runtime.alerts.jsonl'),
+      fnnStdout: meta.fnnStdoutLogPath ?? join(defaultDir, 'fnn.stdout.log'),
+      fnnStderr: meta.fnnStderrLogPath ?? join(defaultDir, 'fnn.stderr.log'),
     };
   }
 
