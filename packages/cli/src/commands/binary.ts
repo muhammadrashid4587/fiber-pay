@@ -1,12 +1,12 @@
-import {
-  DEFAULT_FIBER_VERSION,
-  type DownloadProgress,
-  downloadFiberBinary,
-  getFiberBinaryInfo,
-} from '@fiber-pay/node';
+import { DEFAULT_FIBER_VERSION, type DownloadProgress, downloadFiberBinary } from '@fiber-pay/node';
 import { Command } from 'commander';
+import {
+  getBinaryDetails,
+  getBinaryManagerInstallDirOrThrow,
+  resolveBinaryPath,
+} from '../lib/binary-path.js';
 import type { CliConfig } from '../lib/config.js';
-import { printJsonSuccess } from '../lib/format.js';
+import { printJsonError, printJsonSuccess } from '../lib/format.js';
 
 function showProgress(progress: DownloadProgress): void {
   const percent = progress.percent !== undefined ? ` (${progress.percent}%)` : '';
@@ -25,15 +25,39 @@ export function createBinaryCommand(config: CliConfig): Command {
     .option('--force', 'Force re-download')
     .option('--json')
     .action(async (options) => {
+      const resolvedBinary = resolveBinaryPath(config);
+      let installDir: string;
+      try {
+        installDir = getBinaryManagerInstallDirOrThrow(resolvedBinary);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (options.json) {
+          printJsonError({
+            code: 'BINARY_PATH_INCOMPATIBLE',
+            message,
+            recoverable: true,
+            suggestion:
+              'Use `fiber-pay config profile unset binaryPath` or set binaryPath to a standard fnn filename in the target directory.',
+          });
+        } else {
+          console.error(`❌ ${message}`);
+        }
+        process.exit(1);
+      }
+
       const info = await downloadFiberBinary({
-        installDir: `${config.dataDir}/bin`,
+        installDir,
         version: options.version,
         force: Boolean(options.force),
         onProgress: options.json ? undefined : showProgress,
       });
 
       if (options.json) {
-        printJsonSuccess(info);
+        printJsonSuccess({
+          ...info,
+          source: resolvedBinary.source,
+          resolvedPath: resolvedBinary.binaryPath,
+        });
       } else {
         console.log('\n✅ Binary installed successfully!');
         console.log(`  Path:    ${info.path}`);
@@ -46,10 +70,14 @@ export function createBinaryCommand(config: CliConfig): Command {
     .command('info')
     .option('--json')
     .action(async (options) => {
-      const info = await getFiberBinaryInfo(`${config.dataDir}/bin`);
+      const { resolvedBinary, info } = await getBinaryDetails(config);
 
       if (options.json) {
-        printJsonSuccess(info);
+        printJsonSuccess({
+          ...info,
+          source: resolvedBinary.source,
+          resolvedPath: resolvedBinary.binaryPath,
+        });
       } else {
         console.log(info.ready ? '✅ Binary is ready' : '❌ Binary not found or not executable');
         console.log(`  Path:    ${info.path}`);

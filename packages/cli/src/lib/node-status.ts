@@ -1,6 +1,4 @@
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { getFiberBinaryInfo } from '@fiber-pay/node';
 import {
   buildMultiaddrFromNodeId,
   buildMultiaddrFromRpcUrl,
@@ -9,6 +7,7 @@ import {
   type Script,
   scriptToAddress,
 } from '@fiber-pay/sdk';
+import { getBinaryDetails } from './binary-path.js';
 import type { CliConfig } from './config.js';
 import { printJsonSuccess } from './format.js';
 import {
@@ -18,7 +17,6 @@ import {
   summarizeChannelLiquidity,
 } from './node-recommendation.js';
 import { getLockBalanceShannons } from './node-rpc.js';
-import { getCustomBinaryState } from './node-runtime-daemon.js';
 import { isProcessRunning, readPidFile, removePidFile } from './pid.js';
 import { createReadyRpcClient, resolveRpcEndpoint } from './rpc.js';
 
@@ -33,10 +31,7 @@ export async function runNodeStatusCommand(
   const json = Boolean(options.json);
   const pid = readPidFile(config.dataDir);
   const resolvedRpc = resolveRpcEndpoint(config);
-  const managedBinaryPath = join(config.dataDir, 'bin', 'fnn');
-  const binaryInfo = config.binaryPath
-    ? getCustomBinaryState(config.binaryPath)
-    : await getFiberBinaryInfo(join(config.dataDir, 'bin'));
+  const { resolvedBinary, info: binaryInfo } = await getBinaryDetails(config);
   const configExists = existsSync(config.configPath);
   const nodeRunning = Boolean(pid && isProcessRunning(pid));
 
@@ -152,8 +147,9 @@ export async function runNodeStatusCommand(
         path: binaryInfo.path,
         ready: binaryInfo.ready,
         version: binaryInfo.version,
-        source: config.binaryPath ? 'env-binary-path' : 'managed-binary-dir',
-        managedPath: managedBinaryPath,
+        source: resolvedBinary.source,
+        managedPath: resolvedBinary.managedPath,
+        resolvedPath: resolvedBinary.binaryPath,
       },
       config: {
         path: config.configPath,
@@ -228,6 +224,7 @@ export async function runNodeStatusCommand(
   console.log('');
   console.log('Diagnostics');
   console.log(`  Binary:        ${output.checks.binary.ready ? 'ready' : 'missing'}`);
+  console.log(`  Binary Path:   ${output.checks.binary.resolvedPath}`);
   console.log(`  Config:        ${output.checks.config.exists ? 'present' : 'missing'}`);
   console.log(`  RPC:           ${output.checks.node.rpcReachable ? 'reachable' : 'unreachable'}`);
   console.log(
