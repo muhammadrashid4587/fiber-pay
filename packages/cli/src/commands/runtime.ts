@@ -21,6 +21,11 @@ import {
   writeRuntimeMeta,
   writeRuntimePid,
 } from '../lib/runtime-meta.js';
+import {
+  findListeningProcessByPort,
+  isFiberRuntimeCommand,
+  terminateProcess,
+} from '../lib/runtime-port.js';
 
 interface RuntimeLogFilter {
   minPriority?: AlertPriority;
@@ -82,6 +87,11 @@ function shouldPrintAlert(alert: Alert, filter: RuntimeLogFilter): boolean {
   return true;
 }
 
+function resolveRuntimeRecoveryListen(config: CliConfig): string {
+  const meta = readRuntimeMeta(config.dataDir);
+  return meta?.proxyListen ?? config.runtimeProxyListen ?? '127.0.0.1:8229';
+}
+
 export function createRuntimeCommand(config: CliConfig): Command {
   const runtime = new Command('runtime').description('Polling monitor and alert runtime service');
 
@@ -114,6 +124,9 @@ export function createRuntimeCommand(config: CliConfig): Command {
       const asJson = Boolean(options.json);
       const daemon = Boolean(options.daemon);
       const isRuntimeChild = process.env.FIBER_RUNTIME_CHILD === '1';
+      const runtimeListen = String(
+        options.proxyListen ?? config.runtimeProxyListen ?? '127.0.0.1:8229',
+      );
 
       try {
         const existingPid = readRuntimePid(config.dataDir);
@@ -137,6 +150,36 @@ export function createRuntimeCommand(config: CliConfig): Command {
         }
         if (existingPid && !isProcessRunning(existingPid)) {
           removeRuntimeFiles(config.dataDir);
+        }
+
+        const discovered = findListeningProcessByPort(runtimeListen);
+        if (discovered && (!existingPid || discovered.pid !== existingPid)) {
+          if (isFiberRuntimeCommand(discovered.command)) {
+            const terminated = await terminateProcess(discovered.pid);
+            if (!terminated) {
+              throw new Error(
+                `Runtime port ${runtimeListen} is occupied by stale fiber-pay runtime PID ${discovered.pid} but termination failed.`,
+              );
+            }
+            removeRuntimeFiles(config.dataDir);
+            if (!asJson) {
+              console.log(
+                `Recovered stale runtime process on ${runtimeListen} (PID: ${discovered.pid}).`,
+              );
+            }
+          } else if (discovered.command) {
+            const details = discovered.command
+              ? `PID ${discovered.pid} (${discovered.command})`
+              : `PID ${discovered.pid}`;
+            throw new Error(
+              `Runtime proxy listen ${runtimeListen} is already in use by non-fiber-pay process: ${details}`,
+            );
+          } else {
+            throw new Error(
+              `Runtime proxy listen ${runtimeListen} is already in use by process PID ${discovered.pid}. ` +
+                'Unable to determine the owning command; inspect this PID manually before retrying.',
+            );
+          }
         }
 
         if (daemon && !isRuntimeChild) {
@@ -185,7 +228,7 @@ export function createRuntimeCommand(config: CliConfig): Command {
           ),
           proxy: {
             enabled: true,
-            listen: String(options.proxyListen ?? config.runtimeProxyListen ?? '127.0.0.1:8229'),
+            listen: runtimeListen,
           },
           storage: {
             stateFilePath: options.stateFile
@@ -335,8 +378,47 @@ export function createRuntimeCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (options) => {
       const asJson = Boolean(options.json);
-      const pid = readRuntimePid(config.dataDir);
+      let pid = readRuntimePid(config.dataDir);
       const meta = readRuntimeMeta(config.dataDir);
+      const recoveryListen = resolveRuntimeRecoveryListen(config);
+
+      if (!pid) {
+        const fallback = findListeningProcessByPort(recoveryListen);
+        if (fallback && isFiberRuntimeCommand(fallback.command)) {
+          pid = fallback.pid;
+          writeRuntimePid(config.dataDir, pid);
+        } else if (fallback && fallback.command) {
+          const details = fallback.command
+            ? `PID ${fallback.pid} (${fallback.command})`
+            : `PID ${fallback.pid}`;
+          if (asJson) {
+            printJsonError({
+              code: 'RUNTIME_PORT_IN_USE',
+              message: `Runtime proxy port is in use by non-fiber-pay process: ${details}`,
+              recoverable: true,
+              suggestion: 'Stop that process or use a different --proxy-listen port.',
+            });
+          } else {
+            console.log(`Runtime proxy port is in use by non-fiber-pay process: ${details}`);
+          }
+          process.exit(1);
+        } else if (fallback) {
+          const message =
+            `Runtime proxy port is in use by process PID ${fallback.pid}. ` +
+            'The owning command could not be determined; inspect this PID manually.';
+          if (asJson) {
+            printJsonError({
+              code: 'RUNTIME_PORT_IN_USE',
+              message,
+              recoverable: true,
+              suggestion: 'Inspect the PID owner manually or use a different --proxy-listen port.',
+            });
+          } else {
+            console.log(message);
+          }
+          process.exit(1);
+        }
+      }
 
       if (!pid) {
         if (asJson) {
@@ -370,9 +452,11 @@ export function createRuntimeCommand(config: CliConfig): Command {
       }
 
       let rpcStatus: unknown;
-      if (meta?.proxyListen) {
+      if (meta?.proxyListen ?? recoveryListen) {
         try {
-          const response = await fetch(`http://${meta.proxyListen}/monitor/status`);
+          const response = await fetch(
+            `http://${meta?.proxyListen ?? recoveryListen}/monitor/status`,
+          );
           if (response.ok) {
             rpcStatus = await response.json();
           }
@@ -407,7 +491,48 @@ export function createRuntimeCommand(config: CliConfig): Command {
     .option('--json')
     .action(async (options) => {
       const asJson = Boolean(options.json);
-      const pid = readRuntimePid(config.dataDir);
+      let pid = readRuntimePid(config.dataDir);
+      const recoveryListen = resolveRuntimeRecoveryListen(config);
+
+      if (!pid) {
+        const fallback = findListeningProcessByPort(recoveryListen);
+        if (fallback && isFiberRuntimeCommand(fallback.command)) {
+          pid = fallback.pid;
+          writeRuntimePid(config.dataDir, pid);
+        } else if (fallback && fallback.command) {
+          const details = fallback.command
+            ? `PID ${fallback.pid} (${fallback.command})`
+            : `PID ${fallback.pid}`;
+          if (asJson) {
+            printJsonError({
+              code: 'RUNTIME_PORT_IN_USE',
+              message: `Runtime proxy port is in use by non-fiber-pay process: ${details}`,
+              recoverable: true,
+              suggestion:
+                'Stop that process manually; it is not managed by fiber-pay runtime PID files.',
+            });
+          } else {
+            console.log(`Runtime proxy port is in use by non-fiber-pay process: ${details}`);
+          }
+          process.exit(1);
+        } else if (fallback) {
+          const message =
+            `Runtime proxy port is in use by process PID ${fallback.pid}. ` +
+            'The owning command could not be determined; inspect this PID manually.';
+          if (asJson) {
+            printJsonError({
+              code: 'RUNTIME_PORT_IN_USE',
+              message,
+              recoverable: true,
+              suggestion:
+                'Inspect the PID owner manually; it may not be managed by fiber-pay runtime PID files.',
+            });
+          } else {
+            console.log(message);
+          }
+          process.exit(1);
+        }
+      }
 
       if (!pid) {
         if (asJson) {
@@ -439,16 +564,19 @@ export function createRuntimeCommand(config: CliConfig): Command {
         process.exit(1);
       }
 
-      process.kill(pid, 'SIGTERM');
-
-      let attempts = 0;
-      while (isProcessRunning(pid) && attempts < 50) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        attempts += 1;
-      }
-
-      if (isProcessRunning(pid)) {
-        process.kill(pid, 'SIGKILL');
+      const terminated = await terminateProcess(pid);
+      if (!terminated) {
+        if (asJson) {
+          printJsonError({
+            code: 'RUNTIME_STOP_FAILED',
+            message: `Failed to terminate runtime process ${pid}.`,
+            recoverable: true,
+            suggestion: `Try stopping PID ${pid} manually and rerun runtime stop.`,
+          });
+        } else {
+          console.log(`Failed to terminate runtime process ${pid}.`);
+        }
+        process.exit(1);
       }
 
       removeRuntimeFiles(config.dataDir);
