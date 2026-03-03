@@ -95,11 +95,13 @@ export function createJobCommand(config: CliConfig): Command {
     .command('trace')
     .argument('<jobId>')
     .option('--tail <n>', 'Max lines to inspect per log file', '400')
+    .option('--date <YYYY-MM-DD>', 'Date of log directory to search (default: today UTC)')
     .option('--json')
     .action(async (jobId, options) => {
       const json = Boolean(options.json);
       const tailInput = Number.parseInt(String(options.tail ?? '400'), 10);
       const tail = Number.isFinite(tailInput) && tailInput > 0 ? tailInput : 400;
+      const date = options.date ? String(options.date).trim() : undefined;
 
       const runtimeUrl = getRuntimeUrlOrExit(config, json);
       const jobResponse = await fetch(`${runtimeUrl}/jobs/${jobId}`);
@@ -117,7 +119,24 @@ export function createJobCommand(config: CliConfig): Command {
       const tokens = collectTraceTokens(jobRecord, eventsPayload.events);
 
       const meta = readRuntimeMeta(config.dataDir);
-      const logPaths = resolvePersistedLogPaths(config.dataDir, meta);
+      let logPaths: ReturnType<typeof resolvePersistedLogPaths>;
+      try {
+        logPaths = resolvePersistedLogPaths(config.dataDir, meta, date);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid --date value.';
+        if (json) {
+          printJsonError({
+            code: 'JOB_TRACE_DATE_INVALID',
+            message,
+            recoverable: true,
+            suggestion: 'Retry with --date in YYYY-MM-DD format.',
+            details: { date },
+          });
+        } else {
+          console.error(`Error: ${message}`);
+        }
+        process.exit(1);
+      }
       const runtimeAlertMatches = collectRelatedLines(logPaths.runtimeAlerts, tokens, tail);
       const fnnStdoutMatches = collectRelatedLines(logPaths.fnnStdout, tokens, tail);
       const fnnStderrMatches = collectRelatedLines(logPaths.fnnStderr, tokens, tail);
