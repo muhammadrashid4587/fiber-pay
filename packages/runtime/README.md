@@ -126,10 +126,10 @@ fiber-pay logs --source runtime --follow
 
 When started from `fiber-pay node start` or `fiber-pay runtime start`, runtime/fnn logs are persisted to:
 
-- `<data-dir>/logs/fnn.stdout.log`
-- `<data-dir>/logs/fnn.stderr.log`
-- `<data-dir>/logs/runtime.alerts.jsonl`
+- `<data-dir>/logs/<YYYY-MM-DD>/fnn.stdout.log`
+- `<data-dir>/logs/<YYYY-MM-DD>/fnn.stderr.log`
+- `<data-dir>/logs/<YYYY-MM-DD>/runtime.alerts.jsonl`
 
-`<data-dir>/runtime.meta.json` stores these paths so agents can read files directly during troubleshooting.
+`<data-dir>/runtime.meta.json` stores these paths (and `logsBaseDir`) so agents can read files directly during troubleshooting.
 
 You can view these files directly via CLI without `cat` using `fiber-pay logs` (alias: `fiber-pay log`).

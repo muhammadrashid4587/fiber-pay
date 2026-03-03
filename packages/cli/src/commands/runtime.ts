@@ -259,6 +259,8 @@ export function createRuntimeCommand(config: CliConfig): Command {
           proxyListen: status.proxyListen,
           stateFilePath: runtimeConfig.storage?.stateFilePath,
           alertLogFilePath: effectiveAlertLogPath,
+          fnnStdoutLogPath: join(todayLogDir, 'fnn.stdout.log'),
+          fnnStderrLogPath: join(todayLogDir, 'fnn.stderr.log'),
           logsBaseDir,
           daemon: daemon || isRuntimeChild,
         });
