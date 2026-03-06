@@ -53,7 +53,24 @@ import type {
   ShutdownChannelParams,
   UpdateChannelParams,
 } from '../types/index.js';
-import { ChannelState } from '../types/index.js';
+import { ChannelState, type HashAlgorithm } from '../types/index.js';
+
+// =============================================================================
+// Constants
+// =============================================================================
+
+/**
+ * Mapping from SDK PascalCase HashAlgorithm to FNN RPC snake_case values.
+ *
+ * Upstream issue: https://github.com/RetricSu/fiber-pay/issues/66
+ *
+ * The SDK's HashAlgorithm type uses PascalCase ('CkbHash' | 'Sha256')
+ * but FNN v0.7.1 RPC expects snake_case ('ckb_hash' | 'sha256').
+ */
+const HASH_ALGORITHM_MAP: Record<HashAlgorithm, string> = {
+  CkbHash: 'ckb_hash',
+  Sha256: 'sha256',
+};
 
 // =============================================================================
 // RPC Client Configuration
@@ -313,9 +330,27 @@ export class FiberRpcClient {
 
   /**
    * Create a new invoice
+   *
+   * NOTE: HashAlgorithm value mapping
+   *
+   * Upstream issue: https://github.com/RetricSu/fiber-pay/issues/66
+   *
+   * The SDK's HashAlgorithm type uses PascalCase ('CkbHash' | 'Sha256')
+   * but FNN v0.7.1 RPC expects snake_case ('ckb_hash' | 'sha256').
+   *
+   * This mapping ensures compatibility while maintaining backward-compatible
+   * SDK types. When upstream fixes this inconsistency, this mapping can
+   * be removed.
    */
   async newInvoice(params: NewInvoiceParams): Promise<NewInvoiceResult> {
-    return this.call<NewInvoiceResult>('new_invoice', [params]);
+    const { hash_algorithm, ...rest } = params;
+    const rpcParams: Record<string, unknown> = { ...rest };
+
+    if (hash_algorithm) {
+      rpcParams.hash_algorithm = HASH_ALGORITHM_MAP[hash_algorithm] ?? hash_algorithm;
+    }
+
+    return this.call<NewInvoiceResult>('new_invoice', [rpcParams]);
   }
 
   /**
