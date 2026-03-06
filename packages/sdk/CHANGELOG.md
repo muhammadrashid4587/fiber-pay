@@ -1,5 +1,23 @@
 # @fiber-pay/sdk
 
+## 0.1.0-rc.7
+
+### Patch Changes
+
+- cfcfcea: Fix HashAlgorithm casing mismatch with FNN RPC. Add internal value mapping in `newInvoice` to convert PascalCase (`'CkbHash' | 'Sha256'`) to snake_case (`'ckb_hash' | 'sha256'`) before sending to FNN v0.7.1 RPC, maintaining backward compatibility.
+
+  See https://github.com/RetricSu/fiber-pay/issues/66
+
+- d0451e9: Add payment hash helper functions for HashAlgorithm (CkbHash / Sha256)
+
+  - `hashPreimage(preimageHex, algorithm)`: Compute payment hash from preimage
+  - `verifyPreimageHash(preimageHex, paymentHash, algorithm)`: Verify preimage matches hash
+  - `ckbHash(data)`: Low-level CKB blake2b-256 with "ckb-default-hash" personalization
+  - `sha256Hash(data)`: Low-level SHA-256
+
+  Uses browser-compatible implementation (no Buffer dependency).
+  Closes #65
+
 ## 0.1.0-rc.6
 
 ## 0.1.0-rc.5

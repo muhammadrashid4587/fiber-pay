@@ -15,6 +15,7 @@
     "clever-oranges-obey",
     "feat-cli-wallet-network",
     "fix-dry-run-payment-poll",
+    "fix-hashalgorithm-casing",
     "fix-tracker-not-found-poll",
     "flat-pets-wave",
     "fuzzy-eggs-approve",
@@ -22,8 +23,10 @@
     "lime-pugs-begin",
     "odd-ducks-sparkle",
     "olive-lions-tap",
+    "payment-hash-helpers",
     "quick-melons-build",
     "shy-plants-shop",
+    "silent-toes-promise",
     "small-mangos-wave",
     "tiny-lamps-bow"
   ]

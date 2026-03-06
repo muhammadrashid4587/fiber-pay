@@ -1,5 +1,14 @@
 # @fiber-pay/runtime
 
+## 0.1.0-rc.7
+
+### Patch Changes
+
+- 374a7e6: Fix payment tracker not-found detection to prevent repeated `getPayment` polling spam. The tracker now inspects structured RPC error payloads (for example nested `data` fields) when classifying errors, marks not-found tracked payments as terminal `Failed`, and emits failure alerts accordingly.
+- Updated dependencies [cfcfcea]
+- Updated dependencies [d0451e9]
+  - @fiber-pay/sdk@0.1.0-rc.7
+
 ## 0.1.0-rc.6
 
 ### Patch Changes

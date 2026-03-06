@@ -1,5 +1,13 @@
 # @fiber-pay/node
 
+## 0.1.0-rc.7
+
+### Patch Changes
+
+- Updated dependencies [cfcfcea]
+- Updated dependencies [d0451e9]
+  - @fiber-pay/sdk@0.1.0-rc.7
+
 ## 0.1.0-rc.6
 
 ### Patch Changes
