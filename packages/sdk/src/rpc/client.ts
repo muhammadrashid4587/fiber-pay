@@ -347,7 +347,8 @@ export class FiberRpcClient {
     const rpcParams: Record<string, unknown> = { ...rest };
 
     if (hash_algorithm) {
-      rpcParams.hash_algorithm = HASH_ALGORITHM_MAP[hash_algorithm] ?? hash_algorithm;
+      // Map PascalCase HashAlgorithm values to snake_case for RPC
+      rpcParams.hash_algorithm = HASH_ALGORITHM_MAP[hash_algorithm];
     }
 
     return this.call<NewInvoiceResult>('new_invoice', [rpcParams]);
