@@ -1,4 +1,6 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { Command } from 'commander';
 import { parseDocument, stringify as yamlStringify } from 'yaml';
 import {
@@ -527,6 +529,66 @@ export function createConfigCommand(_config: CliConfig): Command {
         for (const key of PROFILE_KEYS) {
           if (profileData[key] !== undefined) {
             console.log(`  ${key}: ${profileData[key]}`);
+          }
+        }
+      }
+    });
+
+  profile
+    .command('list')
+    .description('List all available Fiber profiles')
+    .option('--json')
+    .action(async (options) => {
+      const homeDir = homedir();
+      const profilesDir = join(homeDir, '.fiber-pay', 'profiles');
+      const defaultDir = join(homeDir, '.fiber-pay');
+      const defaultConfigPath = join(defaultDir, 'config.yml');
+
+      const profiles: string[] = [];
+      const hasDefaultConfig = existsSync(defaultConfigPath);
+
+      if (hasDefaultConfig) {
+        profiles.push('default');
+      }
+
+      if (existsSync(profilesDir)) {
+        try {
+          const entries = readdirSync(profilesDir, { withFileTypes: true });
+          for (const entry of entries) {
+            if (entry.isDirectory() && entry.name !== 'default') {
+              profiles.push(entry.name);
+            }
+          }
+        } catch (error) {
+          if (options.json) {
+            printJsonError({
+              code: 'PROFILE_LIST_ERROR',
+              message: `Failed to read profiles directory: ${error instanceof Error ? error.message : String(error)}`,
+              recoverable: true,
+            });
+            process.exit(1);
+          } else {
+            console.error(
+              `Warning: Could not read profiles directory: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+      }
+
+      profiles.sort((a, b) => {
+        if (a === 'default') return -1;
+        if (b === 'default') return 1;
+        return a.localeCompare(b);
+      });
+
+      if (options.json) {
+        printJsonSuccess({ profiles, count: profiles.length });
+      } else {
+        if (profiles.length === 0) {
+          console.log('No profiles found.');
+        } else {
+          for (const profileName of profiles) {
+            console.log(profileName);
           }
         }
       }
