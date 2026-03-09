@@ -37,6 +37,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@biscuit-auth/biscuit-wasm": "^0.6.0",
     "@noble/hashes": "^2.0.1",
     "zod": "^4.3.6"
   }

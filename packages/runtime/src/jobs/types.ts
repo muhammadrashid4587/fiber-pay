@@ -104,6 +104,8 @@ export interface PaymentJobParams {
   invoice?: string;
   /** SDK send_payment params — merged from invoice or supplied directly */
   sendPaymentParams: SendPaymentParams;
+  /** Optional grant ID for permission limit enforcement */
+  grantId?: string;
 }
 
 export interface PaymentJobResult {
@@ -160,6 +162,8 @@ export interface ChannelJobParams {
   waitForReady?: boolean;
   waitForClosed?: boolean;
   pollIntervalMs?: number;
+  /** Optional grant ID for permission limit enforcement */
+  grantId?: string;
 }
 
 export interface ChannelJobResult {

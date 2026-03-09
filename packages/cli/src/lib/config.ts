@@ -12,6 +12,7 @@ export interface CliConfig {
   keyPassword?: string;
   ckbRpcUrl?: string;
   runtimeProxyListen?: string;
+  permissionsDbPath?: string;
 }
 
 /** Keys that can be stored in a profile.json file. */
@@ -29,6 +30,7 @@ export interface EffectiveConfigSources {
   rpcBiscuitToken?: 'cli' | 'env' | 'unset';
   ckbRpcUrl?: 'env' | 'config' | 'unset';
   runtimeProxyListen?: 'cli' | 'env' | 'profile' | 'default';
+  permissionsDbPath?: 'env' | 'default';
 }
 
 export interface EffectiveConfig {
@@ -281,6 +283,13 @@ export function getEffectiveConfig(explicitFlags?: Set<string>): EffectiveConfig
           ? 'profile'
           : 'default';
 
+  // Permissions DB path — env var > default (derived from dataDir)
+  const envPermissionsDbPath = process.env.FIBER_PERMISSIONS_DB_PATH;
+  const permissionsDbPath = envPermissionsDbPath || join(dataDir, 'permissions.db');
+  const permissionsDbPathSource: EffectiveConfigSources['permissionsDbPath'] = envPermissionsDbPath
+    ? 'env'
+    : 'default';
+
   return {
     configExists,
     config: {
@@ -293,6 +302,7 @@ export function getEffectiveConfig(explicitFlags?: Set<string>): EffectiveConfig
       keyPassword,
       ckbRpcUrl,
       runtimeProxyListen,
+      permissionsDbPath,
     },
     sources: {
       dataDir: dataDirSource,
@@ -302,6 +312,7 @@ export function getEffectiveConfig(explicitFlags?: Set<string>): EffectiveConfig
       rpcBiscuitToken: rpcBiscuitTokenSource,
       ckbRpcUrl: ckbRpcUrlSource,
       runtimeProxyListen: runtimeProxyListenSource,
+      permissionsDbPath: permissionsDbPathSource,
     },
   };
 }

@@ -37,8 +37,10 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@biscuit-auth/biscuit-wasm": "^0.6.0",
     "@fiber-pay/sdk": "workspace:*",
-    "better-sqlite3": "^12.6.2"
+    "better-sqlite3": "^12.6.2",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13"

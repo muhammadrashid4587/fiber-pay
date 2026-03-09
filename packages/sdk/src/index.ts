@@ -46,7 +46,26 @@ export {
   sha256Hash,
   verifyPreimageHash,
 } from './security/crypto.js';
+export type {
+  AmountLimits,
+  ChannelRestrictions,
+  CountLimits,
+  DatalogCaveat,
+  GeneratedToken,
+  GrantRestrictions,
+  KeyPair,
+  PermissionGrant,
+  RecipientRestrictions,
+  TimeWindow,
+  TokenGeneratorOptions,
+} from './security/grant-types.js';
+export {
+  buildPermissionUrl,
+  PermissionUrlError,
+  parsePermissionUrl,
+} from './security/permission-url.js';
 export { PolicyEngine } from './security/policy-engine.js';
+export { generatePermissionToken, parsePermissionToken } from './security/token-generator.js';
 export type * from './types/index.js';
 // Types - Re-export all types from types module
 export { ChannelState } from './types/index.js';

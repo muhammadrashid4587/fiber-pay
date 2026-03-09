@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import http from 'node:http';
 import { parseListenAddress } from '../config.js';
+import type { ValidationResult } from '../permissions/index.js';
 import { isPayloadTooLargeError, readRawBody } from './body.js';
 import { CORS_HEADERS, CORS_PREFLIGHT_HEADERS, writeJson } from './http-utils.js';
 import { handleDeleteEndpoint, handleJobPostEndpoint } from './job-routes.js';
@@ -8,6 +9,20 @@ import { tryParseJson } from './json.js';
 import { captureTrackedHashes, collectJsonRpcMethods } from './jsonrpc-tracking.js';
 import { handleMonitorEndpoint } from './monitor-routes.js';
 import type { RpcMonitorProxyConfig, RpcMonitorProxyDeps } from './types.js';
+
+export const kGrantContext = Symbol('grantContext');
+
+export interface GrantContext {
+  grantId: string;
+  permissions: ValidationResult['permissions'];
+  limits: ValidationResult['limits'];
+}
+
+declare module 'node:http' {
+  interface IncomingMessage {
+    [kGrantContext]?: GrantContext;
+  }
+}
 
 export type { RpcMonitorProxyConfig, RpcMonitorProxyDeps, RpcMonitorProxyStatus } from './types.js';
 
@@ -56,6 +71,43 @@ export class RpcMonitorProxy {
     });
   }
 
+  private async validatePermission(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
+    const permissionManager = this.deps.permissionManager;
+    if (!permissionManager) {
+      return true;
+    }
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      writeJson(res, 403, { error: 'Authorization header required' });
+      return false;
+    }
+
+    const bearerMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (!bearerMatch) {
+      writeJson(res, 403, { error: 'Invalid authorization format. Expected Bearer token' });
+      return false;
+    }
+
+    const token = bearerMatch[1];
+    const validationResult = await permissionManager.validateToken(token);
+
+    if (!validationResult.valid) {
+      writeJson(res, 403, { error: validationResult.error ?? 'Invalid token' });
+      return false;
+    }
+
+    if (validationResult.grantId && validationResult.permissions) {
+      req[kGrantContext] = {
+        grantId: validationResult.grantId,
+        permissions: validationResult.permissions,
+        limits: validationResult.limits,
+      };
+    }
+
+    return true;
+  }
+
   private async handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (req.method === 'OPTIONS') {
       res.writeHead(204, CORS_PREFLIGHT_HEADERS);
@@ -65,6 +117,11 @@ export class RpcMonitorProxy {
 
     if (req.method === 'GET') {
       handleMonitorEndpoint(req, res, this.deps);
+      return;
+    }
+
+    const isValid = await this.validatePermission(req, res);
+    if (!isValid) {
       return;
     }
 

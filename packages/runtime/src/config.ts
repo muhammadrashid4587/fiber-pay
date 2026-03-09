@@ -65,12 +65,15 @@ export interface RuntimeConfig {
     schedulerIntervalMs: number;
     retryPolicy: RetryPolicy;
   };
+  /** Path to the SQLite file for permissions database */
+  permissionsDbPath: string;
 }
 
 export type RuntimeConfigInput = Omit<Partial<RuntimeConfig>, 'proxy' | 'storage' | 'jobs'> & {
   proxy?: Partial<RuntimeConfig['proxy']>;
   storage?: Partial<RuntimeConfig['storage']>;
   jobs?: Partial<RuntimeConfig['jobs']>;
+  permissionsDbPath?: string;
 };
 
 export const defaultRuntimeConfig: RuntimeConfig = {
@@ -100,6 +103,7 @@ export const defaultRuntimeConfig: RuntimeConfig = {
     schedulerIntervalMs: 1000,
     retryPolicy: defaultPaymentRetryPolicy,
   },
+  permissionsDbPath: resolve(process.cwd(), '.fiber-pay-permissions.db'),
 };
 
 export function createRuntimeConfig(input: RuntimeConfigInput = {}): RuntimeConfig {
@@ -151,6 +155,7 @@ export function createRuntimeConfig(input: RuntimeConfigInput = {}): RuntimeConf
       },
     },
     alerts: input.alerts ?? defaultRuntimeConfig.alerts,
+    permissionsDbPath: input.permissionsDbPath ?? defaultRuntimeConfig.permissionsDbPath,
   };
 
   if (!config.fiberRpcUrl) {

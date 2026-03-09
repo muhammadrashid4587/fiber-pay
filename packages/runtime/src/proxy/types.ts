@@ -11,6 +11,7 @@ import type {
   PaymentJobParams,
   RuntimeJob,
 } from '../jobs/types.js';
+import type { PermissionManager } from '../permissions/index.js';
 
 export interface RpcMonitorProxyConfig {
   listen: string;
@@ -47,4 +48,5 @@ export interface RpcMonitorProxyDeps {
   listJobs?: (filter?: JobFilter) => RuntimeJob[];
   cancelJob?: (id: string) => void;
   listJobEvents?: (jobId: string) => unknown[];
+  permissionManager?: PermissionManager;
 }

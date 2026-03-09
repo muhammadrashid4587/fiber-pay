@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import type { FiberRpcClient } from '@fiber-pay/sdk';
+import type { LimitTracker } from '../permissions/limit-tracker.js';
 import type { SqliteJobStore } from '../storage/sqlite-store.js';
 import { runChannelJob } from './executors/channel-executor.js';
 import { runInvoiceJob } from './executors/invoice-executor.js';
@@ -54,6 +55,7 @@ export interface JobManagerConfig {
   schedulerIntervalMs?: number;
   maxConcurrentJobs?: number;
   retryPolicy?: RetryPolicy;
+  limitTracker?: LimitTracker;
 }
 
 export class JobManager extends EventEmitter<JobManagerEvents> {
@@ -62,6 +64,7 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
   private readonly retryPolicy: RetryPolicy;
   private readonly schedulerIntervalMs: number;
   private readonly maxConcurrentJobs: number;
+  private readonly limitTracker: LimitTracker | undefined;
 
   private running = false;
   private schedulerTimer: ReturnType<typeof setInterval> | undefined;
@@ -74,6 +77,7 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
     this.retryPolicy = config.retryPolicy ?? defaultPaymentRetryPolicy;
     this.schedulerIntervalMs = config.schedulerIntervalMs ?? 1000;
     this.maxConcurrentJobs = config.maxConcurrentJobs ?? 5;
+    this.limitTracker = config.limitTracker;
   }
 
   async ensurePayment(
@@ -330,7 +334,13 @@ export class JobManager extends EventEmitter<JobManagerEvents> {
       try {
         const generator =
           job.type === 'payment'
-            ? runPaymentJob(job as PaymentJob, this.rpc, this.retryPolicy, abortController.signal)
+            ? runPaymentJob(
+                job as PaymentJob,
+                this.rpc,
+                this.retryPolicy,
+                abortController.signal,
+                this.limitTracker,
+              )
             : job.type === 'invoice'
               ? runInvoiceJob(job as InvoiceJob, this.rpc, this.retryPolicy, abortController.signal)
               : runChannelJob(

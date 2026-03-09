@@ -1,9 +1,10 @@
 import type { FiberRpcClient } from '@fiber-pay/sdk';
+import type { LimitTracker } from '../../permissions/limit-tracker.js';
 import { sleep } from '../../utils/async.js';
 import { classifyRpcError } from '../error-classifier.js';
 import { applyRetryOrFail, transitionJobState } from '../executor-utils.js';
 import { paymentStateMachine } from '../state-machine.js';
-import type { PaymentJob, RetryPolicy } from '../types.js';
+import type { ClassifiedError, PaymentJob, RetryPolicy } from '../types.js';
 
 // ─── PaymentExecutor ──────────────────────────────────────────────────────────
 
@@ -21,6 +22,7 @@ export async function* runPaymentJob(
   rpc: FiberRpcClient,
   policy: RetryPolicy,
   signal: AbortSignal,
+  limitTracker?: LimitTracker,
 ): AsyncGenerator<PaymentJob> {
   let current = { ...job };
 
@@ -55,6 +57,25 @@ export async function* runPaymentJob(
     }
 
     if (current.state === 'executing') {
+      // ── Check permission limits before executing ─────────────────────────────
+      if (limitTracker && current.params.grantId) {
+        const amount = extractPaymentAmount(current.params.sendPaymentParams);
+        const limitCheck = await limitTracker.checkPaymentAllowed(current.params.grantId, amount);
+
+        if (!limitCheck.allowed) {
+          const policyError: ClassifiedError = {
+            category: 'invalid_payment',
+            retryable: false,
+            message: `POLICY_VIOLATION: ${limitCheck.reason ?? 'Payment limit exceeded'}`,
+          };
+          current = transitionJobState(current, paymentStateMachine, 'payment_failed_permanent', {
+            patch: { error: policyError },
+          });
+          yield current;
+          return;
+        }
+      }
+
       // ── Issue the RPC call ──────────────────────────────────────────────────
       let paymentHash: string | undefined;
 
@@ -63,6 +84,11 @@ export async function* runPaymentJob(
         paymentHash = sendResult.payment_hash;
 
         if (sendResult.status === 'Success') {
+          await recordPaymentUsage(
+            limitTracker,
+            current.params.grantId,
+            current.params.sendPaymentParams,
+          );
           current = transitionJobState(current, paymentStateMachine, 'payment_success', {
             patch: {
               result: {
@@ -103,6 +129,11 @@ export async function* runPaymentJob(
         // Dry-run payments are never persisted by the node, so polling
         // getPayment would loop forever with "Payment session not found".
         if (current.params.sendPaymentParams.dry_run) {
+          await recordPaymentUsage(
+            limitTracker,
+            current.params.grantId,
+            current.params.sendPaymentParams,
+          );
           current = transitionJobState(current, paymentStateMachine, 'payment_success', {
             patch: {
               result: {
@@ -167,6 +198,11 @@ export async function* runPaymentJob(
         const pollResult = await rpc.getPayment({ payment_hash: hash as `0x${string}` });
 
         if (pollResult.status === 'Success') {
+          await recordPaymentUsage(
+            limitTracker,
+            current.params.grantId,
+            current.params.sendPaymentParams,
+          );
           current = transitionJobState(current, paymentStateMachine, 'payment_success', {
             patch: {
               result: {
@@ -228,6 +264,40 @@ export async function* runPaymentJob(
 
     // Unknown state — should not happen if state machine is correct
     break;
+  }
+}
+
+/**
+ * Extracts the payment amount from SendPaymentParams.
+ * Returns 0n if amount cannot be determined.
+ */
+function extractPaymentAmount(params: { amount?: string; invoice?: string }): bigint {
+  if (params.amount) {
+    try {
+      return BigInt(params.amount);
+    } catch {
+      return 0n;
+    }
+  }
+  return 0n;
+}
+
+/**
+ * Records payment usage via LimitTracker if grantId is provided.
+ * Silently ignores errors to prevent payment failure due to tracking issues.
+ */
+async function recordPaymentUsage(
+  limitTracker: LimitTracker | undefined,
+  grantId: string | undefined,
+  params: { amount?: string; invoice?: string },
+): Promise<void> {
+  if (!limitTracker || !grantId) return;
+
+  try {
+    const amount = extractPaymentAmount(params);
+    await limitTracker.recordPayment(grantId, amount);
+  } catch {
+    // Silently ignore tracking errors to not fail the payment
   }
 }
 

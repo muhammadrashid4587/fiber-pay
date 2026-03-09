@@ -10,6 +10,7 @@ import { createLogsCommand } from './commands/logs.js';
 import { createNodeCommand } from './commands/node.js';
 import { createPaymentCommand } from './commands/payment.js';
 import { createPeerCommand } from './commands/peer.js';
+import { createPermissionsCommand } from './commands/permissions.js';
 import { createRuntimeCommand } from './commands/runtime.js';
 import { createVersionCommand } from './commands/version.js';
 import { createWalletCommand } from './commands/wallet.js';
@@ -184,6 +185,7 @@ async function main(): Promise<void> {
   program.addCommand(createGraphCommand(config));
   program.addCommand(createBinaryCommand(config));
   program.addCommand(createConfigCommand(config));
+  program.addCommand(createPermissionsCommand(config));
   program.addCommand(createRuntimeCommand(config));
   program.addCommand(createVersionCommand());
   program.addCommand(createWalletCommand(config));
