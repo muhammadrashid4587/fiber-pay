@@ -1,13 +1,14 @@
 import {
-  appendFileSync,
   closeSync,
   createReadStream,
+  createWriteStream,
   existsSync,
   mkdirSync,
   openSync,
   readdirSync,
   readSync,
   statSync,
+  type WriteStream,
 } from 'node:fs';
 import { join } from 'node:path';
 import type { RuntimeMeta } from './runtime-meta.js';
@@ -151,12 +152,52 @@ export function listLogDates(dataDir: string, logsBaseDir?: string): string[] {
 }
 
 /**
+ * Cache of open write streams keyed by absolute file path.
+ * Streams are created lazily on first write and reused for subsequent writes.
+ */
+const logStreams = new Map<string, WriteStream>();
+
+/**
+ * Get or create a WriteStream for the given file path.
+ */
+function getOrCreateStream(filePath: string): WriteStream {
+  let stream = logStreams.get(filePath);
+  if (stream && !stream.destroyed) {
+    return stream;
+  }
+  stream = createWriteStream(filePath, { flags: 'a', encoding: 'utf-8' });
+  stream.on('error', () => {
+    // Remove broken streams so a fresh one is created on next write
+    logStreams.delete(filePath);
+  });
+  logStreams.set(filePath, stream);
+  return stream;
+}
+
+/**
  * Append text to a log file inside today's date directory.
  * Creates the date directory on first write each day.
+ * Uses non-blocking WriteStream instead of appendFileSync to avoid
+ * blocking the event loop under high log throughput.
  */
 export function appendToTodayLog(dataDir: string, filename: string, text: string): void {
   const dir = resolveLogDirForDate(dataDir);
-  appendFileSync(join(dir, filename), text, 'utf-8');
+  const filePath = join(dir, filename);
+  const stream = getOrCreateStream(filePath);
+  stream.write(text);
+}
+
+/**
+ * Close all cached log write streams.
+ * Call this during graceful shutdown to flush pending writes.
+ */
+export function flushLogStreams(): void {
+  for (const [key, stream] of logStreams) {
+    if (!stream.destroyed) {
+      stream.end();
+    }
+    logStreams.delete(key);
+  }
 }
 
 export function resolvePersistedLogTargets(

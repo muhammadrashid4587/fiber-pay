@@ -12,7 +12,7 @@ import { getBinaryManagerInstallDirOrThrow, resolveBinaryPath } from './binary-p
 import { autoConnectBootnodes, extractBootnodeAddrs } from './bootnode.js';
 import { type CliConfig, ensureNodeConfigFile } from './config.js';
 import { printJsonError, printJsonEvent } from './format.js';
-import { appendToTodayLog, resolveLogDirForDate } from './log-files.js';
+import { appendToTodayLog, flushLogStreams, resolveLogDirForDate } from './log-files.js';
 import { runMigrationGuard } from './node-migration.js';
 import {
   getBinaryVersion,
@@ -510,6 +510,7 @@ export async function runNodeStartCommand(
     if (!json) {
       console.log('\n🛑 Shutting down...');
     }
+    flushLogStreams();
     if (runtimeDaemon) {
       stopRuntimeDaemonFromNode({ dataDir: config.dataDir, rpcUrl: config.rpcUrl });
     } else if (runtime) {
