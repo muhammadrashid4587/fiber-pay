@@ -158,7 +158,7 @@ function assertNoProxySelfLoop(listen: string, targetUrl: string): void {
 }
 
 function normalizeHost(host: string): string {
-  if (host === 'localhost' || host === '::1') {
+  if (host === 'localhost' || host === '::1' || host === '0.0.0.0') {
     return '127.0.0.1';
   }
   return host;

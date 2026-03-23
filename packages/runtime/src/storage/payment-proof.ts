@@ -360,7 +360,7 @@ export class PaymentProofManager {
       (a, b) => a.metadata.createdAt - b.metadata.createdAt,
     );
 
-    const toRemove = sorted.slice(0, Math.floor(sorted.length - count));
+    const toRemove = sorted.slice(0, Math.max(0, Math.floor(sorted.length - count)));
     toRemove.forEach((p) => {
       this.proofs.delete(p.id);
     });
